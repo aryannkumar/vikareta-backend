@@ -1,9 +1,25 @@
-# vikareta-backend
-Vikareta Backend API Service - Node.js/Express
-# Trigger build Sat Aug  9 01:15:15 IST 2025
+# Vikareta Backend API
 
-<!-- HTTPS Webhook test: Sat Aug  9 02:06:36 IST 2025 -->
+Node.js/Express API service for the Vikareta B2B marketplace platform.
 
-<!-- Direct IP webhook test: Sat Aug  9 02:10:29 IST 2025 -->
+## CI/CD Pipeline Status
+- ✅ Centralized Helm Chart Integration
+- ✅ ArgoCD Image Updater Support
+- ✅ Automatic Deployment Pipeline
+- ✅ Health Checks Configured
 
-<!-- Fixed webhook test: Sat Aug  9 02:13:45 IST 2025 -->
+## Features
+- RESTful API endpoints
+- Database integration with Prisma
+- Authentication and authorization
+- Health monitoring endpoints
+- Production-ready logging
+
+## Tech Stack
+- Node.js 18+
+- Express.js
+- Prisma ORM
+- MySQL/PostgreSQL
+- JWT Authentication
+
+<!-- Build trigger: Sat Aug  9 22:55:00 IST 2025 -->
