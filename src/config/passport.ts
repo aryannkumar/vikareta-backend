@@ -1,0 +1,101 @@
+import passport from 'passport';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as LinkedInStrategy } from 'passport-linkedin-oauth2';
+import { config } from './environment';
+import { SocialAuthService, GoogleProfile, LinkedInProfile } from '@/services/social-auth.service';
+import { logger } from '@/utils/logger';
+
+// Configure Google OAuth Strategy
+if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: config.oauth.google.clientId,
+        clientSecret: config.oauth.google.clientSecret,
+        callbackURL: config.oauth.google.callbackUrl,
+        scope: ['profile', 'email'],
+      },
+      async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+        try {
+          const googleProfile: GoogleProfile = {
+            id: profile.id,
+            email: profile.emails?.[0]?.value || '',
+            firstName: profile.name?.givenName || undefined,
+            lastName: profile.name?.familyName || undefined,
+            picture: profile.photos?.[0]?.value || undefined,
+          };
+
+          if (!googleProfile.email) {
+            return done(new Error('Email not provided by Google'), false);
+          }
+
+          const result = await SocialAuthService.handleGoogleAuth(
+            googleProfile,
+            accessToken,
+            refreshToken
+          );
+
+          return done(null, result);
+        } catch (error) {
+          logger.error('Google OAuth strategy error:', error);
+          return done(error, false);
+        }
+      }
+    )
+  );
+}
+
+// Configure LinkedIn OAuth Strategy
+if (config.oauth.linkedin.clientId && config.oauth.linkedin.clientSecret) {
+  passport.use(
+    new LinkedInStrategy(
+      {
+        clientID: config.oauth.linkedin.clientId,
+        clientSecret: config.oauth.linkedin.clientSecret,
+        callbackURL: config.oauth.linkedin.callbackUrl,
+        scope: ['r_emailaddress', 'r_liteprofile'],
+      },
+      async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+        try {
+          const linkedinProfile: LinkedInProfile = {
+            id: profile.id,
+            email: profile.emails?.[0]?.value || '',
+            firstName: profile.name?.givenName || undefined,
+            lastName: profile.name?.familyName || undefined,
+            picture: profile.photos?.[0]?.value || undefined,
+            headline: profile.headline || undefined,
+            industry: profile.industry || undefined,
+            location: profile.location?.name || undefined,
+          };
+
+          if (!linkedinProfile.email) {
+            return done(new Error('Email not provided by LinkedIn'), false);
+          }
+
+          const result = await SocialAuthService.handleLinkedInAuth(
+            linkedinProfile,
+            accessToken,
+            refreshToken
+          );
+
+          return done(null, result);
+        } catch (error) {
+          logger.error('LinkedIn OAuth strategy error:', error);
+          return done(error, false);
+        }
+      }
+    )
+  );
+}
+
+// Serialize user for session (not used in JWT setup, but required by passport)
+passport.serializeUser((user: any, done) => {
+  done(null, user);
+});
+
+// Deserialize user from session (not used in JWT setup, but required by passport)
+passport.deserializeUser((user: any, done) => {
+  done(null, user);
+});
+
+export default passport;

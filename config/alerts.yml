@@ -1,0 +1,91 @@
+
+groups:
+  - name: vikareta.rules
+    rules:
+      # High response time alert
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+          service: vikareta-backend
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s"
+
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+          service: vikareta-backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+
+      # High memory usage alert
+      - alert: HighMemoryUsage
+        expr: (process_resident_memory_bytes / 1024 / 1024 / 1024) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: vikareta-backend
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }}GB"
+
+      # Database connection issues
+      - alert: DatabaseConnectionIssues
+        expr: vikareta_database_connections_active / vikareta_database_connections_max > 0.8
+        for: 2m
+        labels:
+          severity: warning
+          service: vikareta-backend
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "{{ $value | humanizePercentage }} of database connections are in use"
+
+      # Cache hit rate too low
+      - alert: LowCacheHitRate
+        expr: vikareta_cache_hit_rate < 0.7
+        for: 5m
+        labels:
+          severity: warning
+          service: vikareta-backend
+        annotations:
+          summary: "Cache hit rate is low"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}"
+
+      # Business metric alerts
+      - alert: LowOrderConversionRate
+        expr: (vikareta_orders_total / vikareta_rfqs_total) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: vikareta-business
+        annotations:
+          summary: "Order conversion rate is low"
+          description: "Conversion rate is {{ $value | humanizePercentage }}"
+
+      # System resource alerts
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: vikareta-backend
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}%"
+
+      # Disk space alert
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+          service: vikareta-system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value }}% full"
