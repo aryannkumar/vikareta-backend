@@ -22,4 +22,5 @@ Node.js/Express API service for the Vikareta B2B marketplace platform.
 - MySQL/PostgreSQL
 - JWT Authentication
 
-<!-- Build trigger: Sat Aug  9 22:55:00 IST 2025 -->
+<!-- Build trigger: Sat Aug  9 23:35:00 IST 2025 -->
+<!-- Force new Docker image build to test CI/CD pipeline -->
