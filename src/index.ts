@@ -17,7 +17,7 @@ import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 import { errorHandler } from '@/middleware/errorHandler';
 import { notFoundHandler } from '@/middleware/notFoundHandler';
-import { 
+import {
   securityHeaders,
   additionalSecurityHeaders,
   generalLimiter,
@@ -69,6 +69,9 @@ import { userRoutes } from '@/routes/user';
 import walletRoutes from '@/routes/wallet';
 import { adminRoutes } from '@/routes/admin';
 import { dashboardRoutes } from '@/routes/dashboard';
+import featuredRoutes from '@/routes/featured';
+import featuredServicesRoutes from '@/routes/featuredServices';
+import { subcategoryRoutes } from '@/routes/subcategory';
 
 const app = express();
 
@@ -99,7 +102,7 @@ async function initializeServices() {
     // Warm up cache on startup
     await cacheService.warmCache();
     logger.info('✅ Cache warming completed');
-    
+
     // Initialize error tracking
     logger.info('✅ Error tracking service initialized');
   } catch (error) {
@@ -183,7 +186,11 @@ app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/auth', authLimiter, regenerateSession, authRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/categories', apiLimiter, categoryRoutes);
+app.use('/api/subcategories', apiLimiter, subcategoryRoutes);
+app.use('/api/featured', apiLimiter, featuredRoutes);
+app.use('/api/featured-services', apiLimiter, featuredServicesRoutes);
 app.use('/api/media', apiLimiter, mediaRoutes);
+app.use('/api/attachments', apiLimiter, mediaRoutes);
 app.use('/api/search', apiLimiter, searchRoutes);
 app.use('/api/rfqs', apiLimiter, rfqRoutes);
 app.use('/api/quotes', apiLimiter, quoteRoutes);
@@ -224,16 +231,16 @@ async function gracefulShutdown(signal: string) {
     logger.warn(`${signal} received again, forcing exit`);
     process.exit(1);
   }
-  
+
   isShuttingDown = true;
   logger.info(`${signal} received, starting graceful shutdown...`);
-  
+
   // Set a timeout for forced shutdown
   const forceShutdownTimer = setTimeout(() => {
     logger.error('Graceful shutdown timeout, forcing exit');
     process.exit(1);
   }, shutdownTimeout);
-  
+
   try {
     // Stop accepting new connections
     if (server) {
@@ -241,24 +248,24 @@ async function gracefulShutdown(signal: string) {
         logger.info('HTTP server closed');
       });
     }
-    
+
     if (httpsServerInstance) {
       httpsServerInstance.close(() => {
         logger.info('HTTPS server closed');
       });
     }
-    
+
     // Close database connections
     logger.info('Closing database connections...');
     // Add any database cleanup here if needed
-    
+
     // Close Redis connection
     logger.info('Closing Redis connection...');
     await redisClient.quit();
-    
+
     // Clear the force shutdown timer
     clearTimeout(forceShutdownTimer);
-    
+
     logger.info('Graceful shutdown completed');
     process.exit(0);
   } catch (error) {
@@ -301,7 +308,7 @@ if (httpsServerInstance && config.env === 'production') {
     logger.info(`📊 Environment: ${config.env}`);
     logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
   });
-  
+
   // Also start HTTP server for redirects
   server = app.listen(PORT, () => {
     logger.info(`🔄 HTTP Redirect Server running on port ${PORT}`);
@@ -312,7 +319,7 @@ if (httpsServerInstance && config.env === 'production') {
     logger.info(`🚀 Vikareta Backend Server running on port ${PORT}`);
     logger.info(`📊 Environment: ${config.env}`);
     logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
-    
+
     if (config.env === 'development') {
       logger.warn('⚠️  Running in HTTP mode - HTTPS certificates not found');
     }
