@@ -1,0 +1,133 @@
+name: CI/CD Pipeline - Backend
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/vikareta-backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linting
+      run: npm run lint
+
+    - name: Generate Prisma client
+      run: npm run db:generate
+
+    - name: Build application
+      run: npm run build
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        no-cache: true
+        platforms: linux/amd64,linux/arm64
+
+    - name: Trigger ArgoCD Sync for Centralized Platform
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "🚀 Triggering centralized platform sync after backend image update..."
+        
+        curl -X POST \
+          -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "revision": "HEAD",
+            "prune": true,
+            "dryRun": false,
+            "strategy": {
+              "hook": {
+                "force": true
+              }
+            }
+          }' \
+          "https://${{ secrets.ARGOCD_SERVER }}/api/v1/applications/vikareta-platform/sync"
+
+    - name: Wait for deployment
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "Waiting for ArgoCD to sync the centralized platform..."
+        sleep 30
+        
+        # Check application health
+        for i in {1..10}; do
+          STATUS=$(curl -s -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN }}" \
+            "https://${{ secrets.ARGOCD_SERVER }}/api/v1/applications/vikareta-platform" | \
+            jq -r '.status.health.status // "Unknown"')
+          
+          echo "Platform health status: $STATUS"
+          
+          if [ "$STATUS" = "Healthy" ]; then
+            echo "✅ Backend service deployed successfully via centralized platform!"
+            exit 0
+          fi
+          
+          echo "Waiting for platform to become healthy... (attempt $i/10)"
+          sleep 30
+        done
+        
+        echo "⚠️ Platform deployment status check timed out"
+        exit 1
+
+    - name: Deployment notification
+      if: always() && github.ref == 'refs/heads/main'
+      run: |
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "🎉 vikareta-backend deployed successfully via centralized Helm chart!"
+        else
+          echo "❌ vikareta-backend deployment failed!"
+        fi
