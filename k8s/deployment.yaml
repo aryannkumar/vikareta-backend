@@ -19,6 +19,8 @@ spec:
         ports:
         - containerPort: 5001
         env:
+        - name: PORT
+          value: "5001"
         - name: NODE_ENV
           value: "production"
         resources:
