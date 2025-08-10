@@ -1,3 +1,0 @@
--- AlterTable
--- Note: This migration adds default value generation for category IDs
--- Existing records will keep their current IDs, new records will auto-generate IDs
