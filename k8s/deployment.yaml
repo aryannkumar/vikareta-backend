@@ -18,6 +18,9 @@ spec:
         image: ghcr.io/aryannkumar/vikareta-backend:main
         ports:
         - containerPort: 5001
+        envFrom:
+        - configMapRef:
+            name: backend-config
         env:
         - name: PORT
           value: "5001"
