@@ -104,96 +104,35 @@ jobs:
         no-cache: true
         platforms: linux/amd64,linux/arm64
 
-    - name: Update ArgoCD Application Image
+    - name: Install ArgoCD CLI
       if: github.ref == 'refs/heads/main'
       run: |
-        echo "🚀 Updating ArgoCD application with new image tag..."
-        
-        # Update the image tag in ArgoCD
-        curl -X PATCH \
-          -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "spec": {
-              "source": {
-                "helm": {
-                  "parameters": [
-                    {
-                      "name": "image.tag",
-                      "value": "${{ steps.version.outputs.version }}"
-                    }
-                  ]
-                }
-              }
-            }
-          }' \
-          "https://${{ secrets.ARGOCD_SERVER }}/api/v1/applications/vikareta-backend" || echo "Failed to update image tag"
+        echo "�  Installing ArgoCD CLI..."
+        curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+        sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+        rm argocd-linux-amd64
+        argocd version --client
 
-    - name: Trigger ArgoCD Sync
-      if: github.ref == 'refs/heads/main'
-      run: |
-        echo "🔄 Triggering ArgoCD sync for vikareta-backend..."
-        
-        curl -X POST \
-          -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "revision": "HEAD",
-            "prune": true,
-            "dryRun": false,
-            "strategy": {
-              "hook": {
-                "force": true
-              }
-            }
-          }' \
-          "https://${{ secrets.ARGOCD_SERVER }}/api/v1/applications/vikareta-backend/sync"
-
-    - name: Wait for deployment
+    - name: ArgoCD Login and Sync
       id: wait-deployment
       if: github.ref == 'refs/heads/main'
+      env:
+        ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+        ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
       run: |
-        echo "⏳ Waiting for ArgoCD to sync vikareta-backend..."
-        sleep 30
+        echo "🔐 Logging into ArgoCD..."
+        argocd login $ARGOCD_SERVER --auth-token $ARGOCD_TOKEN --insecure
         
-        # Check application health
-        for i in {1..15}; do
-          echo "Checking application health... (attempt $i/15)"
-          
-          RESPONSE=$(curl -s -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN }}" \
-            "https://${{ secrets.ARGOCD_SERVER }}/api/v1/applications/vikareta-backend")
-          
-          HTTP_CODE="${RESPONSE: -3}"
-          JSON_RESPONSE="${RESPONSE%???}"
-          
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ API request failed with HTTP code: $HTTP_CODE"
-            echo "Response: $JSON_RESPONSE"
-            sleep 20
-            continue
-          fi
-          
-          if echo "$JSON_RESPONSE" | jq empty 2>/dev/null; then
-            HEALTH_STATUS=$(echo "$JSON_RESPONSE" | jq -r '.status.health.status // "Unknown"')
-            SYNC_STATUS=$(echo "$JSON_RESPONSE" | jq -r '.status.sync.status // "Unknown"')
-            
-            echo "🔍 Health Status: $HEALTH_STATUS"
-            echo "🔍 Sync Status: $SYNC_STATUS"
-            
-            if [ "$HEALTH_STATUS" = "Healthy" ] && [ "$SYNC_STATUS" = "Synced" ]; then
-              echo "✅ Backend service deployed successfully!"
-              exit 0
-            fi
-          else
-            echo "❌ Invalid JSON response received"
-          fi
-          
-          echo "⏳ Waiting for application to become healthy and synced..."
-          sleep 20
-        done
+        echo "🚀 Updating image tag for vikareta-backend..."
+        argocd app set vikareta-backend --helm-set image.tag=${{ steps.version.outputs.version }}
         
-        echo "⚠️ Deployment status check timed out"
-        exit 1
+        echo "🔄 Syncing vikareta-backend application..."
+        argocd app sync vikareta-backend --timeout 300 --prune
+        
+        echo "⏳ Waiting for sync to complete..."
+        argocd app wait vikareta-backend --timeout 600 --health
+        
+        echo "✅ vikareta-backend deployment completed successfully!"
 
     - name: Deployment notification
       if: always() && github.ref == 'refs/heads/main'
