@@ -332,7 +332,7 @@ export class DigiLockerService {
   /**
    * Sync user documents with database
    */
-  static async syncUserDocuments(userId: string, documents: DigiLockerDocument[]): Promise<void> {
+  static async syncUserDocuments(userId: string, documents: any[]): Promise<void> {
     try {
       for (const doc of documents) {
         // Determine document type based on doctype or name
@@ -365,6 +365,8 @@ export class DigiLockerService {
             data: {
               userId,
               documentType,
+              documentNumber: doc.docId || 'DIGILOCKER_DOC',
+              documentUrl: doc.uri,
               digilockerUri: doc.uri,
               verificationStatus: 'verified', // DigiLocker documents are pre-verified
             },

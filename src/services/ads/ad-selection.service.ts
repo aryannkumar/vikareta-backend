@@ -9,7 +9,6 @@ const prisma = new PrismaClient();
 
 export interface UserContext {
   userId?: string;
-  sessionId: string;
   ipAddress: string;
   userAgent: string;
   platform: 'web' | 'mobile' | 'dashboard';
@@ -153,7 +152,7 @@ export class AdSelectionEngine {
     options: AdSelectionOptions = {}
   ): Promise<SelectedAd | null> {
     try {
-      const maxAds = options.maxAds || placement.maxAdsPerPage || 1;
+      const maxAds = options.maxAds || 1;
       
       // Step 1: Try to get portal ads (highest priority)
       const portalAds = await this.getPortalAds(placement, userContext, options);
@@ -183,7 +182,6 @@ export class AdSelectionEngine {
 
       logger.info('No ads available for placement:', {
         placementId: placement.id,
-        platform: placement.platform,
         location: placement.location,
       });
 
@@ -212,7 +210,7 @@ export class AdSelectionEngine {
     options: AdSelectionOptions = {}
   ): Promise<SelectedAd[]> {
     try {
-      const maxAds = options.maxAds || placement.maxAdsPerPage || 1;
+      const maxAds = options.maxAds || 1;
       const selectedAds: SelectedAd[] = [];
 
       // Get all available ads with priority scoring
@@ -258,14 +256,14 @@ export class AdSelectionEngine {
       let baseScore = 0;
 
       // Base priority from ad type
-      if (ad.campaign.campaignType === 'portal') {
+      if ((ad as any).campaign.campaignType === 'portal') {
         baseScore = AdPriority.PORTAL_ADS;
       } else {
         baseScore = AdPriority.BUSINESS_ADS;
       }
 
       // Add bid amount factor (normalized to 0-100 range)
-      const bidFactor = Math.min(ad.campaign.bidAmount.toNumber() * 10, 100);
+      const bidFactor = Math.min((ad as any).campaign.bidAmount.toNumber() * 10, 100);
       baseScore += bidFactor;
 
       // Add ad priority factor
@@ -280,7 +278,7 @@ export class AdSelectionEngine {
       baseScore += performanceFactor;
 
       // Add recency factor (newer campaigns get slight boost)
-      const recencyFactor = this.calculateRecencyFactor(ad.campaign.createdAt);
+      const recencyFactor = this.calculateRecencyFactor((ad as any).campaign.createdAt);
       baseScore += recencyFactor;
 
       return Math.round(baseScore);
@@ -358,7 +356,7 @@ export class AdSelectionEngine {
 
       // Filter ads that require approval
       const approvedAds = options.requireApproval !== false 
-        ? ads.filter(ad => ad.campaign.approvals.length > 0)
+        ? ads.filter(ad => (ad as any).campaign.approvals.length > 0)
         : ads;
 
       // Calculate priority scores
@@ -421,7 +419,7 @@ export class AdSelectionEngine {
 
       // Filter ads that require approval
       const approvedAds = options.requireApproval !== false 
-        ? ads.filter(ad => ad.campaign.approvals.length > 0)
+        ? ads.filter(ad => (ad as any).campaign.approvals.length > 0)
         : ads;
 
       // Apply targeting filters
@@ -492,17 +490,17 @@ export class AdSelectionEngine {
       id: ad.id,
       campaignId: ad.campaignId,
       title: ad.title,
-      description: ad.description,
+      description: ad.description || '',
       adType: ad.adType,
-      adFormat: ad.adFormat,
-      content: ad.content,
-      callToAction: ad.callToAction,
-      destinationUrl: ad.destinationUrl,
+      adFormat: ad.adFormat || 'banner',
+      content: ad.content || '',
+      callToAction: ad.callToAction || '',
+      destinationUrl: ad.destinationUrl || '',
       priority: ad.priority,
       priorityScore: ad.priorityScore,
       source,
-      cost: ad.campaign.bidAmount.toNumber(),
-      biddingStrategy: ad.campaign.biddingStrategy,
+      cost: (ad as any).campaign.bidAmount.toNumber(),
+      biddingStrategy: (ad as any).campaign.biddingStrategy,
     };
   }
 
@@ -531,10 +529,9 @@ export class AdSelectionEngine {
         const adRequest: AdSenseAdRequest = {
           placementId: placement.id,
           adUnitId: `placement-${placement.location}`,
-          dimensions: placement.dimensions as { width: number; height: number },
+          dimensions: placement.dimensions as { width: number; height: number; },
           userContext: {
             userId: userContext.userId || undefined,
-            sessionId: userContext.sessionId,
             ipAddress: userContext.ipAddress,
             userAgent: userContext.userAgent,
             location: userContext.location ? {
@@ -542,7 +539,8 @@ export class AdSelectionEngine {
               state: userContext.location.state,
               city: userContext.location.city
             } : undefined
-          }
+          },
+          adFormat: 'text'
         };
         
         adsenseAd = await this.adSenseService.requestAd(adRequest);
@@ -618,7 +616,6 @@ export class AdSelectionEngine {
           dimensions: placement.dimensions as { width: number; height: number },
           userContext: {
             userId: userContext.userId,
-            sessionId: userContext.sessionId,
             ipAddress: userContext.ipAddress,
             userAgent: userContext.userAgent,
             location: userContext.location

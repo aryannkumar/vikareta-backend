@@ -529,7 +529,7 @@ export class CategoryService {
               slug: true,
               description: true,
               icon: true,
-              productCount: true,
+              _count: { select: { products: true } },
               sortOrder: true,
             },
             orderBy: { sortOrder: 'asc' },
@@ -538,7 +538,18 @@ export class CategoryService {
         orderBy: { sortOrder: 'asc' },
       });
 
-      return categories as CategoryWithSubcategories[];
+      return categories.map(category => ({
+        ...category,
+        subcategories: category.subcategories.map(sub => ({
+          id: sub.id,
+          name: sub.name,
+          slug: sub.slug,
+          description: sub.description,
+          icon: sub.icon,
+          productCount: sub._count.products,
+          sortOrder: sub.sortOrder,
+        })),
+      })) as CategoryWithSubcategories[];
     } catch (error) {
       logger.error('Error fetching categories with subcategories:', error);
       throw new Error('Failed to fetch categories with subcategories');
@@ -564,7 +575,7 @@ export class CategoryService {
               slug: true,
               description: true,
               icon: true,
-              productCount: true,
+              _count: { select: { products: true } },
               sortOrder: true,
             },
             orderBy: { sortOrder: 'asc' },

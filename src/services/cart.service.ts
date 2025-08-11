@@ -353,12 +353,16 @@ export class CartService {
             id: item.product.seller.id,
             businessName: item.product.seller.businessName || 'Unknown Seller',
           },
-          media: item.product.media,
+          media: item.product.media.map(m => ({
+            url: m.url,
+            mediaType: m.mediaType,
+            altText: m.altText,
+          })),
         },
         variant: item.variant ? {
           id: item.variant.id,
           name: item.variant.name,
-          value: item.variant.value,
+          value: item.variant.value || '',
           priceAdjustment: Number(item.variant.priceAdjustment),
           stockQuantity: item.variant.stockQuantity,
         } : null,

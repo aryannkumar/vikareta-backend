@@ -20,7 +20,6 @@ interface AdCacheStats {
 
 interface UserContext {
     userId?: string;
-    sessionId: string;
     platform: 'web' | 'mobile' | 'dashboard';
     location?: {
         country: string;
@@ -283,7 +282,7 @@ class AdCacheService {
                     ]
                 },
                 include: {
-                    ads: {
+                    advertisements: {
                         where: { 
                             status: 'active',
                             priority: { gte: 7 } // High priority ads
@@ -302,22 +301,19 @@ class AdCacheService {
             });
 
             // Common user contexts for preloading
-            const commonContexts = [
-                { platform: 'web' as const, sessionId: 'preload_web' },
-                { platform: 'mobile' as const, sessionId: 'preload_mobile' },
-                { platform: 'dashboard' as const, sessionId: 'preload_dashboard' }
+            const commonContexts: any[] = [
             ];
 
             // Preload ads for each placement and context combination
             for (const campaign of highPriorityCampaigns) {
-                for (const ad of campaign.ads) {
+                for (const ad of campaign.advertisements) {
                     for (const placement of placements) {
                         for (const context of commonContexts) {
                             const adResult: AdSelectionResult = {
                                 adId: ad.id,
                                 campaignId: campaign.id,
                                 priority: ad.priority,
-                                bidAmount: parseFloat(campaign.bidAmount.toString()),
+                                bidAmount: parseFloat((campaign.bidAmount || 0).toString()),
                                 content: ad.content,
                                 targetingMatch: 0.8, // Default high match for preloaded ads
                                 cached: true,
@@ -389,7 +385,7 @@ class AdCacheService {
         const campaigns = await this.prisma.adCampaign.findMany({
             where: { status: 'active' },
             include: {
-                ads: { where: { status: 'active' } },
+                advertisements: { where: { status: 'active' } },
                 business: { select: { id: true, businessName: true } }
             }
         });

@@ -231,7 +231,7 @@ router.get('/users/:id', authenticate, requireAdmin, asyncHandler(async (req: Re
       where: { id },
       include: {
         wallet: true,
-        documents: true,
+        userDocuments: true,
         socialLogins: true,
         products: {
           take: 5,
@@ -963,7 +963,7 @@ router.get('/dashboard/users/verification', authenticate, requireAdmin, asyncHan
         verificationTier: true,
         isVerified: true,
         createdAt: true,
-        documents: {
+        userDocuments: {
           select: {
             id: true,
             documentType: true,

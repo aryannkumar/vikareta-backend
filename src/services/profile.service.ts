@@ -251,6 +251,7 @@ export class ProfileService {
             userId,
             documentType: 'gst',
             documentNumber: gstin,
+            documentUrl: '', // Will be updated when document is uploaded
             verificationStatus: 'verified',
           },
         });
@@ -549,6 +550,7 @@ export class ProfileService {
             userId,
             documentType,
             documentNumber,
+            documentUrl: '', // Will be updated when document is uploaded
             verificationStatus: 'pending',
           },
         });

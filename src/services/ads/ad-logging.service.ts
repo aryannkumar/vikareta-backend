@@ -345,7 +345,6 @@ export class AdLoggingService {
       //   data: {
       //     eventType,
       //     advertisementId,
-      //     sessionId: context.sessionId,
       //     userId: context.userId,
       //     platform: context.platform,
       //     placement: context.placement,
@@ -394,7 +393,6 @@ export class AdLoggingService {
       //     responseTime: metrics.responseTime || 0,
       //     cacheHit: metrics.cacheHit || false,
       //     userId: context.userId,
-      //     sessionId: context.sessionId,
       //     platform: context.platform,
       //     metrics: metrics || {},
       //     timestamp: new Date(),
@@ -416,7 +414,6 @@ export class AdLoggingService {
       //     networkName,
       //     success,
       //     responseTime,
-      //     sessionId: context.sessionId,
       //     platform: context.platform,
       //     placement: context.placement,
       //     timestamp: new Date(),

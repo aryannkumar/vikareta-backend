@@ -730,7 +730,7 @@ export class FollowService {
           _count: {
             select: {
               followers: true,
-              following: true
+              follows: true
             }
           }
         },
@@ -744,7 +744,7 @@ export class FollowService {
         verificationTier: user.verificationTier,
         isVerified: user.isVerified,
         followersCount: user._count.followers,
-        followingCount: user._count.following
+        followingCount: user._count.follows
       }));
 
       return {

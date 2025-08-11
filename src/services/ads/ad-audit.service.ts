@@ -445,7 +445,6 @@ export class AdAuditService {
       //     metadata: auditEntry.metadata || {},
       //     ipAddress: auditEntry.ipAddress,
       //     userAgent: auditEntry.userAgent,
-      //     sessionId: auditEntry.sessionId,
       //     checksum: auditEntry.checksum,
       //     timestamp: auditEntry.timestamp,
       //   },
@@ -481,7 +480,6 @@ export class AdAuditService {
       //     metadata: transaction.metadata || {},
       //     ipAddress: context.ipAddress,
       //     userAgent: context.userAgent,
-      //     sessionId: context.sessionId,
       //     timestamp: new Date(),
       //   },
       // });
@@ -581,7 +579,6 @@ export class AdAuditService {
         metadata: log.metadata,
         ipAddress: log.ipAddress || undefined,
         userAgent: log.userAgent || undefined,
-        sessionId: log.sessionId || undefined,
         checksum: log.checksum,
       }));
     } catch (error) {
@@ -643,7 +640,6 @@ export class AdAuditService {
         metadata: auditLog.metadata,
         ipAddress: auditLog.ipAddress || undefined,
         userAgent: auditLog.userAgent || undefined,
-        sessionId: auditLog.sessionId || undefined,
       };
 
       const expectedChecksum = this.generateChecksum(auditEntry);

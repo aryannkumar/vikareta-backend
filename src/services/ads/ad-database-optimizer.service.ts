@@ -278,7 +278,7 @@ class AdDatabaseOptimizerService {
                 for (let i = 0; i < impressions.length; i += batchSize) {
                     const batch = impressions.slice(i, i + batchSize);
                     
-                    await tx.adImpression.createMany({
+                    await tx.impressionRecord.createMany({
                         data: batch,
                         skipDuplicates: true
                     });

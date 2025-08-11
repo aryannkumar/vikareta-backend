@@ -575,16 +575,32 @@ class ServiceService {
       },
     });
 
+    // Create service order
+    const serviceOrder = await prisma.serviceOrder.create({
+      data: {
+        orderId: order.id,
+        serviceId: serviceId,
+        quantity: 1,
+        unitPrice: service.price,
+        totalPrice: service.price,
+        scheduledDate: new Date(bookingData.scheduledDate),
+        duration: `${bookingData.duration || 60} minutes`,
+        location: bookingData.location ? JSON.parse(JSON.stringify(bookingData.location)) : null,
+        status: 'pending',
+      },
+    });
+
     // Create service appointment
     const scheduledDateTime = new Date(`${bookingData.scheduledDate}T${bookingData.scheduledTime}:00`);
     
     const appointment = await prisma.serviceAppointment.create({
       data: {
+        // serviceOrderId: serviceOrder.id, // This field doesn't exist in the schema
         orderId: order.id,
+        serviceId: serviceId, // Required field
         scheduledDate: new Date(bookingData.scheduledDate),
-        scheduledTime: scheduledDateTime,
-        durationMinutes: bookingData.duration || 60,
-        location: bookingData.location,
+        // appointmentDate field doesn't exist, using scheduledDate
+        duration: `${bookingData.duration || 60} minutes`,
         status: 'scheduled',
       },
     });

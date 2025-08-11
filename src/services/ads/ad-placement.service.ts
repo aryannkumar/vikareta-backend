@@ -7,7 +7,10 @@ const prisma = new PrismaClient();
 export interface CreatePlacementRequest {
   name: string;
   location: string;
-  platform: 'web' | 'mobile' | 'dashboard';
+  placementType?: string;
+  description?: string;
+  priority?: number;
+  platform?: 'web' | 'mobile' | 'dashboard';
   dimensions: {
     width: number;
     height: number;
@@ -48,26 +51,25 @@ export class AdPlacementService {
       // Validate placement data
       this.validatePlacementRequest(request);
 
-      // Check if placement with same name and platform already exists
+      // Check if placement with same name already exists
       const existingPlacement = await prisma.adPlacement.findFirst({
         where: {
           name: request.name,
-          platform: request.platform,
         },
       });
 
       if (existingPlacement) {
-        throw new Error(`Placement with name '${request.name}' already exists for platform '${request.platform}'`);
+        throw new Error(`Placement with name '${request.name}' already exists`);
       }
 
       const placement = await prisma.adPlacement.create({
         data: {
           name: request.name,
           location: request.location,
-          platform: request.platform,
+          placementType: request.placementType || 'inline',
           dimensions: request.dimensions,
-          maxAdsPerPage: request.maxAdsPerPage || 1,
-          refreshInterval: request.refreshInterval || null,
+          description: request.description,
+          priority: request.priority || 0,
           isActive: request.isActive !== undefined ? request.isActive : true,
         },
       });
@@ -75,7 +77,7 @@ export class AdPlacementService {
       logger.info('Ad placement created successfully:', {
         placementId: placement.id,
         name: placement.name,
-        platform: placement.platform,
+
         location: placement.location,
       });
 
@@ -103,11 +105,10 @@ export class AdPlacementService {
       }
 
       // Validate update data
-      if (request.name || request.platform || request.dimensions) {
+      if (request.name || request.dimensions) {
         this.validatePlacementRequest({
           name: request.name || existingPlacement.name,
           location: request.location || existingPlacement.location,
-          platform: (request.platform || existingPlacement.platform) as 'web' | 'mobile' | 'dashboard',
           dimensions: request.dimensions || (existingPlacement.dimensions as any),
           maxAdsPerPage: request.maxAdsPerPage,
           refreshInterval: request.refreshInterval,
@@ -120,7 +121,6 @@ export class AdPlacementService {
         const conflictingPlacement = await prisma.adPlacement.findFirst({
           where: {
             name: request.name,
-            platform: request.platform || existingPlacement.platform,
             id: { not: placementId },
           },
         });
@@ -160,14 +160,14 @@ export class AdPlacementService {
         include: {
           _count: {
             select: {
-              advertisements: true,
-              impressions: true,
+              assignments: true,
+
             },
           },
         },
       });
 
-      return placement;
+      return placement as any;
     } catch (error) {
       logger.error('Error getting ad placement:', error);
       throw new Error('Failed to get ad placement');
@@ -214,13 +214,12 @@ export class AdPlacementService {
           include: {
             _count: {
               select: {
-                advertisements: true,
-                impressions: true,
+                assignments: true,
+
               },
             },
           },
           orderBy: [
-            { platform: 'asc' },
             { location: 'asc' },
             { name: 'asc' },
           ],
@@ -231,7 +230,7 @@ export class AdPlacementService {
       ]);
 
       return {
-        placements,
+        placements: placements as any[],
         total,
         page,
         totalPages: Math.ceil(total / limit),
@@ -252,7 +251,6 @@ export class AdPlacementService {
     try {
       const placements = await prisma.adPlacement.findMany({
         where: {
-          platform,
           location,
           isActive: true,
         },
@@ -276,8 +274,8 @@ export class AdPlacementService {
         include: {
           _count: {
             select: {
-              advertisements: true,
-              impressions: true,
+              assignments: true,
+
             },
           },
         },
@@ -288,7 +286,7 @@ export class AdPlacementService {
       }
 
       // Check if placement has active advertisements
-      if (placement._count.advertisements > 0) {
+      if (placement._count.assignments > 0) {
         throw new Error('Cannot delete placement with active advertisements. Remove advertisements first.');
       }
 
@@ -356,15 +354,15 @@ export class AdPlacementService {
       case 'web':
         // Web platform supports larger dimensions
         return width <= 1920 && height <= 1080;
-      
+
       case 'mobile':
         // Mobile platform has smaller dimension constraints
         return width <= 414 && height <= 896; // iPhone 11 Pro Max dimensions
-      
+
       case 'dashboard':
         // Dashboard can have medium-sized ads
         return width <= 800 && height <= 600;
-      
+
       default:
         return true;
     }
@@ -413,7 +411,7 @@ export class AdPlacementService {
         },
         maxAdsPerPage: 3,
       },
-      
+
       // Mobile platform placements
       {
         name: 'Mobile Banner',
@@ -446,7 +444,7 @@ export class AdPlacementService {
         },
         maxAdsPerPage: 2,
       },
-      
+
       // Dashboard platform placements
       {
         name: 'Dashboard Header',
@@ -487,7 +485,6 @@ export class AdPlacementService {
           const existing = await prisma.adPlacement.findFirst({
             where: {
               name: placementData.name,
-              platform: placementData.platform,
             },
           });
 
@@ -528,7 +525,7 @@ export class AdPlacementService {
       throw new Error('Placement location must be less than 100 characters');
     }
 
-    if (!['web', 'mobile', 'dashboard'].includes(request.platform)) {
+    if (request.platform && !['web', 'mobile', 'dashboard'].includes(request.platform)) {
       throw new Error('Platform must be one of: web, mobile, dashboard');
     }
 
@@ -536,7 +533,7 @@ export class AdPlacementService {
       throw new Error('Placement dimensions (width and height) are required');
     }
 
-    if (!this.validateDimensions(request.platform, request.dimensions)) {
+    if (request.platform && !this.validateDimensions(request.platform, request.dimensions)) {
       throw new Error(`Invalid dimensions for platform ${request.platform}`);
     }
 
@@ -551,15 +548,15 @@ export class AdPlacementService {
     // Validate responsive dimensions if provided
     if (request.dimensions.responsive) {
       const responsive = request.dimensions.responsive;
-      
+
       if (responsive.mobile && !this.validateDimensions('mobile', responsive.mobile)) {
         throw new Error('Invalid mobile responsive dimensions');
       }
-      
+
       if (responsive.tablet && !this.validateDimensions('web', responsive.tablet)) {
         throw new Error('Invalid tablet responsive dimensions');
       }
-      
+
       if (responsive.desktop && !this.validateDimensions('web', responsive.desktop)) {
         throw new Error('Invalid desktop responsive dimensions');
       }

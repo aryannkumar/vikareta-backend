@@ -1,9 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import type { AdCampaign, Advertisement, AdApproval } from '@prisma/client';
-import { logger } from '../../utils/logger';
 import { WalletService } from '../wallet.service';
-
-const prisma = new PrismaClient();
+import { logger } from '../../utils/logger';
 
 export interface CreateCampaignRequest {
   businessId: string;
@@ -18,27 +16,25 @@ export interface CreateCampaignRequest {
   endDate?: Date;
   targetingConfig: {
     demographics?: {
-      ageRange?: [number, number];
-      gender?: 'male' | 'female' | 'all';
+      ageRange?: number[];
+      gender?: string;
       interests?: string[];
     };
     location?: {
       countries?: string[];
       states?: string[];
       cities?: string[];
-      radius?: number;
     };
     behavior?: {
-      deviceTypes?: string[];
       platforms?: string[];
-      timeOfDay?: string[];
-      dayOfWeek?: string[];
+      deviceTypes?: string[];
     };
   };
-  ads: CreateAdRequest[];
+  ads?: CreateAdRequest[];
 }
 
 export interface CreateAdRequest {
+  campaignId?: string;
   title: string;
   description: string;
   adType: 'banner' | 'native' | 'video' | 'carousel';
@@ -53,633 +49,595 @@ export interface CreateAdRequest {
   priority?: number;
 }
 
-export interface UpdateCampaignRequest {
-  name?: string;
-  description?: string;
-  budget?: number;
-  dailyBudget?: number;
-  bidAmount?: number;
-  endDate?: Date;
-  targetingConfig?: CreateCampaignRequest['targetingConfig'];
-}
-
-export interface CampaignWithDetails extends AdCampaign {
-  ads: Advertisement[];
-  business: {
-    id: string;
-    businessName: string | null;
-    email: string | null;
-  };
-  lockedAmount?: {
-    id: string;
-    amount: number;
-    status: string;
-  } | null;
-  approvals: AdApproval[];
+export interface CampaignAnalytics {
+  campaignId: string;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  spend: number;
+  revenue: number;
+  ctr: number;
+  cpc: number;
+  roas: number;
 }
 
 export class AdService {
+  private prisma: PrismaClient;
   private walletService: WalletService;
 
   constructor(walletService?: WalletService) {
+    this.prisma = new PrismaClient();
     this.walletService = walletService || new WalletService();
   }
 
   /**
-   * Create a new advertisement campaign with budget locking
+   * Create a new advertising campaign
    */
-  async createCampaign(request: CreateCampaignRequest): Promise<CampaignWithDetails> {
+  async createCampaign(request: CreateCampaignRequest): Promise<AdCampaign & {
+    ads: Advertisement[];
+    approvals: AdApproval[];
+  }> {
     try {
-      // Validate campaign data
-      this.validateCampaignRequest(request);
+      const businessId = request.businessId;
+      
+      // Validate budget availability
+      const wallet = await this.prisma.wallet.findUnique({
+        where: { userId: businessId },
+      });
 
-      // Check if user has sufficient balance for budget
-      const walletBalance = await this.walletService.getWalletBalance(request.businessId);
-      if (walletBalance.availableBalance < request.budget) {
+      if (!wallet || Number(wallet.availableBalance) < request.budget) {
         throw new Error('Insufficient wallet balance for campaign budget');
       }
 
-      // Lock budget amount in wallet
-      const lockedAmount = await this.walletService.lockAmount({
-        userId: request.businessId,
-        amount: request.budget,
-        lockReason: 'advertisement_budget',
-        referenceId: '', // Will be updated with campaign ID after creation
-      });
-
-      return await prisma.$transaction(async (tx) => {
-        // Create campaign
-        const campaign = await tx.adCampaign.create({
-          data: {
-            businessId: request.businessId,
-            name: request.name,
-            description: request.description || null,
-            campaignType: request.campaignType,
-            status: 'draft',
-            budget: request.budget,
-            dailyBudget: request.dailyBudget || null,
-            spentAmount: 0,
-            lockedAmountId: null, // Will be updated after creation
-            bidAmount: request.bidAmount,
-            biddingStrategy: request.biddingStrategy,
-            startDate: request.startDate,
-            endDate: request.endDate || null,
-            targetingConfig: request.targetingConfig,
-          },
-        });
-
-        // Note: In a real implementation, we would update the campaign with locked amount reference
-        // and also update the locked amount with campaign reference
-        // but since we're mocking the wallet service in tests, we'll skip this step
-
-        // Create advertisements
-        const ads = await Promise.all(
-          request.ads.map(adData =>
-            tx.advertisement.create({
-              data: {
-                campaignId: campaign.id,
-                title: adData.title,
-                description: adData.description,
-                adType: adData.adType,
-                adFormat: adData.adFormat,
-                content: adData.content,
-                callToAction: adData.callToAction,
-                destinationUrl: adData.destinationUrl,
-                priority: adData.priority || 1,
-                status: 'active',
-              },
-            })
-          )
-        );
-
-        // Create approval record
-        const approval = await tx.adApproval.create({
-          data: {
-            campaignId: campaign.id,
-            status: 'pending',
-          },
-        });
-
-        logger.info('Campaign created successfully:', {
-          campaignId: campaign.id,
-          businessId: request.businessId,
+      // Create campaign
+      const campaign = await this.prisma.adCampaign.create({
+        data: {
+          businessId,
+          name: request.name,
+          description: request.description,
+          campaignType: request.campaignType,
           budget: request.budget,
-          adsCount: ads.length,
-        });
-
-        // Return campaign with details
-        return {
-          ...campaign,
-          ads,
-          business: {
-            id: request.businessId,
-            businessName: null,
-            email: null,
-          },
-          lockedAmount: {
-            id: lockedAmount.id,
-            amount: typeof lockedAmount.amount === 'number' ? lockedAmount.amount : lockedAmount.amount.toNumber(),
-            status: lockedAmount.status,
-          },
-          approvals: [approval],
-        };
+          dailyBudget: request.dailyBudget,
+          bidAmount: request.bidAmount,
+          biddingStrategy: request.biddingStrategy,
+          startDate: request.startDate,
+          endDate: request.endDate,
+          targetingConfig: request.targetingConfig,
+          status: 'draft',
+        },
       });
-    } catch (error) {
-      logger.error('Error creating campaign:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to create campaign: ${error.message}`);
+
+      // Create ads if provided
+      const ads: Advertisement[] = [];
+      if (request.ads && request.ads.length > 0) {
+        for (const adData of request.ads) {
+          const ad = await this.prisma.advertisement.create({
+            data: {
+              campaignId: campaign.id,
+              title: adData.title,
+              description: adData.description,
+              adType: adData.adType,
+              adFormat: adData.adFormat,
+              content: adData.content,
+              callToAction: adData.callToAction,
+              destinationUrl: adData.destinationUrl,
+              priority: adData.priority || 1,
+              status: 'active',
+            },
+          });
+          ads.push(ad);
+        }
       }
-      throw new Error('Failed to create campaign');
+
+      // Create approval record
+      const approval = await this.prisma.adApproval.create({
+        data: {
+          campaignId: campaign.id,
+          status: 'pending',
+        },
+      });
+
+      // Lock budget amount in wallet
+      await this.walletService.lockAmount({
+        userId: businessId,
+        amount: request.budget,
+        lockReason: 'ad_campaign',
+        referenceId: campaign.id
+      });
+
+      logger.info(`Campaign created: ${campaign.id} for business: ${businessId}`);
+      
+      return {
+        ...campaign,
+        ads,
+        approvals: [approval],
+      };
+    } catch (error) {
+      logger.error('Failed to create campaign:', error);
+      throw error;
     }
   }
 
   /**
-   * Update an existing campaign
+   * Create an advertisement for a campaign
    */
-  async updateCampaign(campaignId: string, request: UpdateCampaignRequest): Promise<CampaignWithDetails> {
+  async createAdvertisement(request: CreateAdRequest): Promise<Advertisement> {
     try {
-      const existingCampaign = await prisma.adCampaign.findUnique({
-        where: { id: campaignId },
-        include: { lockedAmount: true },
+      // Verify campaign exists and belongs to user
+      const campaign = await this.prisma.adCampaign.findUnique({
+        where: { id: request.campaignId },
       });
 
-      if (!existingCampaign) {
+      if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      // Check if campaign can be updated
-      if (existingCampaign.status === 'completed') {
-        throw new Error('Cannot update completed campaign');
+      // Create advertisement
+      const advertisement = await this.prisma.advertisement.create({
+        data: {
+          campaignId: request.campaignId!,
+          title: request.title,
+          description: request.description,
+          adType: request.adType,
+          adFormat: request.adFormat,
+          content: request.content,
+          callToAction: request.callToAction,
+          destinationUrl: request.destinationUrl,
+          priority: request.priority || 1,
+          status: 'active',
+        },
+      });
+
+      logger.info(`Advertisement created: ${advertisement.id} for campaign: ${request.campaignId}`);
+      return advertisement;
+    } catch (error) {
+      logger.error('Failed to create advertisement:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get campaigns for a business
+   */
+  async getCampaigns(businessId: string, options?: {
+    status?: string;
+    limit?: number;
+    offset?: number;
+    page?: number;
+    campaignType?: string;
+  }): Promise<{
+    campaigns: AdCampaign[];
+    total: number;
+    page?: number;
+    totalPages?: number;
+  }> {
+    try {
+      const where: any = { businessId };
+      if (options?.status) {
+        where.status = options.status;
+      }
+      if (options?.campaignType) {
+        where.campaignType = options.campaignType;
       }
 
-      let budgetUpdateData: any = {};
-      
-      // Handle budget changes
-      if (request.budget && request.budget !== existingCampaign.budget.toNumber()) {
-        const currentBudget = existingCampaign.budget.toNumber();
-        const newBudget = request.budget;
-        const budgetDifference = newBudget - currentBudget;
+      const limit = options?.limit || 50;
+      const page = options?.page || 1;
+      const offset = options?.offset || (page - 1) * limit;
 
+      const [campaigns, total] = await Promise.all([
+        this.prisma.adCampaign.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            advertisements: true,
+            analytics: true,
+            approvals: true,
+          },
+        }),
+        this.prisma.adCampaign.count({ where }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      return { 
+        campaigns, 
+        total,
+        page: options?.page,
+        totalPages: options?.page ? totalPages : undefined,
+      };
+    } catch (error) {
+      logger.error('Failed to get campaigns:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get campaign by ID
+   */
+  async getCampaign(campaignId: string, businessId?: string): Promise<(AdCampaign & {
+    business: {
+      id: string;
+      businessName: string | null;
+      email: string | null;
+    };
+    ads: Advertisement[];
+    approvals: AdApproval[];
+  }) | null> {
+    try {
+      const where: any = { id: campaignId };
+      if (businessId) {
+        where.businessId = businessId;
+      }
+
+      return await this.prisma.adCampaign.findUnique({
+        where,
+        include: {
+          business: {
+            select: {
+              id: true,
+              businessName: true,
+              email: true,
+            },
+          },
+          advertisements: true,
+          analytics: true,
+          approvals: true,
+        },
+      }) as any;
+    } catch (error) {
+      logger.error('Failed to get campaign:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update campaign
+   */
+  async updateCampaign(campaignId: string, updates: Partial<CreateCampaignRequest>, businessId?: string): Promise<AdCampaign> {
+    if (!businessId && updates.businessId) {
+      businessId = updates.businessId;
+    }
+    try {
+      // Verify campaign ownership
+      const campaign = await this.prisma.adCampaign.findFirst({
+        where: { id: campaignId, businessId },
+      });
+
+      if (!campaign) {
+        throw new Error('Campaign not found or access denied');
+      }
+
+      // Handle budget changes
+      if (updates.budget && updates.budget !== Number(campaign.budget)) {
+        const budgetDifference = updates.budget - Number(campaign.budget);
+        
         if (budgetDifference > 0) {
-          // Increasing budget - check available balance and lock additional amount
-          const walletBalance = await this.walletService.getWalletBalance(existingCampaign.businessId);
-          if (walletBalance.availableBalance < budgetDifference) {
+          // Increasing budget - check wallet balance
+          const wallet = await this.prisma.wallet.findUnique({
+            where: { userId: businessId },
+          });
+
+          if (!wallet || Number(wallet.availableBalance) < budgetDifference) {
             throw new Error('Insufficient wallet balance for budget increase');
           }
 
           // Lock additional amount
           await this.walletService.lockAmount({
-            userId: existingCampaign.businessId,
+            userId: businessId!,
             amount: budgetDifference,
-            lockReason: 'advertisement_budget_increase',
-            referenceId: campaignId,
+            lockReason: 'ad_campaign',
+            referenceId: campaignId
           });
-        } else if (budgetDifference < 0) {
-          // Decreasing budget - release excess locked amount
-          const excessAmount = Math.abs(budgetDifference);
-          const spentAmount = existingCampaign.spentAmount.toNumber();
-          
-          if (newBudget < spentAmount) {
-            throw new Error('New budget cannot be less than already spent amount');
-          }
-
-          // Calculate how much can be released
-          const releaseAmount = Math.min(excessAmount, currentBudget - spentAmount);
-          
-          if (releaseAmount > 0 && existingCampaign.lockedAmount) {
-            // Create a new locked amount record for the reduced budget
-            const newLockedAmount = await this.walletService.lockAmount({
-              userId: existingCampaign.businessId,
-              amount: newBudget - spentAmount,
-              lockReason: 'advertisement_budget_reduced',
-              referenceId: campaignId,
-            });
-
-            // Release the old locked amount
-            await this.walletService.releaseLock(existingCampaign.lockedAmount.id, 'Budget reduced');
-
-            budgetUpdateData.lockedAmountId = newLockedAmount.id;
-          }
+        } else {
+          // Decreasing budget - release locked amount
+          // TODO: Implement proper lock release by finding the lock ID first
+          // await this.walletService.releaseLock(lockId, 'Budget decreased');
         }
-
-        budgetUpdateData.budget = newBudget;
       }
 
       // Update campaign
-      const rawUpdatedCampaign = await prisma.adCampaign.update({
+      const updateData: any = {
+        updatedAt: new Date(),
+      };
+      
+      // Only include fields that exist in the Prisma schema
+      if (updates.name) updateData.name = updates.name;
+      if (updates.description) updateData.description = updates.description;
+      if (updates.campaignType) updateData.campaignType = updates.campaignType;
+      if (updates.budget) updateData.budget = updates.budget;
+      if (updates.dailyBudget) updateData.dailyBudget = updates.dailyBudget;
+      if (updates.bidAmount) updateData.bidAmount = updates.bidAmount;
+      if (updates.biddingStrategy) updateData.biddingStrategy = updates.biddingStrategy;
+      if (updates.startDate) updateData.startDate = updates.startDate;
+      if (updates.endDate) updateData.endDate = updates.endDate;
+      if (updates.targetingConfig) updateData.targetingConfig = updates.targetingConfig;
+
+      const updatedCampaign = await this.prisma.adCampaign.update({
         where: { id: campaignId },
-        data: {
-          ...request,
-          ...budgetUpdateData,
-        },
+        data: updateData,
         include: {
-          ads: true,
-          business: {
-            select: {
-              id: true,
-              businessName: true,
-              email: true,
-            },
-          },
-          lockedAmount: true,
+          advertisements: true,
+          analytics: true,
           approvals: true,
         },
       });
 
-      logger.info('Campaign updated successfully:', {
-        campaignId,
-        updates: Object.keys(request),
-      });
-
-      // Transform the result to match CampaignWithDetails interface
-      const updatedCampaign: CampaignWithDetails = {
-        ...rawUpdatedCampaign,
-        lockedAmount: rawUpdatedCampaign.lockedAmount ? {
-          id: rawUpdatedCampaign.lockedAmount.id,
-          amount: rawUpdatedCampaign.lockedAmount.amount.toNumber(),
-          status: rawUpdatedCampaign.lockedAmount.status,
-        } : null,
-      };
-
+      logger.info(`Campaign updated: ${campaignId}`);
       return updatedCampaign;
     } catch (error) {
-      logger.error('Error updating campaign:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to update campaign: ${error.message}`);
-      }
-      throw new Error('Failed to update campaign');
+      logger.error('Failed to update campaign:', error);
+      throw error;
     }
   }
 
   /**
-   * Pause a campaign
+   * Delete campaign
    */
-  async pauseCampaign(campaignId: string): Promise<void> {
+  async deleteCampaign(campaignId: string, businessId?: string): Promise<void> {
     try {
-      const campaign = await prisma.adCampaign.findUnique({
-        where: { id: campaignId },
+      // Verify campaign ownership
+      const campaign = await this.prisma.adCampaign.findFirst({
+        where: { id: campaignId, businessId },
       });
 
       if (!campaign) {
-        throw new Error('Campaign not found');
+        throw new Error('Campaign not found or access denied');
       }
 
-      if (campaign.status !== 'active') {
-        throw new Error('Only active campaigns can be paused');
+      // Release locked budget
+      const remainingBudget = Number(campaign.budget) - Number(campaign.spentAmount);
+      if (remainingBudget > 0) {
+        // TODO: Implement proper lock release by finding the lock ID first
+        // await this.walletService.releaseLock(lockId, 'Campaign paused');
       }
 
-      await prisma.adCampaign.update({
+      // Delete campaign (cascades to ads, analytics, etc.)
+      await this.prisma.adCampaign.delete({
+        where: { id: campaignId },
+      });
+
+      logger.info(`Campaign deleted: ${campaignId}`);
+    } catch (error) {
+      logger.error('Failed to delete campaign:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Submit campaign for approval
+   */
+  async submitForApproval(campaignId: string, businessId?: string): Promise<AdApproval> {
+    try {
+      // Verify campaign ownership
+      const campaign = await this.prisma.adCampaign.findFirst({
+        where: { id: campaignId, businessId },
+      });
+
+      if (!campaign) {
+        throw new Error('Campaign not found or access denied');
+      }
+
+      if (campaign.status !== 'draft') {
+        throw new Error('Only draft campaigns can be submitted for approval');
+      }
+
+      // Create approval request
+      const approval = await this.prisma.adApproval.create({
+        data: {
+          campaignId,
+          status: 'pending',
+        },
+      });
+
+      // Update campaign status
+      await this.prisma.adCampaign.update({
+        where: { id: campaignId },
+        data: { status: 'pending_approval' },
+      });
+
+      logger.info(`Campaign submitted for approval: ${campaignId}`);
+      return approval;
+    } catch (error) {
+      logger.error('Failed to submit campaign for approval:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get campaign analytics
+   */
+  async getCampaignAnalytics(campaignId: string, dateRange?: {
+    start: Date;
+    end: Date;
+  }): Promise<CampaignAnalytics> {
+    try {
+      const where: any = { campaignId };
+      if (dateRange) {
+        where.date = {
+          gte: dateRange.start,
+          lte: dateRange.end,
+        };
+      }
+
+      const analytics = await this.prisma.adAnalytics.findMany({
+        where,
+        orderBy: { date: 'desc' },
+      });
+
+      // Aggregate analytics data
+      const aggregated = analytics.reduce(
+        (acc, curr) => ({
+          impressions: acc.impressions + curr.impressions,
+          clicks: acc.clicks + curr.clicks,
+          conversions: acc.conversions + curr.conversions,
+          spend: acc.spend + Number(curr.spend),
+          revenue: acc.revenue + Number(curr.revenue),
+        }),
+        { impressions: 0, clicks: 0, conversions: 0, spend: 0, revenue: 0 }
+      );
+
+      const ctr = aggregated.impressions > 0 ? (aggregated.clicks / aggregated.impressions) * 100 : 0;
+      const cpc = aggregated.clicks > 0 ? aggregated.spend / aggregated.clicks : 0;
+      const roas = aggregated.spend > 0 ? aggregated.revenue / aggregated.spend : 0;
+
+      return {
+        campaignId,
+        ...aggregated,
+        ctr,
+        cpc,
+        roas,
+      };
+    } catch (error) {
+      logger.error('Failed to get campaign analytics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Pause campaign
+   */
+  async pauseCampaign(campaignId: string, businessId?: string): Promise<AdCampaign> {
+    try {
+      const campaign = await this.prisma.adCampaign.findFirst({
+        where: { id: campaignId, businessId },
+      });
+
+      if (!campaign) {
+        throw new Error('Campaign not found or access denied');
+      }
+
+      const updatedCampaign = await this.prisma.adCampaign.update({
         where: { id: campaignId },
         data: { status: 'paused' },
       });
 
-      logger.info('Campaign paused:', { campaignId });
+      logger.info(`Campaign paused: ${campaignId}`);
+      return updatedCampaign;
     } catch (error) {
-      logger.error('Error pausing campaign:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to pause campaign: ${error.message}`);
-      }
-      throw new Error('Failed to pause campaign');
+      logger.error('Failed to pause campaign:', error);
+      throw error;
     }
   }
 
   /**
-   * Resume a paused campaign
+   * Resume campaign
    */
-  async resumeCampaign(campaignId: string): Promise<void> {
+  async resumeCampaign(campaignId: string, businessId?: string): Promise<AdCampaign> {
     try {
-      const campaign = await prisma.adCampaign.findUnique({
-        where: { id: campaignId },
-        include: { approvals: true },
+      const campaign = await this.prisma.adCampaign.findFirst({
+        where: { id: campaignId, businessId },
       });
 
       if (!campaign) {
-        throw new Error('Campaign not found');
+        throw new Error('Campaign not found or access denied');
       }
 
-      if (campaign.status !== 'paused') {
-        throw new Error('Only paused campaigns can be resumed');
-      }
-
-      // Check if campaign is approved
-      const latestApproval = campaign.approvals
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
-
-      if (!latestApproval || latestApproval.status !== 'approved') {
-        throw new Error('Campaign must be approved before resuming');
-      }
-
-      // Check if campaign has not expired
-      if (campaign.endDate && campaign.endDate < new Date()) {
-        throw new Error('Cannot resume expired campaign');
-      }
-
-      await prisma.adCampaign.update({
+      const updatedCampaign = await this.prisma.adCampaign.update({
         where: { id: campaignId },
         data: { status: 'active' },
       });
 
-      logger.info('Campaign resumed:', { campaignId });
+      logger.info(`Campaign resumed: ${campaignId}`);
+      return updatedCampaign;
     } catch (error) {
-      logger.error('Error resuming campaign:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to resume campaign: ${error.message}`);
-      }
-      throw new Error('Failed to resume campaign');
+      logger.error('Failed to resume campaign:', error);
+      throw error;
     }
   }
 
   /**
-   * Get campaign by ID with full details
+   * Get advertisements for a campaign
    */
-  async getCampaign(campaignId: string): Promise<CampaignWithDetails | null> {
+  async getAdvertisements(campaignId: string, businessId?: string): Promise<Advertisement[]> {
     try {
-      const rawCampaign = await prisma.adCampaign.findUnique({
-        where: { id: campaignId },
+      // Verify campaign access if businessId provided
+      if (businessId) {
+        const campaign = await this.prisma.adCampaign.findFirst({
+          where: { id: campaignId, businessId },
+        });
+
+        if (!campaign) {
+          throw new Error('Campaign not found or access denied');
+        }
+      }
+
+      return await this.prisma.advertisement.findMany({
+        where: { campaignId },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      logger.error('Failed to get advertisements:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update advertisement
+   */
+  async updateAdvertisement(adId: string, businessId: string, updates: Partial<CreateAdRequest>): Promise<Advertisement> {
+    try {
+      // Verify ad ownership through campaign
+      const ad = await this.prisma.advertisement.findUnique({
+        where: { id: adId },
         include: {
-          ads: true,
-          business: {
-            select: {
-              id: true,
-              businessName: true,
-              email: true,
-            },
-          },
-          lockedAmount: true,
-          approvals: {
-            orderBy: { createdAt: 'desc' },
+          campaign: {
+            select: { businessId: true },
           },
         },
       });
 
-      if (!rawCampaign) {
-        return null;
+      if (!ad || ad.campaign.businessId !== businessId) {
+        throw new Error('Advertisement not found or access denied');
       }
 
-      // Transform the result to match CampaignWithDetails interface
-      const campaign: CampaignWithDetails = {
-        ...rawCampaign,
-        lockedAmount: rawCampaign.lockedAmount ? {
-          id: rawCampaign.lockedAmount.id,
-          amount: rawCampaign.lockedAmount.amount.toNumber(),
-          status: rawCampaign.lockedAmount.status,
-        } : null,
-      };
+      const updatedAd = await this.prisma.advertisement.update({
+        where: { id: adId },
+        data: {
+          ...updates,
+          updatedAt: new Date(),
+        },
+      });
 
-      return campaign;
+      logger.info(`Advertisement updated: ${adId}`);
+      return updatedAd;
     } catch (error) {
-      logger.error('Error getting campaign:', error);
-      throw new Error('Failed to get campaign');
+      logger.error('Failed to update advertisement:', error);
+      throw error;
     }
   }
 
   /**
-   * Get campaigns for a business with pagination
+   * Delete advertisement
    */
-  async getCampaigns(
-    businessId: string,
-    options: {
-      page?: number;
-      limit?: number;
-      status?: string;
-      campaignType?: string;
-    } = {}
-  ): Promise<{
-    campaigns: CampaignWithDetails[];
-    total: number;
-    page: number;
-    totalPages: number;
-  }> {
+  async deleteAdvertisement(adId: string, businessId: string): Promise<void> {
     try {
-      const page = options.page || 1;
-      const limit = Math.min(options.limit || 20, 100);
-      const skip = (page - 1) * limit;
-
-      const where: any = {
-        businessId,
-      };
-
-      if (options.status) {
-        where.status = options.status;
-      }
-
-      if (options.campaignType) {
-        where.campaignType = options.campaignType;
-      }
-
-      const [rawCampaigns, total] = await Promise.all([
-        prisma.adCampaign.findMany({
-          where,
-          include: {
-            ads: true,
-            business: {
-              select: {
-                id: true,
-                businessName: true,
-                email: true,
-              },
-            },
-            lockedAmount: true,
-            approvals: {
-              orderBy: { createdAt: 'desc' },
-              take: 1,
-            },
+      // Verify ad ownership through campaign
+      const ad = await this.prisma.advertisement.findUnique({
+        where: { id: adId },
+        include: {
+          campaign: {
+            select: { businessId: true },
           },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: limit,
-        }),
-        prisma.adCampaign.count({ where }),
-      ]);
-
-      // Transform the results to match CampaignWithDetails interface
-      const campaigns: CampaignWithDetails[] = rawCampaigns.map(campaign => ({
-        ...campaign,
-        lockedAmount: campaign.lockedAmount ? {
-          id: campaign.lockedAmount.id,
-          amount: campaign.lockedAmount.amount.toNumber(),
-          status: campaign.lockedAmount.status,
-        } : null,
-      }));
-
-      return {
-        campaigns,
-        total,
-        page,
-        totalPages: Math.ceil(total / limit),
-      };
-    } catch (error) {
-      logger.error('Error getting campaigns:', error);
-      throw new Error('Failed to get campaigns');
-    }
-  }
-
-  /**
-   * Delete a campaign (only if not active)
-   */
-  async deleteCampaign(campaignId: string): Promise<void> {
-    try {
-      const campaign = await prisma.adCampaign.findUnique({
-        where: { id: campaignId },
-        include: { lockedAmount: true },
+        },
       });
 
-      if (!campaign) {
-        throw new Error('Campaign not found');
+      if (!ad || ad.campaign.businessId !== businessId) {
+        throw new Error('Advertisement not found or access denied');
       }
 
-      if (campaign.status === 'active') {
-        throw new Error('Cannot delete active campaign. Pause it first.');
-      }
-
-      await prisma.$transaction(async (tx) => {
-        // Delete related records (cascade should handle most of this)
-        await tx.adCampaign.delete({
-          where: { id: campaignId },
-        });
-
-        // Release locked budget if exists
-        if (campaign.lockedAmount) {
-          await this.walletService.releaseLock(campaign.lockedAmount.id, 'Campaign deleted');
-        }
+      await this.prisma.advertisement.delete({
+        where: { id: adId },
       });
 
-      logger.info('Campaign deleted:', { campaignId });
+      logger.info(`Advertisement deleted: ${adId}`);
     } catch (error) {
-      logger.error('Error deleting campaign:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to delete campaign: ${error.message}`);
-      }
-      throw new Error('Failed to delete campaign');
-    }
-  }
-
-  /**
-   * Validate campaign request data
-   */
-  private validateCampaignRequest(request: CreateCampaignRequest): void {
-    if (!request.name || request.name.trim().length === 0) {
-      throw new Error('Campaign name is required');
-    }
-
-    if (request.name.length > 255) {
-      throw new Error('Campaign name must be less than 255 characters');
-    }
-
-    if (request.budget <= 0) {
-      throw new Error('Budget must be greater than 0');
-    }
-
-    if (request.budget > 1000000) {
-      throw new Error('Budget cannot exceed ₹10,00,000');
-    }
-
-    if (request.dailyBudget && request.dailyBudget > request.budget) {
-      throw new Error('Daily budget cannot exceed total budget');
-    }
-
-    if (request.bidAmount <= 0) {
-      throw new Error('Bid amount must be greater than 0');
-    }
-
-    if (request.bidAmount > 1000) {
-      throw new Error('Bid amount cannot exceed ₹1,000');
-    }
-
-    if (request.startDate < new Date()) {
-      throw new Error('Start date cannot be in the past');
-    }
-
-    if (request.endDate && request.endDate <= request.startDate) {
-      throw new Error('End date must be after start date');
-    }
-
-    if (!request.ads || request.ads.length === 0) {
-      throw new Error('At least one advertisement is required');
-    }
-
-    if (request.ads.length > 10) {
-      throw new Error('Maximum 10 advertisements allowed per campaign');
-    }
-
-    // Validate each ad
-    request.ads.forEach((ad, index) => {
-      this.validateAdRequest(ad, index);
-    });
-
-    // Validate targeting config
-    this.validateTargetingConfig(request.targetingConfig);
-  }
-
-  /**
-   * Validate individual ad request
-   */
-  private validateAdRequest(ad: CreateAdRequest, index: number): void {
-    if (!ad.title || ad.title.trim().length === 0) {
-      throw new Error(`Ad ${index + 1}: Title is required`);
-    }
-
-    if (ad.title.length > 255) {
-      throw new Error(`Ad ${index + 1}: Title must be less than 255 characters`);
-    }
-
-    if (!ad.description || ad.description.trim().length === 0) {
-      throw new Error(`Ad ${index + 1}: Description is required`);
-    }
-
-    if (!ad.callToAction || ad.callToAction.trim().length === 0) {
-      throw new Error(`Ad ${index + 1}: Call to action is required`);
-    }
-
-    if (!ad.destinationUrl || !this.isValidUrl(ad.destinationUrl)) {
-      throw new Error(`Ad ${index + 1}: Valid destination URL is required`);
-    }
-
-    // Validate content based on ad format
-    if (ad.adFormat === 'image' && (!ad.content.images || ad.content.images.length === 0)) {
-      throw new Error(`Ad ${index + 1}: At least one image is required for image format`);
-    }
-
-    if (ad.adFormat === 'video' && (!ad.content.videos || ad.content.videos.length === 0)) {
-      throw new Error(`Ad ${index + 1}: At least one video is required for video format`);
-    }
-
-    if (ad.adFormat === 'html' && (!ad.content.html || ad.content.html.trim().length === 0)) {
-      throw new Error(`Ad ${index + 1}: HTML content is required for HTML format`);
-    }
-
-    if (ad.priority && (ad.priority < 1 || ad.priority > 10)) {
-      throw new Error(`Ad ${index + 1}: Priority must be between 1 and 10`);
-    }
-  }
-
-  /**
-   * Validate targeting configuration
-   */
-  private validateTargetingConfig(config: CreateCampaignRequest['targetingConfig']): void {
-    if (config.demographics?.ageRange) {
-      const [min, max] = config.demographics.ageRange;
-      if (min < 13 || max > 100 || min >= max) {
-        throw new Error('Invalid age range in targeting config');
-      }
-    }
-
-    if (config.location?.radius && (config.location.radius < 1 || config.location.radius > 1000)) {
-      throw new Error('Location radius must be between 1 and 1000 km');
-    }
-  }
-
-  /**
-   * Validate URL format
-   */
-  private isValidUrl(url: string): boolean {
-    try {
-      new URL(url);
-      return true;
-    } catch {
-      return false;
+      logger.error('Failed to delete advertisement:', error);
+      throw error;
     }
   }
 }
 
+// Export singleton instance
 export const adService = new AdService();

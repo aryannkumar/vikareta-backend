@@ -84,13 +84,13 @@ export class AdMonitoringService {
 
   private async checkDatabaseHealth(): Promise<SystemHealthMetrics> {
     const startTime = Date.now();
-    
+
     try {
       // Test database connectivity and performance
       await prisma.$queryRaw`SELECT 1`;
-      
+
       const responseTime = Date.now() - startTime;
-      
+
       // Check for slow queries
       const slowQueryThreshold = 1000; // 1 second
       const status = responseTime > slowQueryThreshold ? 'degraded' : 'healthy';
@@ -121,20 +121,20 @@ export class AdMonitoringService {
     try {
       // Check recent ad serving performance
       const last5Minutes = new Date(Date.now() - 5 * 60 * 1000);
-      
+
       const [totalRequests, errors] = await Promise.all([
-        prisma.adImpression.count({
+        prisma.impressionRecord.count({
           where: {
-            createdAt: { gte: last5Minutes },
+            viewedAt: { gte: last5Minutes },
           },
         }),
-        prisma.adClick.count({
+        prisma.clickRecord.count({
           where: {
-            createdAt: { gte: last5Minutes },
+            clickedAt: { gte: last5Minutes },
           },
         }),
       ]);
-      
+
       const avgResponseTime = { _avg: { responseTime: 100 } }; // Mock response time
 
       const errorRate = totalRequests > 0 ? (errors / totalRequests) * 100 : 0;
@@ -171,16 +171,15 @@ export class AdMonitoringService {
   }
 
   private async checkExternalNetworksHealth(): Promise<SystemHealthMetrics[]> {
-    const networks = await prisma.externalAdNetwork.findMany({
-      where: { isActive: true },
-    });
+    // TODO: Implement externalAdNetwork model when needed
+    const networks: any[] = [];
 
     const healthMetrics: SystemHealthMetrics[] = [];
 
     for (const network of networks) {
       try {
         const last10Minutes = new Date(Date.now() - 10 * 60 * 1000);
-        
+
         // Mock implementation for external network monitoring
         const totalRequests = 100;
         const successfulRequests = 95;
@@ -226,7 +225,7 @@ export class AdMonitoringService {
   private async checkCacheHealth(): Promise<SystemHealthMetrics> {
     try {
       const last5Minutes = new Date(Date.now() - 5 * 60 * 1000);
-      
+
       // Mock cache stats implementation
       const cacheStats = { _avg: { responseTime: 50 }, _count: { cacheHit: 100 } };
       const cacheHits = 85;
@@ -265,7 +264,7 @@ export class AdMonitoringService {
     try {
       // Check for budget-related errors
       const last10Minutes = new Date(Date.now() - 10 * 60 * 1000);
-      
+
       // Mock budget errors count
       const budgetErrors = 0;
 
@@ -332,7 +331,7 @@ export class AdMonitoringService {
       };
     } catch (error) {
       await adLoggingService.logError(error as Error, { operation: 'performance_monitoring' }, 'high');
-      
+
       return {
         averageResponseTime: 0,
         requestsPerSecond: 0,
@@ -448,7 +447,7 @@ export class AdMonitoringService {
 
     await adLoggingService.logError(
       new Error(`Alert triggered: ${rule.name}`),
-      { 
+      {
         alertRule: rule.id,
         alertData,
       },
@@ -463,7 +462,7 @@ export class AdMonitoringService {
     // Implementation would depend on notification system
     // For now, just log the alert
     console.log('ALERT:', JSON.stringify(alertData, null, 2));
-    
+
     // In production, you would integrate with:
     // - Email service
     // - Slack/Discord webhooks
@@ -535,7 +534,7 @@ export class AdMonitoringService {
       try {
         const metrics = await this.getPerformanceMetrics();
         const healthMetrics = await this.checkSystemHealth();
-        
+
         await adLoggingService.logPerformanceMetrics('system_monitoring', {
           ...metrics,
           timestamp: Date.now(),

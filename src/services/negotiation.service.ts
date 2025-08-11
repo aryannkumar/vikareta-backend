@@ -15,6 +15,8 @@ export interface CreateCounterOfferData {
 export interface NegotiationHistory {
   id: string;
   quoteId: string;
+  buyerId: string;
+  sellerId: string;
   fromUserId: string;
   toUserId: string;
   offerType: 'original' | 'counter' | 'final';
@@ -100,10 +102,13 @@ export class NegotiationService {
         const negotiationEntry = await tx.negotiationHistory.create({
           data: {
             quoteId: data.quoteId,
+            buyerId: buyerId,
+            sellerId: quote.sellerId,
             fromUserId: buyerId,
             toUserId: quote.sellerId,
-            offerType: 'counter',
+            offerPrice: data.counterPrice,
             price: data.counterPrice,
+            offerType: 'counter',
             terms: data.counterTerms || null,
             message: data.message || null,
             status: 'pending',
@@ -319,10 +324,13 @@ export class NegotiationService {
         const newNegotiation = await tx.negotiationHistory.create({
           data: {
             quoteId: originalNegotiation.quoteId,
+            buyerId: originalNegotiation.buyerId,
+            sellerId: originalNegotiation.sellerId,
             fromUserId: sellerId,
             toUserId: originalNegotiation.fromUserId,
-            offerType: 'counter',
+            offerPrice: data.counterPrice,
             price: data.counterPrice,
+            offerType: 'counter',
             terms: data.counterTerms || null,
             message: data.message || null,
             status: 'pending',

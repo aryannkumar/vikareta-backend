@@ -654,7 +654,7 @@ class CacheService {
                 business: {
                     select: { id: true, businessName: true }
                 },
-                ads: {
+                advertisements: {
                     where: { status: 'active' }
                 },
                 analytics: {
@@ -703,16 +703,16 @@ class CacheService {
             },
             include: {
                 campaign: true,
-                impressions: {
+                impressionRecords: {
                     where: {
-                        createdAt: {
+                        viewedAt: {
                             gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
                         }
                     }
                 },
-                clicks: {
+                clickRecords: {
                     where: {
-                        createdAt: {
+                        clickedAt: {
                             gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
                         }
                     }

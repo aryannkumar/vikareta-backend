@@ -125,7 +125,7 @@ export class DealService {
           status: 'initiated',
           milestone: request.milestone || null,
           nextFollowUp: new Date(Date.now() + 24 * 60 * 60 * 1000) // Default to 24 hours from now
-        }
+        } as any
       });
 
       logger.info('Deal created successfully:', {
@@ -626,7 +626,7 @@ export class DealService {
           take: 10
         });
 
-        const buyerIds = topBuyersRaw.map(item => item.buyerId);
+        const buyerIds = topBuyersRaw.map(item => item.buyerId).filter(id => id !== null) as string[];
         const buyers = await prisma.user.findMany({
           where: { id: { in: buyerIds } },
           select: {
@@ -660,7 +660,7 @@ export class DealService {
           take: 10
         });
 
-        const sellerIds = topSellersRaw.map(item => item.sellerId);
+        const sellerIds = topSellersRaw.map(item => item.sellerId).filter(id => id !== null) as string[];
         const sellers = await prisma.user.findMany({
           where: { id: { in: sellerIds } },
           select: {
@@ -1165,7 +1165,7 @@ export class DealService {
           await prisma.dealMessage.create({
             data: {
               dealId: deal.id,
-              senderId: deal.buyerId, // System message from buyer's perspective
+              senderId: (deal.buyerId || deal.sellerId)!, // System message from buyer's perspective
               message: followUpMessage,
               messageType: 'system'
             }

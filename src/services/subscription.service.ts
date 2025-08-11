@@ -17,6 +17,7 @@ const cashfreeConfig = {
 export interface SubscriptionPlan {
   id: string;
   name: string;
+  type?: string;
   displayName: string;
   description: string;
   price: number;
@@ -263,9 +264,12 @@ export class SubscriptionService {
       const subscription = await prisma.subscription.create({
         data: {
           userId: request.userId,
+          type: plan.type || 'premium',
           planName: plan.name,
           cashfreeSubscriptionId: subscriptionData.cf_subscription_id,
           status: subscriptionData.subscription_status || 'created',
+          startDate: currentPeriodStart,
+          endDate: currentPeriodEnd,
           currentPeriodStart,
           currentPeriodEnd,
         },
@@ -300,8 +304,11 @@ export class SubscriptionService {
     const subscription = await prisma.subscription.create({
       data: {
         userId,
+        type: plan.type || 'free',
         planName: plan.name,
         status: 'active',
+        startDate: currentPeriodStart,
+        endDate: currentPeriodEnd,
         currentPeriodStart,
         currentPeriodEnd,
       },

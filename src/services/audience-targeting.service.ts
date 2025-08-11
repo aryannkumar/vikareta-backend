@@ -252,10 +252,10 @@ export class AudienceTargetingService {
       const campaign = await this.prisma.adCampaign.findUnique({
         where: { id: campaignId },
         include: {
-          ads: {
+          advertisements: {
             include: {
-              impressions: true,
-              clicks: true
+              impressionRecords: true,
+              clickRecords: true
             }
           }
         }
@@ -291,8 +291,8 @@ export class AudienceTargetingService {
       };
 
       // Mock current performance based on campaign data
-      const totalImpressions = (campaign.ads || []).reduce((sum: number, ad: any) => sum + (ad.impressions?.length || 0), 0);
-      const totalClicks = (campaign.ads || []).reduce((sum: number, ad: any) => sum + (ad.clicks?.length || 0), 0);
+      const totalImpressions = (campaign.advertisements || []).reduce((sum: number, ad: any) => sum + (ad.impressionRecords?.length || 0), 0);
+      const totalClicks = (campaign.advertisements || []).reduce((sum: number, ad: any) => sum + (ad.clickRecords?.length || 0), 0);
       
       const currentPerformance = {
         ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) : 0.02, // Default 2% CTR
@@ -605,10 +605,10 @@ export class AudienceTargetingService {
       const campaign = await prisma.adCampaign.findUnique({
         where: { id: campaignId },
         include: {
-          ads: {
+          advertisements: {
             include: {
-              impressions: true,
-              clicks: true
+              impressionRecords: true,
+              clickRecords: true
             }
           }
         }

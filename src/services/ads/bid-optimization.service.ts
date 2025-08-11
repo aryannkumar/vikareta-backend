@@ -844,7 +844,7 @@ export class BidOptimizationService {
       const campaign = await prisma.adCampaign.findUnique({
         where: { id: campaignId },
         include: {
-          ads: true,
+          advertisements: true,
         },
       });
       return campaign;

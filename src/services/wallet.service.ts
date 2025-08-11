@@ -385,6 +385,7 @@ export class WalletService {
           data: {
             walletId: wallet.id,
             amount: request.amount,
+            reason: request.lockReason, // Use lockReason as reason
             lockReason: request.lockReason,
             referenceId: request.referenceId || null,
             lockedUntil: request.lockedUntil || null,

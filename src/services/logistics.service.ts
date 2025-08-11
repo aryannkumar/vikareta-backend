@@ -115,7 +115,7 @@ export class LogisticsService {
         isActive: provider.isActive,
         supportedServices: provider.supportedServices as string[],
         configuration: provider.configuration as Record<string, any>,
-      }));
+      })) as LogisticsProvider[];
     } catch (error) {
       logger.error('Error getting active providers:', error);
       throw new Error('Failed to get logistics providers');
@@ -256,7 +256,7 @@ export class LogisticsService {
       const shipment = await prisma.shipment.findUnique({
         where: { trackingNumber },
         include: {
-          provider: true,
+          logisticsProvider: true,
           order: {
             include: {
               trackingHistory: {
@@ -288,16 +288,16 @@ export class LogisticsService {
         orderBy: { timestamp: 'desc' },
       });
 
-      const trackingInfo: TrackingInfo[] = trackingHistory.map(history => ({
+      const trackingInfo = trackingHistory.map(history => ({
         trackingNumber,
         status: history.status,
         location: history.location ?? undefined,
         timestamp: history.timestamp,
         description: history.description ?? undefined,
-        provider: history.provider ?? shipment.provider.name,
+        provider: history.provider ?? shipment.logisticsProvider?.name ?? shipment.provider,
         estimatedDelivery: shipment.estimatedDelivery ?? undefined,
         actualDelivery: shipment.actualDelivery ?? undefined,
-      }));
+      })) as TrackingInfo[];
 
       return {
         success: true,
@@ -326,12 +326,11 @@ export class LogisticsService {
     deliveryProof?: DeliveryProof
   ): Promise<{ success: boolean; message: string }> {
     try {
-      const shipment = await prisma.shipment.findUnique({
+      const order = await prisma.order.findFirst({
         where: { trackingNumber },
-        include: { provider: true },
       });
 
-      if (!shipment) {
+      if (!order) {
         return {
           success: false,
           message: 'Shipment not found',
@@ -364,7 +363,7 @@ export class LogisticsService {
       }
 
       await prisma.order.update({
-        where: { id: shipment.orderId },
+        where: { id: order.id },
         data: { 
           status: orderStatus,
           actualDelivery: status === 'delivered' ? new Date() : null,
@@ -372,11 +371,11 @@ export class LogisticsService {
       });
 
       // Add tracking history
-      await this.addTrackingHistory(shipment.orderId, {
+      await this.addTrackingHistory(order.id, {
         status,
         location,
         description,
-        provider: shipment.provider.name,
+        provider: 'Logistics Provider',
         timestamp: new Date(),
         providerTrackingId: trackingNumber,
       });
@@ -385,7 +384,7 @@ export class LogisticsService {
         trackingNumber,
         status,
         location,
-        orderId: shipment.orderId,
+        orderId: order.id,
       });
 
       return {
@@ -413,7 +412,6 @@ export class LogisticsService {
     try {
       const shipment = await prisma.shipment.findUnique({
         where: { orderId },
-        include: { provider: true },
       });
 
       if (!shipment) {
@@ -459,7 +457,7 @@ export class LogisticsService {
       await this.addTrackingHistory(orderId, {
         status: 'return_requested',
         description: `Return requested: ${returnReason}`,
-        provider: shipment.provider.name,
+        provider: (shipment.provider as any).name,
         timestamp: new Date(),
       });
 
@@ -489,7 +487,6 @@ export class LogisticsService {
     try {
       const shipment = await prisma.shipment.findUnique({
         where: { trackingNumber },
-        include: { provider: true },
       });
 
       if (!shipment) {
@@ -532,7 +529,7 @@ export class LogisticsService {
       await this.addTrackingHistory(shipment.orderId, {
         status: 'cancelled',
         description: `Shipment cancelled: ${reason}`,
-        provider: shipment.provider.name,
+        provider: (shipment.provider as any).name,
         timestamp: new Date(),
       });
 

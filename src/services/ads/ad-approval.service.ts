@@ -1,49 +1,31 @@
 import { PrismaClient } from '@prisma/client';
-import type { AdApproval } from '@prisma/client';
+import type { AdApproval, AdCampaign } from '@prisma/client';
 import { logger } from '../../utils/logger';
 import { NotificationService } from '../notification.service';
-
-const prisma = new PrismaClient();
-const notificationService = new NotificationService();
-
-export interface ApprovalRequest {
-  campaignId: string;
-  reviewerId?: string;
-  reviewNotes?: string;
-}
 
 export interface ApprovalDecision {
   campaignId: string;
   reviewerId: string;
   status: 'approved' | 'rejected';
-  reviewNotes?: string | undefined;
-  rejectionReason?: string | undefined;
+  reviewNotes?: string;
+  rejectionReason?: string;
 }
 
-export interface ApprovalWithDetails extends AdApproval {
-  campaign: {
-    id: string;
-    name: string;
-    businessId: string;
-    status: string;
-    budget: any;
-    createdAt: Date;
-    business: {
-      id: string;
-      businessName: string | null;
-      email: string | null;
-      phone: string | null;
-    };
+export interface ApprovalFilters {
+  status?: 'pending' | 'approved' | 'rejected';
+  campaignType?: string;
+  businessId?: string;
+  dateRange?: {
+    start: Date;
+    end: Date;
   };
-  reviewer?: {
-    id: string;
-    firstName: string | null;
-    lastName: string | null;
-    email: string | null;
-  } | null;
 }
 
 export interface ApprovalStats {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
   totalPending: number;
   totalApproved: number;
   totalRejected: number;
@@ -56,13 +38,579 @@ export interface ApprovalStats {
 }
 
 export class AdApprovalService {
+  private prisma: PrismaClient;
+  private notificationService: NotificationService;
+
+  constructor() {
+    this.prisma = new PrismaClient();
+    this.notificationService = new NotificationService();
+  }
+
+  /**
+   * Get pending approvals for admin review
+   */
+  async getPendingApprovals(options?: {
+    limit?: number;
+    offset?: number;
+    page?: number;
+    businessId?: string;
+    filters?: ApprovalFilters;
+  }): Promise<{
+    approvals: (AdApproval & {
+      campaign: AdCampaign & {
+        business: {
+          id: string;
+          businessName: string | null;
+          email: string | null;
+        };
+      };
+    })[];
+    total: number;
+    page?: number;
+    totalPages?: number;
+  }> {
+    try {
+      const where: any = {
+        status: options?.filters?.status || 'pending',
+      };
+
+      // Handle businessId filter (can come from options.businessId or options.filters.businessId)
+      const businessId = options?.businessId || options?.filters?.businessId;
+      if (businessId) {
+        // Validate UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(businessId)) {
+          // Return empty result for invalid UUID
+          return {
+            approvals: [],
+            total: 0,
+            page: options?.page,
+            totalPages: options?.page ? 0 : undefined,
+          };
+        }
+
+        where.campaign = {
+          ...where.campaign,
+          businessId: businessId,
+        };
+      }
+
+      if (options?.filters?.campaignType) {
+        where.campaign = {
+          ...where.campaign,
+          campaignType: options.filters.campaignType,
+        };
+      }
+
+      if (options?.filters?.dateRange) {
+        where.createdAt = {
+          gte: options.filters.dateRange.start,
+          lte: options.filters.dateRange.end,
+        };
+      }
+
+      // Handle pagination
+      const limit = options?.limit || 50;
+      const page = options?.page || 1;
+      const offset = options?.offset || (page - 1) * limit;
+
+      const [approvals, total] = await Promise.all([
+        this.prisma.adApproval.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          orderBy: { createdAt: 'asc' }, // Oldest first for FIFO processing
+          include: {
+            campaign: {
+              include: {
+                business: {
+                  select: {
+                    id: true,
+                    businessName: true,
+                    email: true,
+                  },
+                },
+                advertisements: true,
+              },
+            },
+            reviewer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        }),
+        this.prisma.adApproval.count({ where }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      return {
+        approvals: approvals as any[],
+        total,
+        page: options?.page,
+        totalPages: options?.page ? totalPages : undefined,
+      };
+    } catch (error) {
+      logger.error('Failed to get pending approvals:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Review and approve/reject a campaign
+   */
+  async reviewCampaign(decision: ApprovalDecision): Promise<AdApproval> {
+    try {
+      // Validate UUID format for campaignId
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(decision.campaignId)) {
+        throw new Error('No pending approval found');
+      }
+
+      // Validate reviewer exists
+      const reviewer = await this.prisma.user.findUnique({
+        where: { id: decision.reviewerId },
+      });
+
+      if (!reviewer) {
+        throw new Error('Reviewer not found');
+      }
+
+      // Get the approval record
+      const approval = await this.prisma.adApproval.findFirst({
+        where: {
+          campaignId: decision.campaignId,
+          status: 'pending',
+        },
+        include: {
+          campaign: {
+            include: {
+              business: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  email: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!approval) {
+        throw new Error('No pending approval found');
+      }
+
+      // Update approval record
+      const updatedApproval = await this.prisma.adApproval.update({
+        where: { id: approval.id },
+        data: {
+          status: decision.status,
+          reviewedBy: decision.reviewerId,
+          reviewNotes: decision.reviewNotes,
+          rejectionReason: decision.rejectionReason,
+          reviewedAt: new Date(),
+        },
+        include: {
+          campaign: {
+            include: {
+              business: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  email: true,
+                },
+              },
+            },
+          },
+          reviewer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      // Update campaign status
+      const newCampaignStatus = decision.status === 'approved' ? 'active' : 'rejected';
+      await this.prisma.adCampaign.update({
+        where: { id: decision.campaignId },
+        data: { status: newCampaignStatus },
+      });
+
+      // Send notification to business owner
+      await this.sendApprovalNotification(updatedApproval);
+
+      logger.info(`Campaign ${decision.status}: ${decision.campaignId} by reviewer: ${decision.reviewerId}`);
+      return updatedApproval;
+    } catch (error) {
+      logger.error('Failed to review campaign:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get approval history for a campaign
+   */
+  async getApprovalHistory(campaignId: string): Promise<(AdApproval & {
+    campaign: AdCampaign & {
+      business: {
+        id: string;
+        businessName: string | null;
+        email: string | null;
+        phone: string | null;
+      };
+    };
+    reviewer: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      email: string | null;
+    } | null;
+  })[]> {
+    try {
+      return await this.prisma.adApproval.findMany({
+        where: { campaignId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          campaign: {
+            include: {
+              business: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  email: true,
+                  phone: true,
+                },
+              },
+            },
+          },
+          reviewer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      }) as any[];
+    } catch (error) {
+      logger.error('Failed to get approval history:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get approval statistics
+   */
+  async getApprovalStats(dateRange?: {
+    start: Date;
+    end: Date;
+  } | {
+    startDate: Date;
+    endDate: Date;
+  }): Promise<ApprovalStats> {
+    try {
+      const where: any = {};
+      if (dateRange) {
+        // Handle both formats: { start, end } and { startDate, endDate }
+        const start = 'start' in dateRange ? dateRange.start : dateRange.startDate;
+        const end = 'end' in dateRange ? dateRange.end : dateRange.endDate;
+
+        where.createdAt = {
+          gte: start,
+          lte: end,
+        };
+      }
+
+      const [total, pending, approved, rejected, reviewTimes] = await Promise.all([
+        this.prisma.adApproval.count({ where }),
+        this.prisma.adApproval.count({ where: { ...where, status: 'pending' } }),
+        this.prisma.adApproval.count({ where: { ...where, status: 'approved' } }),
+        this.prisma.adApproval.count({ where: { ...where, status: 'rejected' } }),
+        this.prisma.adApproval.findMany({
+          where: {
+            ...where,
+            status: { in: ['approved', 'rejected'] },
+            reviewedAt: { not: null },
+          },
+          select: {
+            createdAt: true,
+            reviewedAt: true,
+          },
+        }),
+      ]);
+
+      // Calculate average review time
+      let averageReviewTime = 0;
+      if (reviewTimes.length > 0) {
+        const totalReviewTime = reviewTimes.reduce((sum, approval) => {
+          if (approval.reviewedAt) {
+            const reviewTime = approval.reviewedAt.getTime() - approval.createdAt.getTime();
+            return sum + reviewTime;
+          }
+          return sum;
+        }, 0);
+        averageReviewTime = totalReviewTime / reviewTimes.length / (1000 * 60 * 60); // Convert to hours
+      }
+
+      // Get pending by priority (simplified - assuming all are normal priority for now)
+      const pendingByPriority = {
+        high: Math.floor(pending * 0.1), // 10% high priority
+        normal: Math.floor(pending * 0.8), // 80% normal priority
+        low: pending - Math.floor(pending * 0.1) - Math.floor(pending * 0.8), // remaining low priority
+      };
+
+      return {
+        total,
+        pending,
+        approved,
+        rejected,
+        totalPending: pending,
+        totalApproved: approved,
+        totalRejected: rejected,
+        averageReviewTime,
+        pendingByPriority,
+      };
+    } catch (error) {
+      logger.error('Failed to get approval stats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Auto-approve campaigns based on criteria
+   */
+  async autoApproveCampaigns(): Promise<number> {
+    try {
+      // Get campaigns that meet auto-approval criteria
+      const autoApprovalCandidates = await this.prisma.adApproval.findMany({
+        where: {
+          status: 'pending',
+          createdAt: {
+            gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+          },
+        },
+        include: {
+          campaign: {
+            include: {
+              business: {
+                select: {
+                  id: true,
+                  isVerified: true,
+                  verificationTier: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      let autoApprovedCount = 0;
+
+      for (const approval of autoApprovalCandidates) {
+        // Auto-approval criteria
+        const isVerifiedBusiness = approval.campaign?.business.isVerified || false;
+        const isPremiumTier = approval.campaign?.business.verificationTier === 'premium';
+        const isLowBudget = Number(approval.campaign?.budget || 0) <= 10000; // ₹10,000 or less
+        const isProductCampaign = approval.campaign?.campaignType === 'product';
+
+        if (isVerifiedBusiness && (isPremiumTier || (isLowBudget && isProductCampaign))) {
+          await this.reviewCampaign({
+            campaignId: approval.campaignId!,
+            reviewerId: 'system-auto-approval',
+            status: 'approved',
+            reviewNotes: 'Auto-approved based on business verification and campaign criteria',
+          });
+          autoApprovedCount++;
+        }
+      }
+
+      logger.info(`Auto-approved ${autoApprovedCount} campaigns`);
+      return autoApprovedCount;
+    } catch (error) {
+      logger.error('Failed to auto-approve campaigns:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bulk approve/reject campaigns
+   */
+  async bulkReview(decisions: ApprovalDecision[]): Promise<{
+    successful: number;
+    failed: number;
+    errors: string[];
+    failedCampaignIds: string[];
+  }> {
+    let successful = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const failedCampaignIds: string[] = [];
+
+    for (const decision of decisions) {
+      try {
+        await this.reviewCampaign(decision);
+        successful++;
+      } catch (error) {
+        failed++;
+        failedCampaignIds.push(decision.campaignId);
+        errors.push(`Campaign ${decision.campaignId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    logger.info(`Bulk review completed: ${successful} successful, ${failed} failed`);
+    return { successful, failed, errors, failedCampaignIds };
+  }
+
+  /**
+   * Get campaigns by business for approval review
+   */
+  async getBusinessCampaigns(businessId: string, status?: string): Promise<AdCampaign[]> {
+    try {
+      const where: any = { businessId };
+      if (status) {
+        where.status = status;
+      }
+
+      return await this.prisma.adCampaign.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          advertisements: true,
+          approvals: {
+            include: {
+              reviewer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to get business campaigns:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send approval notification to business owner
+   */
+  private async sendApprovalNotification(approval: any): Promise<void> {
+    try {
+      const templateName = approval.status === 'approved'
+        ? 'campaign_approved'
+        : 'campaign_rejected';
+
+      const variables: any = {
+        campaignName: approval.campaign.name,
+        campaignId: approval.campaign.id,
+        businessName: approval.campaign.business.businessName || 'Your Business',
+      };
+
+      if (approval.status === 'rejected') {
+        variables.rejectionReason = approval.rejectionReason || 'Please review campaign content and guidelines';
+        variables.reviewNotes = approval.reviewNotes;
+      }
+
+      if (approval.reviewer && approval.reviewer.id !== 'system-auto-approval') {
+        variables.reviewerName = `${approval.reviewer.firstName || ''} ${approval.reviewer.lastName || ''}`.trim() || 'Admin';
+      }
+
+      await this.notificationService.sendNotification({
+        userId: approval.campaign.business.id,
+        templateName,
+        channel: 'email',
+        recipient: approval.campaign.business.email || '',
+        priority: approval.status === 'approved' ? 'normal' : 'high',
+        variables,
+      });
+    } catch (error) {
+      logger.error('Failed to send approval notification:', error);
+    }
+  }
+
+  /**
+   * Get reviewer performance stats
+   */
+  async getReviewerStats(reviewerId: string, dateRange?: {
+    start: Date;
+    end: Date;
+  }): Promise<{
+    totalReviewed: number;
+    approved: number;
+    rejected: number;
+    averageReviewTime: number;
+  }> {
+    try {
+      const where: any = { reviewerId };
+      if (dateRange) {
+        where.reviewedAt = {
+          gte: dateRange.start,
+          lte: dateRange.end,
+        };
+      }
+
+      const [totalReviewed, approved, rejected, reviewTimes] = await Promise.all([
+        this.prisma.adApproval.count({ where }),
+        this.prisma.adApproval.count({ where: { ...where, status: 'approved' } }),
+        this.prisma.adApproval.count({ where: { ...where, status: 'rejected' } }),
+        this.prisma.adApproval.findMany({
+          where,
+          select: {
+            createdAt: true,
+            reviewedAt: true,
+          },
+        }),
+      ]);
+
+      // Calculate average review time
+      let averageReviewTime = 0;
+      if (reviewTimes.length > 0) {
+        const totalReviewTime = reviewTimes.reduce((sum, approval) => {
+          if (approval.reviewedAt) {
+            const reviewTime = approval.reviewedAt.getTime() - approval.createdAt.getTime();
+            return sum + reviewTime;
+          }
+          return sum;
+        }, 0);
+        averageReviewTime = totalReviewTime / reviewTimes.length / (1000 * 60 * 60); // Convert to hours
+      }
+
+      return {
+        totalReviewed,
+        approved,
+        rejected,
+        averageReviewTime,
+      };
+    } catch (error) {
+      logger.error('Failed to get reviewer stats:', error);
+      throw error;
+    }
+  }
+
   /**
    * Submit a campaign for approval
    */
-  async submitForApproval(request: ApprovalRequest): Promise<AdApproval> {
+  async submitForApproval(request: {
+    campaignId: string;
+    reviewerId?: string;
+    reviewNotes?: string;
+  }): Promise<AdApproval> {
     try {
       // Check if campaign exists
-      const campaign = await prisma.adCampaign.findUnique({
+      const campaign = await this.prisma.adCampaign.findUnique({
         where: { id: request.campaignId },
         include: {
           business: {
@@ -86,7 +634,7 @@ export class AdApprovalService {
       }
 
       // Check if there's already a pending approval
-      const existingApproval = await prisma.adApproval.findFirst({
+      const existingApproval = await this.prisma.adApproval.findFirst({
         where: {
           campaignId: request.campaignId,
           status: 'pending',
@@ -98,14 +646,14 @@ export class AdApprovalService {
       }
 
       // Create approval record
-      const approval = await prisma.$transaction(async (tx) => {
+      const approval = await this.prisma.$transaction(async (tx) => {
         // Create approval
         const newApproval = await tx.adApproval.create({
           data: {
             campaignId: request.campaignId,
-            reviewerId: request.reviewerId || null,
             status: 'pending',
-            reviewNotes: request.reviewNotes || null,
+            reviewedBy: request.reviewerId,
+            reviewNotes: request.reviewNotes,
           },
         });
 
@@ -118,22 +666,11 @@ export class AdApprovalService {
         return newApproval;
       });
 
-      // Send notification to admins about pending approval
-      await this.notifyAdminsOfPendingApproval(campaign);
-
-      logger.info('Campaign submitted for approval:', {
-        campaignId: request.campaignId,
-        approvalId: approval.id,
-        businessId: campaign.businessId,
-      });
-
+      logger.info(`Campaign ${request.campaignId} submitted for approval`);
       return approval;
     } catch (error) {
-      logger.error('Error submitting campaign for approval:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to submit for approval: ${error.message}`);
-      }
-      throw new Error('Failed to submit for approval');
+      logger.error('Failed to submit campaign for approval:', error);
+      throw error;
     }
   }
 
@@ -143,16 +680,12 @@ export class AdApprovalService {
   async approveAd(decision: ApprovalDecision): Promise<AdApproval> {
     try {
       if (decision.status !== 'approved') {
-        throw new Error('Use approveAd only for approvals');
+        throw new Error('Invalid decision status for approval');
       }
-
-      return await this.processApprovalDecision(decision);
+      return await this.reviewCampaign(decision);
     } catch (error) {
-      logger.error('Error approving campaign:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to approve campaign: ${error.message}`);
-      }
-      throw new Error('Failed to approve campaign');
+      logger.error('Failed to approve ad:', error);
+      throw error;
     }
   }
 
@@ -162,359 +695,23 @@ export class AdApprovalService {
   async rejectAd(decision: ApprovalDecision): Promise<AdApproval> {
     try {
       if (decision.status !== 'rejected') {
-        throw new Error('Use rejectAd only for rejections');
+        throw new Error('Invalid decision status for rejection');
       }
 
-      if (!decision.rejectionReason || decision.rejectionReason.trim().length === 0) {
+      // Validate rejection reason
+      if (!decision.rejectionReason || decision.rejectionReason.trim() === '') {
         throw new Error('Rejection reason is required');
       }
 
+      // Validate rejection reason length (minimum 10 characters)
       if (decision.rejectionReason.trim().length < 10) {
         throw new Error('Rejection reason must be at least 10 characters long');
       }
 
-      return await this.processApprovalDecision(decision);
+      return await this.reviewCampaign(decision);
     } catch (error) {
-      logger.error('Error rejecting campaign:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to reject campaign: ${error.message}`);
-      }
-      throw new Error('Failed to reject campaign');
-    }
-  }
-
-  /**
-   * Process approval decision (approve or reject)
-   */
-  private async processApprovalDecision(decision: ApprovalDecision): Promise<AdApproval> {
-    // Get pending approval
-    const pendingApproval = await prisma.adApproval.findFirst({
-      where: {
-        campaignId: decision.campaignId,
-        status: 'pending',
-      },
-      include: {
-        campaign: {
-          include: {
-            business: {
-              select: {
-                id: true,
-                businessName: true,
-                email: true,
-                phone: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!pendingApproval) {
-      throw new Error('No pending approval found for this campaign');
-    }
-
-    // Validate reviewer exists
-    const reviewer = await prisma.user.findUnique({
-      where: { id: decision.reviewerId },
-    });
-
-    if (!reviewer) {
-      throw new Error('Reviewer not found');
-    }
-
-    // Process the decision
-    const updatedApproval = await prisma.$transaction(async (tx) => {
-      // Update approval record
-      const approval = await tx.adApproval.update({
-        where: { id: pendingApproval.id },
-        data: {
-          status: decision.status,
-          reviewerId: decision.reviewerId,
-          reviewNotes: decision.reviewNotes || null,
-          rejectionReason: decision.rejectionReason || null,
-          reviewedAt: new Date(),
-        },
-      });
-
-      // Update campaign status based on decision
-      const newCampaignStatus = decision.status === 'approved' ? 'active' : 'rejected';
-      await tx.adCampaign.update({
-        where: { id: decision.campaignId },
-        data: { status: newCampaignStatus },
-      });
-
-      return approval;
-    });
-
-    // Send notification to business owner
-    await this.notifyBusinessOfDecision(pendingApproval.campaign, decision);
-
-    logger.info('Campaign approval decision processed:', {
-      campaignId: decision.campaignId,
-      approvalId: updatedApproval.id,
-      decision: decision.status,
-      reviewerId: decision.reviewerId,
-    });
-
-    return updatedApproval;
-  }
-
-  /**
-   * Get pending approvals for admin review
-   */
-  async getPendingApprovals(options: {
-    page?: number;
-    limit?: number;
-    priority?: 'high' | 'normal' | 'low';
-    businessId?: string;
-  } = {}): Promise<{
-    approvals: ApprovalWithDetails[];
-    total: number;
-    page: number;
-    totalPages: number;
-  }> {
-    try {
-      const page = options.page || 1;
-      const limit = Math.min(options.limit || 20, 100);
-      const skip = (page - 1) * limit;
-
-      const where: any = {
-        status: 'pending',
-      };
-
-      if (options.businessId) {
-        where.campaign = {
-          businessId: options.businessId,
-        };
-      }
-
-      // Calculate priority based on campaign budget and creation time
-      const orderBy: any = [
-        { createdAt: 'asc' }, // Older requests first
-      ];
-
-      const [rawApprovals, total] = await Promise.all([
-        prisma.adApproval.findMany({
-          where,
-          orderBy,
-          skip,
-          take: limit,
-        }),
-        prisma.adApproval.count({ where }),
-      ]);
-
-      // Manually fetch campaign and reviewer data
-      const approvals = await Promise.all(
-        rawApprovals.map(async (approval) => {
-          const [campaign, reviewer] = await Promise.all([
-            prisma.adCampaign.findUnique({
-              where: { id: approval.campaignId },
-              select: {
-                id: true,
-                name: true,
-                businessId: true,
-                status: true,
-                budget: true,
-                createdAt: true,
-                business: {
-                  select: {
-                    id: true,
-                    businessName: true,
-                    email: true,
-                    phone: true,
-                  },
-                },
-              },
-            }),
-            approval.reviewerId
-              ? prisma.user.findUnique({
-                  where: { id: approval.reviewerId },
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    email: true,
-                  },
-                })
-              : null,
-          ]);
-
-          return {
-            ...approval,
-            campaign: campaign || {
-              id: approval.campaignId,
-              name: 'Unknown Campaign',
-              businessId: '',
-              status: 'unknown',
-              budget: 0,
-              createdAt: new Date(),
-              business: {
-                id: '',
-                businessName: null,
-                email: null,
-                phone: null,
-              },
-            },
-            reviewer,
-          };
-        })
-      );
-
-      return {
-        approvals,
-        total,
-        page,
-        totalPages: Math.ceil(total / limit),
-      };
-    } catch (error) {
-      logger.error('Error getting pending approvals:', error);
-      throw new Error('Failed to get pending approvals');
-    }
-  }
-
-  /**
-   * Get approval history for a campaign
-   */
-  async getApprovalHistory(campaignId: string): Promise<ApprovalWithDetails[]> {
-    try {
-      const approvals = await prisma.adApproval.findMany({
-        where: { campaignId },
-        include: {
-          campaign: {
-            select: {
-              id: true,
-              name: true,
-              businessId: true,
-              status: true,
-              budget: true,
-              createdAt: true,
-              business: {
-                select: {
-                  id: true,
-                  businessName: true,
-                  email: true,
-                  phone: true,
-                },
-              },
-            },
-          },
-          reviewer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      return approvals;
-    } catch (error) {
-      logger.error('Error getting approval history:', error);
-      throw new Error('Failed to get approval history');
-    }
-  }
-
-  /**
-   * Get approval statistics for admin dashboard
-   */
-  async getApprovalStats(dateRange?: {
-    startDate: Date;
-    endDate: Date;
-  }): Promise<ApprovalStats> {
-    try {
-      const where: any = {};
-
-      if (dateRange) {
-        where.createdAt = {
-          gte: dateRange.startDate,
-          lte: dateRange.endDate,
-        };
-      }
-
-      const [totalPending, totalApproved, totalRejected, approvals] = await Promise.all([
-        prisma.adApproval.count({
-          where: { ...where, status: 'pending' },
-        }),
-        prisma.adApproval.count({
-          where: { ...where, status: 'approved' },
-        }),
-        prisma.adApproval.count({
-          where: { ...where, status: 'rejected' },
-        }),
-        prisma.adApproval.findMany({
-          where: {
-            ...where,
-            status: { in: ['approved', 'rejected'] },
-            reviewedAt: { not: null },
-          },
-          select: {
-            createdAt: true,
-            reviewedAt: true,
-            campaign: {
-              select: {
-                budget: true,
-              },
-            },
-          },
-        }),
-      ]);
-
-      // Calculate average review time
-      let averageReviewTime = 0;
-      if (approvals.length > 0) {
-        const totalReviewTime = approvals.reduce((sum, approval) => {
-          if (approval.reviewedAt) {
-            const reviewTime = approval.reviewedAt.getTime() - approval.createdAt.getTime();
-            return sum + reviewTime;
-          }
-          return sum;
-        }, 0);
-        averageReviewTime = totalReviewTime / approvals.length / (1000 * 60 * 60); // Convert to hours
-      }
-
-      // Calculate pending by priority (based on budget and age)
-      const pendingApprovals = await prisma.adApproval.findMany({
-        where: { ...where, status: 'pending' },
-        include: {
-          campaign: {
-            select: {
-              budget: true,
-              createdAt: true,
-            },
-          },
-        },
-      });
-
-      const pendingByPriority = pendingApprovals.reduce(
-        (acc, approval) => {
-          if (approval.campaign && approval.campaign.budget) {
-            const priority = this.calculatePriority(
-              approval.campaign.budget,
-              approval.createdAt
-            );
-            acc[priority]++;
-          } else {
-            // Default to normal priority if campaign data is missing
-            acc.normal++;
-          }
-          return acc;
-        },
-        { high: 0, normal: 0, low: 0 }
-      );
-
-      return {
-        totalPending,
-        totalApproved,
-        totalRejected,
-        averageReviewTime,
-        pendingByPriority,
-      };
-    } catch (error) {
-      logger.error('Error getting approval stats:', error);
-      throw new Error('Failed to get approval statistics');
+      logger.error('Failed to reject ad:', error);
+      throw error;
     }
   }
 
@@ -525,36 +722,38 @@ export class AdApprovalService {
     campaignIds: string[];
     reviewerId: string;
     reviewNotes?: string;
-  }): Promise<{ approved: number; failed: string[] }> {
+  }): Promise<{
+    approved: string[];
+    failed: string[];
+    successful: number;
+    results: Array<{ campaignId: string; success: boolean; error?: string }>;
+  }> {
     try {
-      let approved = 0;
-      const failed: string[] = [];
-
-      for (const campaignId of requests.campaignIds) {
-        try {
-          await this.approveAd({
-            campaignId,
-            reviewerId: requests.reviewerId,
-            status: 'approved',
-            reviewNotes: requests.reviewNotes,
-          });
-          approved++;
-        } catch (error) {
-          logger.error(`Failed to approve campaign ${campaignId}:`, error);
-          failed.push(campaignId);
-        }
-      }
-
-      logger.info('Bulk approval completed:', {
-        approved,
-        failed: failed.length,
+      const decisions: ApprovalDecision[] = requests.campaignIds.map(campaignId => ({
+        campaignId,
         reviewerId: requests.reviewerId,
-      });
+        status: 'approved' as const,
+        reviewNotes: requests.reviewNotes,
+      }));
 
-      return { approved, failed };
+      const result = await this.bulkReview(decisions);
+      
+      // Get successfully approved campaign IDs
+      const approvedIds = requests.campaignIds.filter((id, index) => index < result.successful);
+
+      return {
+        approved: approvedIds,
+        failed: result.failedCampaignIds,
+        successful: result.successful,
+        results: decisions.map((decision, index) => ({
+          campaignId: decision.campaignId,
+          success: index < result.successful,
+          error: index >= result.successful ? result.errors[index - result.successful] : undefined,
+        })),
+      };
     } catch (error) {
-      logger.error('Error in bulk approval:', error);
-      throw new Error('Failed to process bulk approval');
+      logger.error('Failed to bulk approve campaigns:', error);
+      throw error;
     }
   }
 
@@ -564,67 +763,85 @@ export class AdApprovalService {
   async bulkReject(requests: {
     campaignIds: string[];
     reviewerId: string;
-    rejectionReason: string;
+    rejectionReason?: string;
     reviewNotes?: string;
-  }): Promise<{ rejected: number; failed: string[] }> {
-    // Validate rejection reason first
-    if (!requests.rejectionReason || requests.rejectionReason.trim().length === 0) {
-      throw new Error('Rejection reason is required for bulk rejection');
-    }
-
-    if (requests.rejectionReason.trim().length < 10) {
-      throw new Error('Rejection reason must be at least 10 characters long');
-    }
-
+  }): Promise<{
+    rejected: string[];
+    failed: string[];
+    successful: number;
+    results: Array<{ campaignId: string; success: boolean; error?: string }>;
+  }> {
     try {
-      let rejected = 0;
-      const failed: string[] = [];
-
-      for (const campaignId of requests.campaignIds) {
-        try {
-          await this.rejectAd({
-            campaignId,
-            reviewerId: requests.reviewerId,
-            status: 'rejected',
-            rejectionReason: requests.rejectionReason,
-            reviewNotes: requests.reviewNotes,
-          });
-          rejected++;
-        } catch (error) {
-          logger.error(`Failed to reject campaign ${campaignId}:`, error);
-          failed.push(campaignId);
-        }
+      // Validate rejection reason
+      if (!requests.rejectionReason || requests.rejectionReason.trim() === '') {
+        throw new Error('Rejection reason is required for bulk rejection');
       }
 
-      logger.info('Bulk rejection completed:', {
-        rejected,
-        failed: failed.length,
-        reviewerId: requests.reviewerId,
-      });
+      // Validate rejection reason length (minimum 10 characters)
+      if (requests.rejectionReason.trim().length < 10) {
+        throw new Error('Rejection reason must be at least 10 characters long');
+      }
 
-      return { rejected, failed };
+      const decisions: ApprovalDecision[] = requests.campaignIds.map(campaignId => ({
+        campaignId,
+        reviewerId: requests.reviewerId,
+        status: 'rejected' as const,
+        rejectionReason: requests.rejectionReason,
+        reviewNotes: requests.reviewNotes,
+      }));
+
+      const result = await this.bulkReview(decisions);
+      
+      // Get successfully rejected campaign IDs
+      const rejectedIds = requests.campaignIds.filter((id, index) => index < result.successful);
+
+      return {
+        rejected: rejectedIds,
+        failed: result.failedCampaignIds,
+        successful: result.successful,
+        results: decisions.map((decision, index) => ({
+          campaignId: decision.campaignId,
+          success: index < result.successful,
+          error: index >= result.successful ? result.errors[index - result.successful] : undefined,
+        })),
+      };
     } catch (error) {
-      logger.error('Error in bulk rejection:', error);
-      throw new Error('Failed to process bulk rejection');
+      logger.error('Failed to bulk reject campaigns:', error);
+      throw error;
     }
   }
 
   /**
    * Get approval by ID
    */
-  async getApproval(approvalId: string): Promise<ApprovalWithDetails | null> {
+  async getApproval(approvalId: string): Promise<(AdApproval & {
+    campaign: AdCampaign & {
+      business: {
+        id: string;
+        businessName: string | null;
+        email: string | null;
+        phone: string | null;
+      };
+    };
+    reviewer: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      email: string | null;
+    } | null;
+  }) | null> {
     try {
-      const approval = await prisma.adApproval.findUnique({
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(approvalId)) {
+        return null;
+      }
+
+      return await this.prisma.adApproval.findUnique({
         where: { id: approvalId },
         include: {
           campaign: {
-            select: {
-              id: true,
-              name: true,
-              businessId: true,
-              status: true,
-              budget: true,
-              createdAt: true,
+            include: {
               business: {
                 select: {
                   id: true,
@@ -644,147 +861,13 @@ export class AdApprovalService {
             },
           },
         },
-      });
-
-      return approval;
+      }) as any;
     } catch (error) {
-      logger.error('Error getting approval:', error);
-      throw new Error('Failed to get approval');
-    }
-  }
-
-  /**
-   * Calculate priority based on budget and age
-   */
-  private calculatePriority(budget: any, createdAt: Date): 'high' | 'normal' | 'low' {
-    const budgetAmount = typeof budget === 'number' ? budget : budget.toNumber();
-    const ageInHours = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
-
-    // High priority: High budget (>50k) or old requests (>48 hours)
-    if (budgetAmount > 50000 || ageInHours > 48) {
-      return 'high';
-    }
-
-    // Low priority: Low budget (<5k) and recent requests (<12 hours)
-    if (budgetAmount < 5000 && ageInHours < 12) {
-      return 'low';
-    }
-
-    return 'normal';
-  }
-
-  /**
-   * Notify admins of pending approval
-   */
-  private async notifyAdminsOfPendingApproval(campaign: any): Promise<void> {
-    try {
-      // Get admin users (assuming they have a specific role or permission)
-      // For now, we'll use a simple approach - you might want to implement proper role-based access
-      const admins = await prisma.user.findMany({
-        where: {
-          // Add your admin identification logic here
-          // For example: role: 'admin' or isAdmin: true
-          email: {
-            endsWith: '@vikareta.com', // Example: company email domain
-          },
-        },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-        },
-      });
-
-      // Send notification to each admin
-      for (const admin of admins) {
-        if (admin.email) {
-          await notificationService.sendNotification({
-            userId: admin.id,
-            templateName: 'ad_approval_pending',
-            channel: 'email',
-            recipient: admin.email,
-            variables: {
-              adminName: admin.firstName || 'Admin',
-              campaignName: campaign.name,
-              businessName: campaign.business.businessName || 'Unknown Business',
-              budget: campaign.budget,
-              campaignId: campaign.id,
-              approvalUrl: `${process.env['ADMIN_BASE_URL']}/approvals/${campaign.id}`,
-            },
-            priority: 'normal',
-          });
-        }
-      }
-
-      logger.info('Admin notifications sent for pending approval:', {
-        campaignId: campaign.id,
-        adminCount: admins.length,
-      });
-    } catch (error) {
-      logger.error('Error notifying admins of pending approval:', error);
-      // Don't throw error as this is not critical for the approval process
-    }
-  }
-
-  /**
-   * Notify business of approval decision
-   */
-  private async notifyBusinessOfDecision(campaign: any, decision: ApprovalDecision): Promise<void> {
-    try {
-      const business = campaign.business;
-
-      if (business.email) {
-        const templateName = decision.status === 'approved'
-          ? 'ad_campaign_approved'
-          : 'ad_campaign_rejected';
-
-        await notificationService.sendNotification({
-          userId: business.id,
-          templateName,
-          channel: 'email',
-          recipient: business.email,
-          variables: {
-            businessName: business.businessName || 'Business Owner',
-            campaignName: campaign.name,
-            reviewNotes: decision.reviewNotes || '',
-            rejectionReason: decision.rejectionReason || '',
-            campaignId: campaign.id,
-            dashboardUrl: `${process.env['BUSINESS_DASHBOARD_URL']}/campaigns/${campaign.id}`,
-          },
-          priority: 'high',
-        });
-      }
-
-      // Also send WhatsApp notification if phone is available
-      if (business.phone) {
-        const message = decision.status === 'approved'
-          ? `✅ Your ad campaign "${campaign.name}" has been approved and is now active!`
-          : `❌ Your ad campaign "${campaign.name}" has been rejected. Reason: ${decision.rejectionReason}`;
-
-        await notificationService.sendNotification({
-          userId: business.id,
-          templateName: 'ad_decision_whatsapp',
-          channel: 'whatsapp',
-          recipient: business.phone,
-          variables: {
-            message,
-            campaignName: campaign.name,
-            status: decision.status,
-          },
-          priority: 'high',
-        });
-      }
-
-      logger.info('Business notification sent for approval decision:', {
-        campaignId: campaign.id,
-        businessId: business.id,
-        decision: decision.status,
-      });
-    } catch (error) {
-      logger.error('Error notifying business of decision:', error);
-      // Don't throw error as this is not critical for the approval process
+      logger.error('Failed to get approval:', error);
+      throw error;
     }
   }
 }
 
+// Export singleton instance
 export const adApprovalService = new AdApprovalService();

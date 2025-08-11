@@ -53,7 +53,7 @@ export class AdBudgetManagerService {
       // Check if campaign exists
       const campaign = await prisma.adCampaign.findUnique({
         where: { id: request.campaignId },
-        include: { lockedAmount: true },
+        include: { lockedAmounts: true },
       });
 
       if (!campaign) {
@@ -65,7 +65,8 @@ export class AdBudgetManagerService {
       }
 
       // Check if budget is already locked for this campaign
-      if (campaign.lockedAmount && campaign.lockedAmount.status === 'active') {
+      const activeLock = campaign.lockedAmounts.find(lock => lock.status === 'active');
+      if (activeLock) {
         throw new Error('Budget is already locked for this campaign');
       }
 
@@ -83,11 +84,7 @@ export class AdBudgetManagerService {
         referenceId: request.campaignId,
       });
 
-      // Update campaign with locked amount reference
-      await prisma.adCampaign.update({
-        where: { id: request.campaignId },
-        data: { lockedAmountId: lockedAmount.id },
-      });
+      // The relation is automatically established through the referenceId in LockedAmount
 
       logger.info('Budget locked successfully:', {
         campaignId: request.campaignId,
@@ -123,14 +120,15 @@ export class AdBudgetManagerService {
       // Get campaign with locked amount
       const campaign = await prisma.adCampaign.findUnique({
         where: { id: request.campaignId },
-        include: { lockedAmount: true },
+        include: { lockedAmounts: true },
       });
 
       if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      if (!campaign.lockedAmount || campaign.lockedAmount.status !== 'active') {
+      const activeLock = campaign.lockedAmounts.find(lock => lock.status === 'active');
+      if (!activeLock) {
         throw new Error('No active budget lock found for this campaign');
       }
 
@@ -163,7 +161,7 @@ export class AdBudgetManagerService {
 
       // Deduct from wallet by processing a debit transaction
       const wallet = await prisma.wallet.findUnique({
-        where: { id: campaign.lockedAmount.walletId },
+        where: { id: activeLock.walletId },
       });
 
       if (!wallet) {
@@ -225,7 +223,7 @@ export class AdBudgetManagerService {
     try {
       const campaign = await prisma.adCampaign.findUnique({
         where: { id: campaignId },
-        include: { lockedAmount: true },
+        include: { lockedAmounts: true },
       });
 
       if (!campaign) {
@@ -249,7 +247,7 @@ export class AdBudgetManagerService {
         dailySpent,
         dailyRemaining,
         isExhausted,
-        lockedAmountId: campaign.lockedAmount?.id || null,
+        lockedAmountId: campaign.lockedAmounts.find(lock => lock.status === 'active')?.id || null,
       };
     } catch (error) {
       logger.error('Error checking budget status:', error);
@@ -267,32 +265,29 @@ export class AdBudgetManagerService {
     try {
       const campaign = await prisma.adCampaign.findUnique({
         where: { id: campaignId },
-        include: { lockedAmount: true },
+        include: { lockedAmounts: true },
       });
 
       if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      if (!campaign.lockedAmount) {
-        throw new Error('No locked amount found for this campaign');
+      const activeLock = campaign.lockedAmounts.find(lock => lock.status === 'active');
+      if (!activeLock) {
+        throw new Error('No active locked amount found for this campaign');
       }
 
       // Release the locked amount
       await this.walletService.releaseLock(
-        campaign.lockedAmount.id,
+        activeLock.id,
         `Campaign ${campaign.name} completed/cancelled`
       );
 
-      // Update campaign to remove locked amount reference
-      await prisma.adCampaign.update({
-        where: { id: campaignId },
-        data: { lockedAmountId: null },
-      });
+      // The relation is automatically updated when the lock is released
 
       logger.info('Budget released successfully:', {
         campaignId,
-        lockedAmountId: campaign.lockedAmount.id,
+        lockedAmountId: activeLock.id,
       });
     } catch (error) {
       logger.error('Error releasing budget:', error);
@@ -348,12 +343,12 @@ export class AdBudgetManagerService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const result = await prisma.adImpression.aggregate({
+    const result = await prisma.impressionRecord.aggregate({
       where: {
         advertisement: {
           campaignId,
         },
-        createdAt: {
+        viewedAt: {
           gte: today,
           lt: tomorrow,
         },
@@ -365,12 +360,12 @@ export class AdBudgetManagerService {
 
     const impressionCost = result._sum.cost?.toNumber() || 0;
 
-    const clickResult = await prisma.adClick.aggregate({
+    const clickResult = await prisma.clickRecord.aggregate({
       where: {
         advertisement: {
           campaignId,
         },
-        createdAt: {
+        clickedAt: {
           gte: today,
           lt: tomorrow,
         },
@@ -380,7 +375,7 @@ export class AdBudgetManagerService {
       },
     });
 
-    const clickCost = clickResult._sum.cost?.toNumber() || 0;
+    const clickCost = clickResult._sum?.cost?.toNumber() || 0;
 
     return impressionCost + clickCost;
   }

@@ -708,18 +708,18 @@ export class AudienceTargetingService {
           orderBy: { date: 'desc' },
           take: 30, // Last 30 days
         },
-        ads: {
+        advertisements: {
           include: {
-            impressions: {
+            impressionRecords: {
               where: {
-                createdAt: {
+                viewedAt: {
                   gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
                 },
               },
             },
-            clicks: {
+            clickRecords: {
               where: {
-                createdAt: {
+                clickedAt: {
                   gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
                 },
               },

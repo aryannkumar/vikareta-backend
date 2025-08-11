@@ -468,12 +468,12 @@ export class AdNotificationService {
   }
 
   private async getDailySpent(campaignId: string, start: Date, end: Date): Promise<number> {
-    const result = await this.prisma.adImpression.aggregate({
+    const result = await this.prisma.impressionRecord.aggregate({
       where: {
         advertisement: {
           campaignId,
         },
-        createdAt: {
+        viewedAt: {
           gte: start,
           lt: end,
         },
@@ -483,7 +483,7 @@ export class AdNotificationService {
       },
     });
 
-    return Number(result._sum.cost) || 0;
+    return Number(result._sum?.cost) || 0;
   }
 
   private async getCampaignAnalytics(campaignId: string): Promise<{

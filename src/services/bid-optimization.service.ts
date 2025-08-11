@@ -115,15 +115,15 @@ export class BidOptimizationService {
             const campaign = await this.prisma.adCampaign.findUnique({
                 where: { id: campaignId },
                 include: {
-                    ads: {
+                    advertisements: {
                         include: {
-                            impressions: {
+                            impressionRecords: {
                                 take: 100,
-                                orderBy: { createdAt: 'desc' }
+                                orderBy: { viewedAt: 'desc' }
                             },
-                            clicks: {
+                            clickRecords: {
                                 take: 100,
-                                orderBy: { createdAt: 'desc' }
+                                orderBy: { clickedAt: 'desc' }
                             }
                         }
                     }
@@ -138,7 +138,7 @@ export class BidOptimizationService {
             const reasoning: string[] = [];
 
             // Analyze each advertisement
-            for (const ad of campaign.ads || []) {
+            for (const ad of (campaign as any).advertisements || []) {
                 const impressionCount = ad.impressions.length;
                 const clickCount = ad.clicks.length;
                 const ctr = impressionCount > 0 ? (clickCount / impressionCount) * 100 : 0;
@@ -184,8 +184,8 @@ export class BidOptimizationService {
             }
 
             // Calculate confidence based on data volume
-            const totalImpressions = (campaign.ads || []).reduce((sum: number, ad: any) => sum + (ad.impressions?.length || 0), 0);
-            const totalClicks = (campaign.ads || []).reduce((sum: number, ad: any) => sum + (ad.clicks?.length || 0), 0);
+            const totalImpressions = ((campaign as any).advertisements || []).reduce((sum: number, ad: any) => sum + (ad.impressionRecords?.length || 0), 0);
+            const totalClicks = ((campaign as any).advertisements || []).reduce((sum: number, ad: any) => sum + (ad.clickRecords?.length || 0), 0);
             const confidence = Math.min(totalImpressions / 1000, 1) * 100;
 
             // Add required properties for test compatibility
@@ -257,10 +257,10 @@ export class BidOptimizationService {
             const campaign = await this.prisma.adCampaign.findUnique({
                 where: { id: campaignId },
                 include: {
-                    ads: {
+                    advertisements: {
                         include: {
-                            impressions: true,
-                            clicks: true
+                            impressionRecords: true,
+                            clickRecords: true
                         }
                     }
                 }
@@ -271,8 +271,8 @@ export class BidOptimizationService {
             }
 
             // Calculate current performance metrics
-            const totalImpressions = (campaign.ads || []).reduce((sum: number, ad: any) => sum + (ad.impressions?.length || 0), 0);
-            const totalClicks = (campaign.ads || []).reduce((sum: number, ad: any) => sum + (ad.clicks?.length || 0), 0);
+            const totalImpressions = ((campaign as any).advertisements || []).reduce((sum: number, ad: any) => sum + (ad.impressionRecords?.length || 0), 0);
+            const totalClicks = ((campaign as any).advertisements || []).reduce((sum: number, ad: any) => sum + (ad.clickRecords?.length || 0), 0);
             const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
             const cpc = totalClicks > 0 ? Number(campaign.spentAmount) / totalClicks : 0;
 
@@ -518,7 +518,7 @@ export class BidOptimizationService {
             const campaign = await this.prisma.adCampaign.findUnique({
                 where: { id: campaignId },
                 include: {
-                    ads: true
+                    advertisements: true
                 }
             });
 
@@ -526,7 +526,7 @@ export class BidOptimizationService {
                 throw new Error('Campaign not found');
             }
 
-            const optimizedBids = (campaign.ads || []).map((ad: any) => ({
+            const optimizedBids = ((campaign as any).advertisements || []).map((ad: any) => ({
                 adId: ad.id,
                 currentBid: Number(campaign.bidAmount),
                 optimizedBid: Number(campaign.bidAmount) * (0.9 + Math.random() * 0.2), // Random optimization

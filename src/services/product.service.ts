@@ -21,6 +21,7 @@ export interface CreateProductData {
 export interface CreateProductVariantData {
   name: string;
   value: string;
+  price?: number;
   priceAdjustment?: number;
   stockQuantity?: number;
 }
@@ -144,6 +145,7 @@ export class ProductService {
               productId: newProduct.id,
               name: variant.name,
               value: variant.value,
+              price: variant.price || newProduct.price,
               priceAdjustment: variant.priceAdjustment || 0,
               stockQuantity: variant.stockQuantity || 0,
             })),
@@ -438,6 +440,7 @@ export class ProductService {
           productId,
           name: variantData.name,
           value: variantData.value,
+          price: variantData.price || 0,
           priceAdjustment: variantData.priceAdjustment || 0,
           stockQuantity: variantData.stockQuantity || 0,
         },
