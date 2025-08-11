@@ -148,19 +148,19 @@ export const config = {
     google: {
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
-      callbackUrl: `http://localhost:${env.PORT}/api/auth/google/callback`,
+      callbackUrl: `http://localhost:${env.PORT}/auth/google/callback`,
     },
     
     linkedin: {
       clientId: env.LINKEDIN_CLIENT_ID,
       clientSecret: env.LINKEDIN_CLIENT_SECRET,
-      callbackUrl: `http://localhost:${env.PORT}/api/auth/linkedin/callback`,
+      callbackUrl: `http://localhost:${env.PORT}/auth/linkedin/callback`,
     },
 
     digilocker: {
       clientId: env.DIGILOCKER_CLIENT_ID,
       clientSecret: env.DIGILOCKER_CLIENT_SECRET,
-      callbackUrl: `http://localhost:${env.PORT}/api/auth/digilocker/callback`,
+      callbackUrl: `http://localhost:${env.PORT}/auth/digilocker/callback`,
     },
   },
   

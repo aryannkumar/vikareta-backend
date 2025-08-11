@@ -12,47 +12,63 @@ export interface HttpsConfig {
 
 /**
  * Load SSL certificates for HTTPS
+ * Note: In Kubernetes with Cloudflare Origin SSL, SSL termination is handled by NGINX ingress
+ * The application runs in HTTP mode behind the ingress controller
  */
 export const loadSSLCertificates = (): HttpsConfig | null => {
-  try {
-    const certDir = process.env['SSL_CERT_DIR'] || '/etc/ssl/certs/vikareta';
-    
-    const keyPath = path.join(certDir, 'private.key');
-    const certPath = path.join(certDir, 'certificate.crt');
-    const caPath = path.join(certDir, 'ca_bundle.crt');
-    
-    // Check if certificate files exist
-    if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
-      logger.warn('SSL certificates not found, running in HTTP mode');
-      return null;
-    }
-    
-    const httpsConfig: HttpsConfig = {
-      key: fs.readFileSync(keyPath, 'utf8'),
-      cert: fs.readFileSync(certPath, 'utf8'),
-    };
-    
-    // Add CA bundle if available
-    if (fs.existsSync(caPath)) {
-      httpsConfig.ca = fs.readFileSync(caPath, 'utf8');
-    }
-    
-    logger.info('SSL certificates loaded successfully');
-    return httpsConfig;
-    
-  } catch (error) {
-    logger.error('Failed to load SSL certificates:', error);
+  // In production with Kubernetes, SSL is handled by ingress controller
+  if (config.env === 'production') {
+    logger.info('Production mode: SSL termination handled by ingress controller');
     return null;
   }
+
+  // Only attempt to load certificates in development if explicitly configured
+  if (process.env.ENABLE_HTTPS_SERVER === 'true') {
+    try {
+      const certDir = process.env['SSL_CERT_DIR'] || '/etc/ssl/certs/vikareta';
+      
+      const keyPath = path.join(certDir, 'private.key');
+      const certPath = path.join(certDir, 'certificate.crt');
+      const caPath = path.join(certDir, 'ca_bundle.crt');
+      
+      // Check if certificate files exist
+      if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
+        logger.warn('SSL certificates not found, running in HTTP mode');
+        return null;
+      }
+      
+      const httpsConfig: HttpsConfig = {
+        key: fs.readFileSync(keyPath, 'utf8'),
+        cert: fs.readFileSync(certPath, 'utf8'),
+      };
+      
+      // Add CA bundle if available
+      if (fs.existsSync(caPath)) {
+        httpsConfig.ca = fs.readFileSync(caPath, 'utf8');
+      }
+      
+      logger.info('SSL certificates loaded successfully');
+      return httpsConfig;
+      
+    } catch (error) {
+      logger.error('Failed to load SSL certificates:', error);
+      return null;
+    }
+  }
+
+  logger.info('HTTPS server disabled - SSL handled by reverse proxy/ingress');
+  return null;
 };
 
 /**
  * Create HTTPS server with proper configuration
+ * Note: In Kubernetes with ingress controller, this is typically not needed
  */
 export const createHttpsServer = (app: any): https.Server | null => {
   const httpsConfig = loadSSLCertificates();
   
   if (!httpsConfig) {
+    logger.info('No HTTPS server created - SSL handled by ingress controller');
     return null;
   }
   
@@ -80,6 +96,7 @@ export const createHttpsServer = (app: any): https.Server | null => {
     secureOptions: require('constants').SSL_OP_NO_SSLv2 | require('constants').SSL_OP_NO_SSLv3,
   };
   
+  logger.info('Creating HTTPS server with loaded certificates');
   return https.createServer(httpsOptions, app);
 };
 
@@ -89,6 +106,24 @@ export const createHttpsServer = (app: any): https.Server | null => {
 export const httpsRedirect = (req: any, res: any, next: any) => {
   // Skip HTTPS redirect in development environment
   if (config.env === 'development') {
+    return next();
+  }
+
+  // Skip HTTPS redirect for health check endpoints (for Kubernetes probes)
+  const healthCheckPaths = ['/health', '/health/', '/health/detailed', '/health/api'];
+  if (healthCheckPaths.includes(req.path)) {
+    return next();
+  }
+
+  // Skip HTTPS redirect for internal Kubernetes health checks
+  // Check if request is from internal cluster (10.x.x.x range)
+  const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+  if (clientIP && (clientIP.startsWith('10.') || clientIP.startsWith('127.') || clientIP === '::1')) {
+    return next();
+  }
+
+  // Skip HTTPS redirect if FORCE_HTTPS is disabled
+  if (process.env.FORCE_HTTPS === 'false' || process.env.ALLOW_HTTP_HEALTH_CHECKS === 'true') {
     return next();
   }
 

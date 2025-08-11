@@ -9,7 +9,6 @@ import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
 import session from 'express-session';
-import ConnectRedis from 'connect-redis';
 import { createClient } from 'redis';
 import passport from '@/config/passport';
 
@@ -20,7 +19,6 @@ import { notFoundHandler } from '@/middleware/notFoundHandler';
 import {
   securityHeaders,
   additionalSecurityHeaders,
-  generalLimiter,
   authLimiter,
   paymentLimiter,
   apiLimiter,
@@ -172,7 +170,7 @@ app.use(passport.initialize());
 app.use(csrfProtection);
 
 // Add CSRF token endpoint
-app.get('/api/csrf-token', (req, res) => {
+app.get('/csrf-token', (req, res) => {
   const token = require('crypto').randomBytes(32).toString('hex');
   if (req.session) {
     (req.session as any).csrfToken = token;
@@ -181,41 +179,41 @@ app.get('/api/csrf-token', (req, res) => {
 });
 
 // Routes with specific rate limiting
-app.use('/api/health', healthRoutes);
-app.use('/api/monitoring', monitoringRoutes);
-app.use('/api/auth', authLimiter, regenerateSession, authRoutes);
-app.use('/api/products', apiLimiter, productRoutes);
-app.use('/api/categories', apiLimiter, categoryRoutes);
-app.use('/api/subcategories', apiLimiter, subcategoryRoutes);
-app.use('/api/featured', apiLimiter, featuredRoutes);
-app.use('/api/featured-services', apiLimiter, featuredServicesRoutes);
-app.use('/api/media', apiLimiter, mediaRoutes);
-app.use('/api/attachments', apiLimiter, mediaRoutes);
-app.use('/api/search', apiLimiter, searchRoutes);
-app.use('/api/rfqs', apiLimiter, rfqRoutes);
-app.use('/api/quotes', apiLimiter, quoteRoutes);
-app.use('/api/negotiations', apiLimiter, negotiationRoutes);
-app.use('/api/cart', apiLimiter, cartRoutes);
-app.use('/api/coupons', apiLimiter, couponRoutes);
-app.use('/api/checkout', paymentLimiter, checkoutRoutes);
-app.use('/api/payments', paymentLimiter, paymentRoutes);
-app.use('/api/orders', apiLimiter, orderRoutes);
-app.use('/api/deals', apiLimiter, dealRoutes);
-app.use('/api/follow', apiLimiter, followRoutes);
-app.use('/api/subscriptions', paymentLimiter, subscriptionRoutes);
-app.use('/api/notifications', apiLimiter, notificationRoutes);
-app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
-app.use('/api/privacy', apiLimiter, privacyRoutes);
-app.use('/api/fraud', apiLimiter, fraudRoutes);
-app.use('/api/kyc', apiLimiter, kycRoutes);
-app.use('/api/ads', apiLimiter, adsRoutes);
-app.use('/api/admin/notifications', apiLimiter, adminNotificationRoutes);
-app.use('/api/admin/workers', apiLimiter, workerManagementRoutes);
-app.use('/api/services', apiLimiter, serviceRoutes);
-app.use('/api/marketplace', apiLimiter, marketplaceRoutes);
-app.use('/api/users', apiLimiter, userRoutes);
-app.use('/api/wallet', apiLimiter, walletRoutes);
-app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/health', healthRoutes);
+app.use('/monitoring', monitoringRoutes);
+app.use('/auth', authLimiter, regenerateSession, authRoutes);
+app.use('/products', apiLimiter, productRoutes);
+app.use('/categories', apiLimiter, categoryRoutes);
+app.use('/subcategories', apiLimiter, subcategoryRoutes);
+app.use('/featured', apiLimiter, featuredRoutes);
+app.use('/featured-services', apiLimiter, featuredServicesRoutes);
+app.use('/media', apiLimiter, mediaRoutes);
+app.use('/attachments', apiLimiter, mediaRoutes);
+app.use('/search', apiLimiter, searchRoutes);
+app.use('/rfqs', apiLimiter, rfqRoutes);
+app.use('/quotes', apiLimiter, quoteRoutes);
+app.use('/negotiations', apiLimiter, negotiationRoutes);
+app.use('/cart', apiLimiter, cartRoutes);
+app.use('/coupons', apiLimiter, couponRoutes);
+app.use('/checkout', paymentLimiter, checkoutRoutes);
+app.use('/payments', paymentLimiter, paymentRoutes);
+app.use('/orders', apiLimiter, orderRoutes);
+app.use('/deals', apiLimiter, dealRoutes);
+app.use('/follow', apiLimiter, followRoutes);
+app.use('/subscriptions', paymentLimiter, subscriptionRoutes);
+app.use('/notifications', apiLimiter, notificationRoutes);
+app.use('/whatsapp', apiLimiter, whatsappRoutes);
+app.use('/privacy', apiLimiter, privacyRoutes);
+app.use('/fraud', apiLimiter, fraudRoutes);
+app.use('/kyc', apiLimiter, kycRoutes);
+app.use('/ads', apiLimiter, adsRoutes);
+app.use('/admin/notifications', apiLimiter, adminNotificationRoutes);
+app.use('/admin/workers', apiLimiter, workerManagementRoutes);
+app.use('/services', apiLimiter, serviceRoutes);
+app.use('/marketplace', apiLimiter, marketplaceRoutes);
+app.use('/users', apiLimiter, userRoutes);
+app.use('/wallet', apiLimiter, walletRoutes);
+app.use('/admin', apiLimiter, adminRoutes);
 app.use('/dashboard', apiLimiter, dashboardRoutes);
 
 // Error handling middleware
@@ -300,30 +298,37 @@ const HTTPS_PORT = process.env['HTTPS_PORT'] ? parseInt(process.env['HTTPS_PORT'
 let server: any = null;
 let httpsServerInstance: any = null;
 
-// Start HTTPS server if certificates are available
-httpsServerInstance = createHttpsServer(app);
-if (httpsServerInstance && config.env === 'production') {
-  httpsServerInstance.listen(HTTPS_PORT, () => {
-    logger.info(`🔒 Vikareta HTTPS Server running on port ${HTTPS_PORT}`);
-    logger.info(`📊 Environment: ${config.env}`);
-    logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
-  });
-
-  // Also start HTTP server for redirects
-  server = app.listen(PORT, () => {
-    logger.info(`🔄 HTTP Redirect Server running on port ${PORT}`);
-  });
-} else {
-  // Development mode - HTTP only
+// In production with Kubernetes, only run HTTP server (SSL handled by ingress)
+if (config.env === 'production') {
   server = app.listen(PORT, () => {
     logger.info(`🚀 Vikareta Backend Server running on port ${PORT}`);
     logger.info(`📊 Environment: ${config.env}`);
     logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
-
-    if (config.env === 'development') {
-      logger.warn('⚠️  Running in HTTP mode - HTTPS certificates not found');
-    }
+    logger.info(`🔒 SSL termination handled by NGINX ingress with Cloudflare Origin certificates`);
   });
+} else {
+  // Development mode - try HTTPS if configured, otherwise HTTP
+  httpsServerInstance = createHttpsServer(app);
+  if (httpsServerInstance) {
+    httpsServerInstance.listen(HTTPS_PORT, () => {
+      logger.info(`🔒 Vikareta HTTPS Server running on port ${HTTPS_PORT}`);
+      logger.info(`📊 Environment: ${config.env}`);
+      logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
+    });
+
+    // Also start HTTP server for redirects
+    server = app.listen(PORT, () => {
+      logger.info(`🔄 HTTP Redirect Server running on port ${PORT}`);
+    });
+  } else {
+    // HTTP only
+    server = app.listen(PORT, () => {
+      logger.info(`🚀 Vikareta Backend Server running on port ${PORT}`);
+      logger.info(`📊 Environment: ${config.env}`);
+      logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
+      logger.info(`⚠️  Running in HTTP mode - SSL handled by reverse proxy`);
+    });
+  }
 }
 
 export { app };

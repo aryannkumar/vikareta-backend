@@ -2,10 +2,9 @@ import { Router, Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { config } from '@/config/environment';
 import { createClient } from 'redis';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Basic health check
 router.get('/', asyncHandler(async (_req: Request, res: Response) => {
@@ -18,18 +17,7 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
   });
 }));
 
-// API connectivity test endpoint
-router.get('/api', asyncHandler(async (_req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    message: 'API is accessible',
-    data: {
-      status: 'online',
-      timestamp: new Date().toISOString(),
-      environment: config.env,
-    },
-  });
-}));
+// API connectivity test endpoint (removed - no longer needed)
 
 // Detailed health check with dependencies
 router.get('/detailed', asyncHandler(async (_req: Request, res: Response) => {
