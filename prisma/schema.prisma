@@ -129,8 +129,9 @@ model ProductVariant {
   stock     Int     @default(0)
   isActive  Boolean @default(true) @map("is_active")
 
-  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  cartItems CartItem[]
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   @@map("product_variants")
 }
@@ -512,7 +513,7 @@ model AdCampaign {
   status          String   @default("active") @db.VarChar(20)
   startDate       DateTime @map("start_date")
   endDate         DateTime? @map("end_date")
-  lockedAmountId  String?  @map("locked_amount_id") @db.Uuid
+  lockedAmountId  String?  @unique @map("locked_amount_id") @db.Uuid
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
