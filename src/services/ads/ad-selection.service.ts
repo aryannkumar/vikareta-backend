@@ -93,7 +93,7 @@ export class AdSelectionEngine {
   private adSenseService: AdSenseService | null = null;
   private adstraService: AdstraService | null = null;
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map();
-  
+
   // Circuit breaker configuration
   private readonly FAILURE_THRESHOLD = 5;
   private readonly RECOVERY_TIMEOUT = 60000; // 1 minute
@@ -153,7 +153,7 @@ export class AdSelectionEngine {
   ): Promise<SelectedAd | null> {
     try {
       const maxAds = options.maxAds || 1;
-      
+
       // Step 1: Try to get portal ads (highest priority)
       const portalAds = await this.getPortalAds(placement, userContext, options);
       if (portalAds.length > 0) {
@@ -192,7 +192,7 @@ export class AdSelectionEngine {
       try {
         const fallbackAd = await this.fallbackToAdSense(placement, userContext);
         if (fallbackAd) return fallbackAd;
-        
+
         return await this.fallbackToAdstra(placement, userContext);
       } catch (fallbackError) {
         logger.error('All ad selection methods failed:', fallbackError);
@@ -215,14 +215,14 @@ export class AdSelectionEngine {
 
       // Get all available ads with priority scoring
       const allAds = await this.getAllAvailableAds(placement, userContext, options);
-      
+
       // Sort by priority score (highest first)
       allAds.sort((a, b) => b.priorityScore - a.priorityScore);
 
       // Select top ads up to maxAds limit
       for (let i = 0; i < Math.min(maxAds, allAds.length); i++) {
         const ad = allAds[i];
-        
+
         // Check budget availability for business ads
         if (ad.source === 'business' || ad.source === 'portal') {
           const budgetAvailable = await this.checkBudgetAvailability(ad.campaignId);
@@ -294,7 +294,7 @@ export class AdSelectionEngine {
   async checkBudgetAvailability(campaignId: string): Promise<boolean> {
     try {
       const budgetStatus = await this.budgetManager.checkBudgetStatus(campaignId);
-      
+
       // Check if campaign has remaining budget
       if (budgetStatus.remainingBudget <= 0) {
         return false;
@@ -355,7 +355,7 @@ export class AdSelectionEngine {
       });
 
       // Filter ads that require approval
-      const approvedAds = options.requireApproval !== false 
+      const approvedAds = options.requireApproval !== false
         ? ads.filter(ad => (ad as any).campaign.approvals.length > 0)
         : ads;
 
@@ -418,12 +418,12 @@ export class AdSelectionEngine {
       });
 
       // Filter ads that require approval
-      const approvedAds = options.requireApproval !== false 
+      const approvedAds = options.requireApproval !== false
         ? ads.filter(ad => (ad as any).campaign.approvals.length > 0)
         : ads;
 
       // Apply targeting filters
-      const targetedAds = approvedAds.filter(ad => 
+      const targetedAds = approvedAds.filter(ad =>
         this.matchesTargeting(ad.campaign, userContext)
       );
 
@@ -472,10 +472,10 @@ export class AdSelectionEngine {
 
     // Sort by priority score (highest first)
     ads.sort((a, b) => b.priorityScore - a.priorityScore);
-    
+
     const bestAd = ads[0];
     const source = bestAd.campaign.campaignType === 'portal' ? 'portal' : 'business';
-    
+
     return this.convertToSelectedAd(bestAd, source);
   }
 
@@ -512,7 +512,7 @@ export class AdSelectionEngine {
     userContext: UserContext
   ): Promise<SelectedAd | null> {
     const networkName = 'adsense';
-    
+
     // Check circuit breaker state
     if (!this.canCallExternalNetwork(networkName)) {
       logger.info('AdSense circuit breaker is open, skipping request');
@@ -521,9 +521,9 @@ export class AdSelectionEngine {
 
     try {
       logger.info('Attempting AdSense fallback for placement:', placement.id);
-      
+
       let adsenseAd = null;
-      
+
       // Try real AdSense service if available
       if (this.adSenseService) {
         const adRequest: AdSenseAdRequest = {
@@ -542,22 +542,22 @@ export class AdSelectionEngine {
           },
           adFormat: 'text'
         };
-        
+
         adsenseAd = await this.adSenseService.requestAd(adRequest);
       } else {
         // Fallback to mock for testing/development
         adsenseAd = await this.mockAdSenseRequest(placement, userContext);
       }
-      
+
       if (adsenseAd) {
         // Record successful call
         this.recordExternalNetworkSuccess(networkName);
-        
-        const revenue = typeof adsenseAd.revenue === 'number' 
-          ? adsenseAd.revenue 
+
+        const revenue = typeof adsenseAd.revenue === 'number'
+          ? adsenseAd.revenue
           : adsenseAd.revenue?.estimatedEarnings || 0.05;
         const revenueShare = this.calculateRevenueShare(networkName, revenue);
-        
+
         return {
           id: adsenseAd.id,
           campaignId: 'adsense-campaign',
@@ -579,7 +579,7 @@ export class AdSelectionEngine {
       // Record successful call even if no ad returned
       this.recordExternalNetworkSuccess(networkName);
       return null;
-      
+
     } catch (error) {
       // Record failure for circuit breaker
       this.recordExternalNetworkFailure(networkName);
@@ -596,7 +596,7 @@ export class AdSelectionEngine {
     userContext: UserContext
   ): Promise<SelectedAd | null> {
     const networkName = 'adstra';
-    
+
     // Check circuit breaker state
     if (!this.canCallExternalNetwork(networkName)) {
       logger.info('Adstra circuit breaker is open, skipping request');
@@ -605,38 +605,44 @@ export class AdSelectionEngine {
 
     try {
       logger.info('Attempting Adstra fallback for placement:', placement.id);
-      
+
       let adstraAd = null;
-      
+
       // Try real Adstra service if available
       if (this.adstraService) {
         const adRequest: AdstraAdRequest = {
           placementId: placement.id,
-          adUnitId: `placement-${placement.location}`,
+          adFormat: 'banner',
           dimensions: placement.dimensions as { width: number; height: number },
-          userContext: {
-            userId: userContext.userId,
-            ipAddress: userContext.ipAddress,
-            userAgent: userContext.userAgent,
-            location: userContext.location
+          targeting: {
+            keywords: [],
+            categories: [],
+            demographics: userContext.demographics ? {
+              age: userContext.demographics.age?.toString() || '',
+              gender: userContext.demographics.gender || ''
+            } : undefined,
+            location: userContext.location ? {
+              country: userContext.location.country,
+              city: userContext.location.city
+            } : undefined
           }
         };
-        
+
         adstraAd = await this.adstraService.requestAd(adRequest);
       } else {
         // Fallback to mock for testing/development
         adstraAd = await this.mockAdstraRequest(placement, userContext);
       }
-      
+
       if (adstraAd) {
         // Record successful call
         this.recordExternalNetworkSuccess(networkName);
-        
-        const revenue = typeof adstraAd.revenue === 'number' 
-          ? adstraAd.revenue 
+
+        const revenue = typeof adstraAd.revenue === 'number'
+          ? adstraAd.revenue
           : adstraAd.revenue?.estimatedEarnings || 0.03;
         const revenueShare = this.calculateRevenueShare(networkName, revenue);
-        
+
         return {
           id: adstraAd.id,
           campaignId: 'adstra-campaign',
@@ -658,7 +664,7 @@ export class AdSelectionEngine {
       // Record successful call even if no ad returned
       this.recordExternalNetworkSuccess(networkName);
       return null;
-      
+
     } catch (error) {
       // Record failure for circuit breaker
       this.recordExternalNetworkFailure(networkName);
@@ -712,8 +718,8 @@ export class AdSelectionEngine {
         }
 
         if (targeting.demographics.gender && userContext.demographics.gender) {
-          if (targeting.demographics.gender !== 'all' && 
-              targeting.demographics.gender !== userContext.demographics.gender) {
+          if (targeting.demographics.gender !== 'all' &&
+            targeting.demographics.gender !== userContext.demographics.gender) {
             return false;
           }
         }
@@ -730,26 +736,26 @@ export class AdSelectionEngine {
 
       // Location targeting
       if (targeting.location && userContext.location) {
-        if (targeting.location.countries && 
-            !targeting.location.countries.includes(userContext.location.country)) {
+        if (targeting.location.countries &&
+          !targeting.location.countries.includes(userContext.location.country)) {
           return false;
         }
 
-        if (targeting.location.states && 
-            !targeting.location.states.includes(userContext.location.state)) {
+        if (targeting.location.states &&
+          !targeting.location.states.includes(userContext.location.state)) {
           return false;
         }
 
-        if (targeting.location.cities && 
-            !targeting.location.cities.includes(userContext.location.city)) {
+        if (targeting.location.cities &&
+          !targeting.location.cities.includes(userContext.location.city)) {
           return false;
         }
       }
 
       // Behavior targeting
       if (targeting.behavior) {
-        if (targeting.behavior.platforms && 
-            !targeting.behavior.platforms.includes(userContext.platform)) {
+        if (targeting.behavior.platforms &&
+          !targeting.behavior.platforms.includes(userContext.platform)) {
           return false;
         }
 
@@ -782,28 +788,28 @@ export class AdSelectionEngine {
         }
 
         if (targeting.demographics.gender && userContext.demographics.gender &&
-            targeting.demographics.gender === userContext.demographics.gender) {
+          targeting.demographics.gender === userContext.demographics.gender) {
           score += 10;
         }
       }
 
       // Location relevance
       if (targeting.location && userContext.location) {
-        if (targeting.location.cities && 
-            targeting.location.cities.includes(userContext.location.city)) {
+        if (targeting.location.cities &&
+          targeting.location.cities.includes(userContext.location.city)) {
           score += 15;
-        } else if (targeting.location.states && 
-                   targeting.location.states.includes(userContext.location.state)) {
+        } else if (targeting.location.states &&
+          targeting.location.states.includes(userContext.location.state)) {
           score += 10;
-        } else if (targeting.location.countries && 
-                   targeting.location.countries.includes(userContext.location.country)) {
+        } else if (targeting.location.countries &&
+          targeting.location.countries.includes(userContext.location.country)) {
           score += 5;
         }
       }
 
       // Platform relevance
-      if (targeting.behavior?.platforms && 
-          targeting.behavior.platforms.includes(userContext.platform)) {
+      if (targeting.behavior?.platforms &&
+        targeting.behavior.platforms.includes(userContext.platform)) {
         score += 10;
       }
 
@@ -821,18 +827,18 @@ export class AdSelectionEngine {
     try {
       // This would typically use historical performance data
       // For now, return a base score that could be enhanced with analytics
-      
+
       // Newer campaigns get a slight boost
       const daysSinceCreation = Math.floor(
         (Date.now() - campaign.createdAt.getTime()) / (1000 * 60 * 60 * 24)
       );
-      
+
       if (daysSinceCreation < 7) {
         return 5; // New campaign boost
       } else if (daysSinceCreation < 30) {
         return 3; // Recent campaign boost
       }
-      
+
       return 0;
     } catch (error) {
       logger.error('Error calculating performance factor:', error);
@@ -846,7 +852,7 @@ export class AdSelectionEngine {
   private calculateRecencyFactor(createdAt: Date): number {
     try {
       const hoursAgo = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
-      
+
       if (hoursAgo < 24) {
         return 5; // Very recent
       } else if (hoursAgo < 168) { // 1 week
@@ -854,7 +860,7 @@ export class AdSelectionEngine {
       } else if (hoursAgo < 720) { // 1 month
         return 1; // Somewhat recent
       }
-      
+
       return 0;
     } catch (error) {
       logger.error('Error calculating recency factor:', error);
@@ -918,7 +924,7 @@ export class AdSelectionEngine {
     if (breaker.failureCount >= this.FAILURE_THRESHOLD) {
       breaker.isOpen = true;
       breaker.nextAttemptTime = new Date(Date.now() + this.RECOVERY_TIMEOUT);
-      
+
       logger.warn(`Circuit breaker for ${networkName} opened after ${breaker.failureCount} failures. Next attempt at: ${breaker.nextAttemptTime}`);
     } else {
       logger.debug(`External network ${networkName} failure recorded (${breaker.failureCount}/${this.FAILURE_THRESHOLD})`);
@@ -930,7 +936,7 @@ export class AdSelectionEngine {
    */
   private calculateRevenueShare(networkName: string, totalRevenue: number): RevenueShare {
     const shares = this.REVENUE_SHARES[networkName as keyof typeof this.REVENUE_SHARES];
-    
+
     if (!shares) {
       // Default sharing if network not configured
       const defaultShares = { platform: 0.30, network: 0.70 };
@@ -1030,7 +1036,6 @@ export class AdSelectionEngine {
 
     return {
       id: `adstra-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      adUnitId: `placement-${placement.location}`,
       content: {
         html: `<div style="width:${(placement.dimensions as any)?.width || 300}px;height:${(placement.dimensions as any)?.height || 250}px;background:#e8f4fd;display:flex;align-items:center;justify-content:center;border:1px solid #3b82f6;">Adstra Ad</div>`,
         clickUrl: 'https://example.com/adstra-click',
