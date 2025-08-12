@@ -133,6 +133,51 @@ export class CategoryService {
   }
 
   /**
+   * Get category by slug with children and counts
+   */
+  async getCategoryBySlug(slug: string): Promise<CategoryWithChildren> {
+    try {
+      const category = await prisma.category.findUnique({
+        where: { slug },
+        include: {
+          children: {
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              children: {
+                where: { isActive: true },
+                orderBy: { sortOrder: 'asc' },
+              },
+              _count: {
+                select: {
+                  products: true,
+                  children: true,
+                },
+              },
+            },
+          },
+          parent: true,
+          _count: {
+            select: {
+              products: true,
+              children: true,
+            },
+          },
+        },
+      });
+
+      if (!category) {
+        throw new Error('Category not found');
+      }
+
+      return category as CategoryWithChildren;
+    } catch (error) {
+      logger.error('Error fetching category by slug:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get all root categories (categories without parent)
    */
   async getRootCategories(): Promise<CategoryWithChildren[]> {

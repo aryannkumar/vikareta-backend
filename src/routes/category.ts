@@ -183,6 +183,41 @@ router.get('/search', [
   }
 });
 
+// GET /api/categories/slug/:slug - Get category by slug
+router.get('/slug/:slug', [
+  param('slug').trim().isLength({ min: 1 }).withMessage('Category slug is required'),
+  handleValidationErrors,
+], async (req: Request, res: Response) => {
+  try {
+    const category = await categoryService.getCategoryBySlug(req.params.slug);
+
+    return res.json({
+      success: true,
+      data: category,
+    });
+  } catch (error) {
+    logger.error('Error fetching category by slug:', error);
+    
+    if (error instanceof Error && error.message === 'Category not found') {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CATEGORY_NOT_FOUND',
+          message: 'Category not found',
+        },
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to fetch category',
+      },
+    });
+  }
+});
+
 // GET /api/categories/:id - Get category by ID
 router.get('/:id', [
   param('id').isUUID().withMessage('Category ID must be a valid UUID'),
