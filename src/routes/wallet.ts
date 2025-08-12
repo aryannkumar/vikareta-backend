@@ -213,7 +213,14 @@ router.post('/fund', authenticate, async (req: Request, res: Response) => {
 
     const result = await walletService.fundWallet({
       userId,
-      ...validatedData,
+      amount: validatedData.amount,
+      currency: validatedData.currency,
+      customerDetails: {
+        customerName: validatedData.customerDetails.customerName,
+        customerEmail: validatedData.customerDetails.customerEmail,
+        customerPhone: validatedData.customerDetails.customerPhone,
+      },
+      returnUrl: validatedData.returnUrl,
     });
 
     return res.json({
@@ -931,7 +938,14 @@ router.post('/withdraw', authenticate, async (req: Request, res: Response) => {
 
     const result = await walletService.requestWithdrawal({
       userId,
-      ...validatedData,
+      amount: validatedData.amount,
+      withdrawalMethod: validatedData.withdrawalMethod,
+      bankDetails: validatedData.bankDetails ? {
+        accountNumber: validatedData.bankDetails.accountNumber,
+        ifscCode: validatedData.bankDetails.ifscCode,
+        accountHolderName: validatedData.bankDetails.accountHolderName,
+      } : undefined,
+      upiId: validatedData.upiId,
     });
 
     return res.json({

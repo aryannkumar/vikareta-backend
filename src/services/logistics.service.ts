@@ -574,7 +574,7 @@ export class LogisticsService {
         };
       }
 
-      const deliveryProof = shipment.deliveryProof as DeliveryProof | null;
+      const deliveryProof = shipment.deliveryProof ? JSON.parse(shipment.deliveryProof) as DeliveryProof : null;
 
       if (!deliveryProof) {
         return {

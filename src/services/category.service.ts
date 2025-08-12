@@ -583,7 +583,15 @@ export class CategoryService {
         },
       });
 
-      return category as CategoryWithSubcategories | null;
+      if (!category) return null;
+      
+      return {
+        ...category,
+        subcategories: category.subcategories.map(sub => ({
+          ...sub,
+          productCount: sub._count.products,
+        }))
+      } as CategoryWithSubcategories;
     } catch (error) {
       logger.error('Error fetching category with subcategories:', error);
       throw new Error('Failed to fetch category with subcategories');

@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import type { Product, ProductVariant, ProductMedia, Category } from '@prisma/client';
+import type { Product, ProductVariant, ProductMedia, Category, Subcategory } from '@prisma/client';
 import { logger } from '@/utils/logger';
 
 const prisma = new PrismaClient();
@@ -72,7 +72,7 @@ export interface ProductWithDetails extends Product {
     isVerified: boolean;
   };
   category: Category;
-  subcategory: Category | null;
+  subcategory: Subcategory | null;
   variants: ProductVariant[];
   media: ProductMedia[];
   _count: {

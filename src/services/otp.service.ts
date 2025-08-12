@@ -94,7 +94,7 @@ export class OtpService {
         return false;
       }
 
-      const otpData: OtpData = JSON.parse(storedData);
+      const otpData: OtpData = JSON.parse(storedData.toString());
 
       // Check if OTP has expired
       if (Date.now() > otpData.expiresAt) {
@@ -146,7 +146,7 @@ export class OtpService {
         return false;
       }
 
-      const otpData: OtpData = JSON.parse(storedData);
+      const otpData: OtpData = JSON.parse(storedData.toString());
       return Date.now() <= otpData.expiresAt && otpData.attempts < this.MAX_ATTEMPTS;
     } catch (error) {
       logger.error('Failed to check OTP validity:', error);
@@ -179,7 +179,7 @@ export class OtpService {
         return 0;
       }
 
-      const otpData: OtpData = JSON.parse(storedData);
+      const otpData: OtpData = JSON.parse(storedData.toString());
       
       if (Date.now() > otpData.expiresAt) {
         return 0;
