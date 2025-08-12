@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import type { Category } from '@prisma/client';
 import { logger } from '@/utils/logger';
+import { getCategoryIcon } from '@/utils/categoryIcons';
 
 const prisma = new PrismaClient();
 
@@ -29,6 +30,7 @@ export interface CategoryWithChildren extends Category {
     products: number;
     children: number;
   };
+  iconName?: string; // Dynamic icon based on slug
 }
 
 export interface CategoryWithSubcategories extends Category {
@@ -38,12 +40,30 @@ export interface CategoryWithSubcategories extends Category {
     slug: string;
     description: string | null;
     icon: string | null;
+    iconName?: string; // Dynamic icon based on slug
     productCount: number;
     sortOrder: number;
   }>;
+  iconName?: string; // Dynamic icon based on slug
 }
 
 export class CategoryService {
+  /**
+   * Enhance category with dynamic icon based on slug
+   */
+  private enhanceCategoryWithIcon<T extends Category>(category: T): T & { iconName: string } {
+    return {
+      ...category,
+      iconName: getCategoryIcon(category.slug)
+    };
+  }
+
+  /**
+   * Enhance categories array with dynamic icons
+   */
+  private enhanceCategoriesWithIcons<T extends Category>(categories: T[]): (T & { iconName: string })[] {
+    return categories.map(category => this.enhanceCategoryWithIcon(category));
+  }
   /**
    * Create a new category
    */
@@ -125,7 +145,21 @@ export class CategoryService {
         throw new Error('Category not found');
       }
 
-      return category as CategoryWithChildren;
+      // Enhance category with dynamic icons
+      const enhancedCategory = {
+        ...category,
+        iconName: getCategoryIcon(category.slug),
+        children: category.children.map(child => ({
+          ...child,
+          iconName: getCategoryIcon(child.slug),
+          children: child.children.map(grandChild => ({
+            ...grandChild,
+            iconName: getCategoryIcon(grandChild.slug)
+          }))
+        }))
+      };
+
+      return enhancedCategory as CategoryWithChildren;
     } catch (error) {
       logger.error('Error fetching category:', error);
       throw error;
@@ -170,7 +204,21 @@ export class CategoryService {
         throw new Error('Category not found');
       }
 
-      return category as CategoryWithChildren;
+      // Enhance category with dynamic icons
+      const enhancedCategory = {
+        ...category,
+        iconName: getCategoryIcon(category.slug),
+        children: category.children.map(child => ({
+          ...child,
+          iconName: getCategoryIcon(child.slug),
+          children: child.children.map(grandChild => ({
+            ...grandChild,
+            iconName: getCategoryIcon(grandChild.slug)
+          }))
+        }))
+      };
+
+      return enhancedCategory as CategoryWithChildren;
     } catch (error) {
       logger.error('Error fetching category by slug:', error);
       throw error;
@@ -214,7 +262,21 @@ export class CategoryService {
         orderBy: { sortOrder: 'asc' },
       });
 
-      return categories as CategoryWithChildren[];
+      // Enhance categories with dynamic icons
+      const enhancedCategories = categories.map(category => ({
+        ...category,
+        iconName: getCategoryIcon(category.slug),
+        children: category.children.map(child => ({
+          ...child,
+          iconName: getCategoryIcon(child.slug),
+          children: child.children.map(grandChild => ({
+            ...grandChild,
+            iconName: getCategoryIcon(grandChild.slug)
+          }))
+        }))
+      }));
+
+      return enhancedCategories as CategoryWithChildren[];
     } catch (error) {
       logger.error('Error fetching root categories:', error);
       throw error;
@@ -249,7 +311,17 @@ export class CategoryService {
         ],
       });
 
-      return categories as CategoryWithChildren[];
+      // Enhance categories with dynamic icons
+      const enhancedCategories = categories.map(category => ({
+        ...category,
+        iconName: getCategoryIcon(category.slug),
+        children: category.children.map(child => ({
+          ...child,
+          iconName: getCategoryIcon(child.slug)
+        }))
+      }));
+
+      return enhancedCategories as CategoryWithChildren[];
     } catch (error) {
       logger.error('Error fetching all categories:', error);
       throw error;
@@ -549,7 +621,17 @@ export class CategoryService {
         take: limit,
       });
 
-      return categories as CategoryWithChildren[];
+      // Enhance categories with dynamic icons
+      const enhancedCategories = categories.map(category => ({
+        ...category,
+        iconName: getCategoryIcon(category.slug),
+        children: category.children.map(child => ({
+          ...child,
+          iconName: getCategoryIcon(child.slug)
+        }))
+      }));
+
+      return enhancedCategories as CategoryWithChildren[];
     } catch (error) {
       logger.error('Error fetching popular categories:', error);
       throw error;
