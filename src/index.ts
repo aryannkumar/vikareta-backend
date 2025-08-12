@@ -169,8 +169,12 @@ app.use(passport.initialize());
 // CSRF protection for state-changing operations
 app.use(csrfProtection);
 
-// Add CSRF token endpoint
-app.get('/csrf-token', (req, res) => {
+
+
+// System routes (without /api prefix)
+app.use('/health', healthRoutes);
+app.use('/monitoring', monitoringRoutes);
+app.use('/csrf-token', (req, res) => {
   const token = require('crypto').randomBytes(32).toString('hex');
   if (req.session) {
     (req.session as any).csrfToken = token;
@@ -178,43 +182,43 @@ app.get('/csrf-token', (req, res) => {
   res.json({ success: true, data: { csrfToken: token } });
 });
 
-// Routes with specific rate limiting
-app.use('/health', healthRoutes);
-app.use('/monitoring', monitoringRoutes);
-app.use('/auth', authLimiter, regenerateSession, authRoutes);
-app.use('/products', apiLimiter, productRoutes);
-app.use('/categories', apiLimiter, categoryRoutes);
-app.use('/subcategories', apiLimiter, subcategoryRoutes);
-app.use('/featured', apiLimiter, featuredRoutes);
-app.use('/featured-services', apiLimiter, featuredServicesRoutes);
-app.use('/media', apiLimiter, mediaRoutes);
-app.use('/attachments', apiLimiter, mediaRoutes);
-app.use('/search', apiLimiter, searchRoutes);
-app.use('/rfqs', apiLimiter, rfqRoutes);
-app.use('/quotes', apiLimiter, quoteRoutes);
-app.use('/negotiations', apiLimiter, negotiationRoutes);
-app.use('/cart', apiLimiter, cartRoutes);
-app.use('/coupons', apiLimiter, couponRoutes);
-app.use('/checkout', paymentLimiter, checkoutRoutes);
-app.use('/payments', paymentLimiter, paymentRoutes);
-app.use('/orders', apiLimiter, orderRoutes);
-app.use('/deals', apiLimiter, dealRoutes);
-app.use('/follow', apiLimiter, followRoutes);
-app.use('/subscriptions', paymentLimiter, subscriptionRoutes);
-app.use('/notifications', apiLimiter, notificationRoutes);
-app.use('/whatsapp', apiLimiter, whatsappRoutes);
-app.use('/privacy', apiLimiter, privacyRoutes);
-app.use('/fraud', apiLimiter, fraudRoutes);
-app.use('/kyc', apiLimiter, kycRoutes);
-app.use('/ads', apiLimiter, adsRoutes);
-app.use('/admin/notifications', apiLimiter, adminNotificationRoutes);
-app.use('/admin/workers', apiLimiter, workerManagementRoutes);
-app.use('/services', apiLimiter, serviceRoutes);
-app.use('/marketplace', apiLimiter, marketplaceRoutes);
-app.use('/users', apiLimiter, userRoutes);
-app.use('/wallet', apiLimiter, walletRoutes);
-app.use('/admin', apiLimiter, adminRoutes);
-app.use('/dashboard', apiLimiter, dashboardRoutes);
+// API routes (with /api prefix)
+app.use('/api/auth', authLimiter, regenerateSession, authRoutes);
+app.use('/api/products', apiLimiter, productRoutes);
+app.use('/api/categories', apiLimiter, categoryRoutes);
+app.use('/api/subcategories', apiLimiter, subcategoryRoutes);
+app.use('/api/featured', apiLimiter, featuredRoutes);
+app.use('/api/featured-services', apiLimiter, featuredServicesRoutes);
+app.use('/api/media', apiLimiter, mediaRoutes);
+app.use('/api/attachments', apiLimiter, mediaRoutes);
+app.use('/api/search', apiLimiter, searchRoutes);
+app.use('/api/rfqs', apiLimiter, rfqRoutes);
+app.use('/api/quotes', apiLimiter, quoteRoutes);
+app.use('/api/negotiations', apiLimiter, negotiationRoutes);
+app.use('/api/cart', apiLimiter, cartRoutes);
+app.use('/api/coupons', apiLimiter, couponRoutes);
+app.use('/api/checkout', paymentLimiter, checkoutRoutes);
+app.use('/api/payments', paymentLimiter, paymentRoutes);
+app.use('/api/orders', apiLimiter, orderRoutes);
+app.use('/api/deals', apiLimiter, dealRoutes);
+app.use('/api/follow', apiLimiter, followRoutes);
+app.use('/api/subscriptions', paymentLimiter, subscriptionRoutes);
+app.use('/api/notifications', apiLimiter, notificationRoutes);
+app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
+app.use('/api/privacy', apiLimiter, privacyRoutes);
+app.use('/api/fraud', apiLimiter, fraudRoutes);
+app.use('/api/kyc', apiLimiter, kycRoutes);
+app.use('/api/ads', apiLimiter, adsRoutes);
+app.use('/api/services', apiLimiter, serviceRoutes);
+app.use('/api/marketplace', apiLimiter, marketplaceRoutes);
+app.use('/api/users', apiLimiter, userRoutes);
+app.use('/api/wallet', apiLimiter, walletRoutes);
+
+// Admin routes (with /api prefix)
+app.use('/api/admin/notifications', apiLimiter, adminNotificationRoutes);
+app.use('/api/admin/workers', apiLimiter, workerManagementRoutes);
+app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 
 // Error handling middleware
 app.use(notFoundHandler);
