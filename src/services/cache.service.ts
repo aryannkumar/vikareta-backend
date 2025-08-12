@@ -105,12 +105,7 @@ class CacheService {
                     // Connection pool settings for better performance
                     family: 4,
                     // Pipeline optimizations
-                    enableAutoPipelining: true,
-                    // Retry strategy
-                    retryDelayOnFailover: 100,
-                    maxRetriesPerRequest: 3,
-                    // Handle connection errors gracefully
-                    lazyConnect: true
+                    enableAutoPipelining: true
                 });
                 this.setupEventHandlers();
                 this.startStatsCollection();
