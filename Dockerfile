@@ -3,17 +3,26 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
 
-# Install dependencies
-RUN npm ci --only=production
+# Copy package files and prisma schema
+COPY package*.json ./
+COPY tsconfig*.json ./
+COPY prisma ./prisma/
+
+# Install all dependencies (including dev dependencies for build)
+RUN npm ci
 
 # Copy source code
-COPY . .
+COPY src ./src/
 
-# Build the application
+# Generate Prisma client and build
+RUN npx prisma generate
 RUN npm run build
+
+# Install production dependencies only
+RUN rm -rf node_modules && npm ci --only=production && npm cache clean --force
 
 # Production stage
 FROM node:24-alpine AS production
@@ -27,10 +36,14 @@ RUN apk add --no-cache curl
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001
 
-# Copy built application
+# Copy built application and dependencies
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/prisma ./prisma
+
+# Copy SSL certificates
+COPY --chown=nodejs:nodejs ssl/ /etc/ssl/certs/
 
 # Switch to non-root user
 USER nodejs
