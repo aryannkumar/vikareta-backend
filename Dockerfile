@@ -42,9 +42,6 @@ COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
 COPY --from=builder --chown=nodejs:nodejs /app/prisma ./prisma
 
-# Copy SSL certificates
-COPY --chown=nodejs:nodejs ssl/ /etc/ssl/certs/
-
 # Switch to non-root user
 USER nodejs
 
