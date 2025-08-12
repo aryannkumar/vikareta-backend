@@ -92,22 +92,33 @@ class CacheService {
     constructor() {
         // Skip Redis connection in test environment
         if (process.env.NODE_ENV !== 'test') {
-            this.redis = new Redis(process.env['REDIS_URL'] || 'redis://localhost:6379', {
-                enableReadyCheck: false,
-                maxRetriesPerRequest: 3,
-                lazyConnect: true,
-                // Connection optimizations
-                keepAlive: 30000,
-                connectTimeout: 10000,
-                commandTimeout: 5000,
-                enableOfflineQueue: false,
-                // Connection pool settings for better performance
-                family: 4,
-                // Pipeline optimizations
-                enableAutoPipelining: true
-            });
-            this.setupEventHandlers();
-            this.startStatsCollection();
+            try {
+                this.redis = new Redis(process.env['REDIS_URL'] || 'redis://localhost:6379', {
+                    enableReadyCheck: false,
+                    maxRetriesPerRequest: 3,
+                    lazyConnect: true,
+                    // Connection optimizations
+                    keepAlive: 30000,
+                    connectTimeout: 10000,
+                    commandTimeout: 5000,
+                    enableOfflineQueue: false,
+                    // Connection pool settings for better performance
+                    family: 4,
+                    // Pipeline optimizations
+                    enableAutoPipelining: true,
+                    // Retry strategy
+                    retryDelayOnFailover: 100,
+                    maxRetriesPerRequest: 3,
+                    // Handle connection errors gracefully
+                    lazyConnect: true
+                });
+                this.setupEventHandlers();
+                this.startStatsCollection();
+            } catch (error) {
+                logger.error('Failed to initialize Redis in cache service:', error);
+                logger.warn('Cache service will operate without Redis');
+                this.redis = null;
+            }
         }
 
         this.prisma = new PrismaClient();
@@ -241,9 +252,17 @@ class CacheService {
      * Cache warming for frequently accessed data
      */
     async warmCache(): Promise<void> {
+        if (!this.redis) {
+            logger.warn('Redis not available, skipping cache warming');
+            return;
+        }
+
         logger.info('Starting cache warming process...');
 
         try {
+            // Check if Redis is connected before warming
+            await this.redis.ping();
+
             // Warm up categories
             await this.warmCategories();
 
@@ -256,6 +275,7 @@ class CacheService {
             logger.info('Cache warming completed successfully');
         } catch (error) {
             logger.error('Cache warming failed:', error);
+            logger.warn('Application will continue without cache warming');
         }
     }
 
@@ -450,17 +470,37 @@ class CacheService {
      * Setup event handlers for cache invalidation
      */
     private setupEventHandlers(): void {
-        this.redis?.on('connect', () => {
+        if (!this.redis) return;
+
+        this.redis.on('connect', () => {
             logger.info('Redis cache connected');
         });
 
-        this.redis?.on('error', (error) => {
-            logger.error('Redis cache error:', error);
-            this.stats.errors++;
+        this.redis.on('ready', () => {
+            logger.info('Redis cache ready');
         });
 
-        this.redis?.on('reconnecting', () => {
-            logger.warn('Redis cache reconnecting...');
+        this.redis.on('error', (error) => {
+            logger.error('Redis cache error:', error);
+            this.stats.errors++;
+            // Don't crash the application on Redis errors
+        });
+
+        this.redis.on('close', () => {
+            logger.warn('Redis cache connection closed');
+        });
+
+        this.redis.on('reconnecting', (delay) => {
+            logger.warn(`Redis cache reconnecting in ${delay}ms...`);
+        });
+
+        this.redis.on('end', () => {
+            logger.warn('Redis cache connection ended');
+        });
+
+        // Handle connection failures gracefully
+        this.redis.on('lazyConnect', () => {
+            logger.info('Redis cache lazy connect initiated');
         });
     }
 

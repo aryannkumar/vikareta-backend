@@ -76,40 +76,88 @@ const app = express();
 // Trust proxy - required when running behind nginx reverse proxy
 app.set('trust proxy', true);
 
-// Redis client setup
-const redisClient = createClient({
-  url: config.redis.url,
-});
+// Redis client setup with proper error handling
+let redisClient: any = null;
+let redisConnected = false;
 
-redisClient.on('error', (err) => {
-  logger.error('Redis Client Error:', err);
-});
+try {
+  redisClient = createClient({
+    url: config.redis.url,
+    socket: {
+      reconnectStrategy: (retries) => {
+        if (retries > 10) {
+          logger.error('Redis reconnection failed after 10 attempts, giving up');
+          return false;
+        }
+        return Math.min(retries * 50, 500);
+      },
+    },
+  });
 
-redisClient.on('connect', () => {
-  logger.info('Connected to Redis');
-});
+  redisClient.on('error', (err) => {
+    logger.error('Redis cache error:', err);
+    redisConnected = false;
+  });
 
-// Initialize Redis connection
-redisClient.connect().catch((err) => {
-  logger.error('Failed to connect to Redis:', err);
-});
+  redisClient.on('connect', () => {
+    logger.info('Redis cache connected');
+    redisConnected = true;
+  });
+
+  redisClient.on('ready', () => {
+    logger.info('Redis cache ready');
+    redisConnected = true;
+  });
+
+  redisClient.on('end', () => {
+    logger.warn('Redis cache disconnected');
+    redisConnected = false;
+  });
+
+  redisClient.on('reconnecting', () => {
+    logger.warn('Redis cache reconnecting...');
+  });
+
+  // Initialize Redis connection with timeout
+  const connectWithTimeout = async () => {
+    const timeout = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Redis connection timeout')), 10000)
+    );
+    
+    try {
+      await Promise.race([redisClient.connect(), timeout]);
+      logger.info('✅ Redis connection established');
+    } catch (error) {
+      logger.error('❌ Redis connection failed:', error);
+      logger.warn('🔄 Application will continue without Redis cache');
+      redisClient = null;
+    }
+  };
+
+  connectWithTimeout();
+} catch (error) {
+  logger.error('❌ Failed to create Redis client:', error);
+  logger.warn('🔄 Application will continue without Redis cache');
+  redisClient = null;
+}
 
 // Initialize performance monitoring and cache warming
 async function initializeServices() {
   try {
-    // Warm up cache on startup
+    // Warm up cache on startup (will skip if Redis is not available)
     await cacheService.warmCache();
-    logger.info('✅ Cache warming completed');
+    logger.info('✅ Cache service initialization completed');
 
     // Initialize error tracking
     logger.info('✅ Error tracking service initialized');
   } catch (error) {
     logger.error('❌ Failed to initialize services:', error);
+    logger.warn('🔄 Application will continue without some services');
   }
 }
 
-// Initialize services after Redis connection
-setTimeout(initializeServices, 2000);
+// Initialize services after a short delay (don't wait for Redis)
+setTimeout(initializeServices, 1000);
 
 // HTTPS redirect and security headers
 app.use(httpsRedirect);
@@ -262,8 +310,14 @@ async function gracefulShutdown(signal: string) {
     // Add any database cleanup here if needed
 
     // Close Redis connection
-    logger.info('Closing Redis connection...');
-    await redisClient.quit();
+    if (redisClient && redisConnected) {
+      logger.info('Closing Redis connection...');
+      try {
+        await redisClient.quit();
+      } catch (error) {
+        logger.error('Error closing Redis connection:', error);
+      }
+    }
 
     // Clear the force shutdown timer
     clearTimeout(forceShutdownTimer);
