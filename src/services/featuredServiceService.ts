@@ -225,7 +225,7 @@ export class FeaturedServiceService {
     `;
     
     const categoryStats = await executeQuery<{ category: string; count: number }>(categoryQuery, params);
-    const byCategory = categoryStats.reduce((acc, item) => {
+    const byCategory = categoryStats.reduce((acc: Record<string, number>, item: { category: string; count: number }) => {
       acc[item.category] = item.count;
       return acc;
     }, {} as Record<string, number>);
