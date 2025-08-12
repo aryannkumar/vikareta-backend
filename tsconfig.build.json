@@ -1,6 +1,13 @@
 {
-    "extends": "./tsconfig.json",
     "compilerOptions": {
+        "target": "ES2020",
+        "lib": ["ES2020"],
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "allowJs": true,
+        "checkJs": false,
         "strict": false,
         "noImplicitAny": false,
         "noImplicitReturns": false,
@@ -15,12 +22,33 @@
         "noUncheckedIndexedAccess": false,
         "skipLibCheck": true,
         "allowSyntheticDefaultImports": true,
-        "esModuleInterop": true
+        "esModuleInterop": true,
+        "suppressImplicitAnyIndexErrors": true,
+        "noStrictGenericChecks": true,
+        "suppressExcessPropertyErrors": true,
+        "resolveJsonModule": true,
+        "declaration": false,
+        "declarationMap": false,
+        "sourceMap": false,
+        "removeComments": true,
+        "baseUrl": ".",
+        "types": ["node"],
+        "paths": {
+            "@/*": ["src/*"]
+        },
+        "noErrorTruncation": true,
+        "allowUnreachableCode": true,
+        "allowUnusedLabels": true,
+        "noEmitOnError": false
     },
+    "include": [
+        "src/**/*"
+    ],
     "exclude": [
         "node_modules",
         "dist",
         "**/*.test.ts",
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "prisma/**/*"
     ]
 }
