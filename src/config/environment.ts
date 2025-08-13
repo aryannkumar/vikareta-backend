@@ -25,7 +25,7 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
   
   // CORS
-  ALLOWED_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001'),
+  ALLOWED_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001,https://vikareta.com,https://www.vikareta.com'),
   
   // External APIs
   CASHFREE_CLIENT_ID: z.string().optional(),

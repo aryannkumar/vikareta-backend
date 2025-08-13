@@ -339,6 +339,44 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 });
 
 /**
+ * Get my orders (user's orders as buyer)
+ * GET /api/orders/my
+ */
+router.get('/my', authenticate, async (req: Request, res: Response) => {
+  try {
+    const queryValidation = validateRequest(getOrdersQuerySchema, req.query);
+    
+    const userId = req.authUser?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+      });
+    }
+
+    // Force role to buyer for /my endpoint
+    const queryWithBuyerRole = { ...queryValidation, role: 'buyer' as const };
+    const orders = await orderService.getUserOrders(userId, queryWithBuyerRole);
+
+    return res.json({
+      success: true,
+      data: {
+        orders: orders,
+        total: orders.length,
+        page: Math.floor((queryValidation.offset || 0) / (queryValidation.limit || 20)) + 1,
+        totalPages: Math.ceil(orders.length / (queryValidation.limit || 20)),
+      },
+    });
+  } catch (error) {
+    logger.error('Error getting my orders:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to get orders',
+    });
+  }
+});
+
+/**
  * Update order status
  * PUT /api/orders/:orderId/status
  */
