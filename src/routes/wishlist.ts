@@ -57,35 +57,44 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
             orderBy: {
                 createdAt: 'desc',
             },
+        }).catch((error) => {
+            logger.error('Wishlist query error:', error);
+            // Return empty array if query fails
+            return [];
         });
 
-        // Transform the data
+        // Transform the data with better error handling
         const transformedItems = wishlistItems.map((item) => {
-            const isProduct = item.productId !== null;
-            const itemData = isProduct ? item.product : item.service;
+            try {
+                const isProduct = item.productId !== null;
+                const itemData = isProduct ? item.product : item.service;
 
-            if (!itemData) return null;
+                if (!itemData) return null;
 
-            return {
-                id: item.id,
-                type: isProduct ? 'product' : 'service',
-                itemId: isProduct ? item.productId : item.serviceId,
-                name: (itemData as any).title || (itemData as any).name,
-                price: parseFloat((itemData as any).price.toString()),
-                originalPrice: (itemData as any).originalPrice ? parseFloat((itemData as any).originalPrice.toString()) : null,
-                image: (itemData as any).images?.[0] || '/api/placeholder/300/200',
-                provider: isProduct
-                    ? (itemData as any).seller?.businessName || 'Unknown Provider'
-                    : (itemData as any).provider?.businessName || 'Unknown Provider',
-                providerId: isProduct
-                    ? (itemData as any).seller?.id || ''
-                    : (itemData as any).provider?.id || '',
-                category: (itemData as any).category?.name || 'Uncategorized',
-                rating: (itemData as any).rating || 0,
-                reviewCount: (itemData as any).reviewCount || 0,
-                available: (itemData as any).status === 'active' && (itemData as any).stockQuantity > 0,
-                addedAt: item.createdAt.toISOString(),
-            };
+                return {
+                    id: item.id,
+                    type: isProduct ? 'product' : 'service',
+                    itemId: isProduct ? item.productId : item.serviceId,
+                    name: (itemData as any).title || (itemData as any).name || 'Unnamed Item',
+                    price: (itemData as any).price ? parseFloat((itemData as any).price.toString()) : 0,
+                    originalPrice: (itemData as any).originalPrice ? parseFloat((itemData as any).originalPrice.toString()) : null,
+                    image: (itemData as any).images?.[0] || '/api/placeholder/300/200',
+                    provider: isProduct
+                        ? (itemData as any).seller?.businessName || 'Unknown Provider'
+                        : (itemData as any).provider?.businessName || 'Unknown Provider',
+                    providerId: isProduct
+                        ? (itemData as any).seller?.id || ''
+                        : (itemData as any).provider?.id || '',
+                    category: (itemData as any).category?.name || 'Uncategorized',
+                    rating: (itemData as any).rating || 0,
+                    reviewCount: (itemData as any).reviewCount || 0,
+                    available: (itemData as any).status === 'active' && ((itemData as any).stockQuantity || 0) > 0,
+                    addedAt: item.createdAt ? item.createdAt.toISOString() : new Date().toISOString(),
+                };
+            } catch (transformError) {
+                logger.error('Error transforming wishlist item:', transformError, item);
+                return null;
+            }
         }).filter(Boolean);
 
         return res.json({

@@ -309,7 +309,24 @@ app.use('/api/kyc', apiLimiter, kycRoutes);
 app.use('/api/ads', apiLimiter, adsRoutes);
 app.use('/api/services', apiLimiter, serviceRoutes);
 app.use('/api/marketplace', apiLimiter, marketplaceRoutes);
-app.use('/api/users', apiLimiter, userRoutes);
+// User routes with explicit CORS handling
+app.use('/api/users', (req, res, next) => {
+  // Ensure CORS headers for user routes
+  const origin = req.headers.origin;
+  if (origin && (origin.includes('vikareta.com') || origin.includes('localhost'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin, Cache-Control, Pragma');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID');
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  next();
+}, apiLimiter, userRoutes);
 app.use('/api/wallet', apiLimiter, walletRoutes);
 app.use('/api/wishlist', apiLimiter, wishlistRoutes);
 

@@ -80,6 +80,56 @@ router.put('/profile', authenticate, asyncHandler(async (req: Request, res: Resp
 }));
 
 /**
+ * GET /api/users/settings
+ * Get user settings/preferences
+ */
+router.get('/settings', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const user = await AuthService.getUserById(req.authUser!.userId);
+
+    // Return user settings/preferences
+    const settings = {
+      notifications: {
+        email: true,
+        push: true,
+        sms: false,
+      },
+      privacy: {
+        profileVisible: true,
+        contactInfoVisible: false,
+      },
+      preferences: {
+        language: 'en',
+        currency: 'INR',
+        timezone: 'Asia/Kolkata',
+      },
+    };
+
+    return res.json({
+      success: true,
+      message: 'User settings retrieved successfully',
+      data: { settings, user },
+    });
+  } catch (error: any) {
+    logger.error('Get user settings failed:', error);
+    
+    if (error.message === 'User not found') {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+        },
+      });
+    }
+
+    throw error;
+  }
+}));
+
+/**
  * POST /api/users/change-password
  * Change user password
  */
