@@ -198,12 +198,19 @@ function verifyCSRF(req: Request, res: Response, next: any) {
     logger.warn('CSRF Token Validation Failed:', {
       reason: !csrfToken ? 'No header token' : !csrfCookie ? 'No cookie token' : 'Tokens do not match',
       headerPresent: !!csrfToken,
-      cookiePresent: !!csrfCookie
+      cookiePresent: !!csrfCookie,
+      headerTokenPreview: csrfToken ? csrfToken.substring(0, 20) + '...' : 'none',
+      cookieTokenPreview: csrfCookie ? csrfCookie.substring(0, 20) + '...' : 'none',
+      tokensEqual: csrfToken === csrfCookie
     });
 
     return res.status(403).json({
       success: false,
-      error: { code: 'CSRF_TOKEN_INVALID', message: 'CSRF token validation failed' }
+      error: { 
+        code: 'CSRF_TOKEN_INVALID', 
+        message: 'CSRF token validation failed',
+        timestamp: new Date().toISOString()
+      }
     });
   }
 
