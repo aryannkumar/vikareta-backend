@@ -1281,7 +1281,7 @@ router.post('/content/:id/moderate', authenticate, requireAdmin, asyncHandler(as
     const { action, reason } = req.body;
 
     let updateData: any = {};
-    
+
     switch (action) {
       case 'approve':
         updateData = { status: 'active' };
@@ -1332,7 +1332,7 @@ router.get('/disputes', authenticate, requireAdmin, asyncHandler(async (req: Req
 
     // Since we don't have a disputes table yet, return mock data structure
     const mockDisputes: any[] = [];
-    
+
     return res.json({
       success: true,
       message: 'Disputes retrieved successfully',
@@ -1402,10 +1402,10 @@ router.get('/system/config', authenticate, requireAdmin, asyncHandler(async (req
 router.put('/system/config', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { config } = req.body;
-    
+
     // In a real implementation, you would save this to database
     // For now, just return success
-    
+
     return res.json({
       success: true,
       message: 'System configuration updated successfully',
@@ -2090,7 +2090,7 @@ router.get('/dashboard/content-stats', authenticate, requireAdmin, asyncHandler(
 router.get('/reports/financial', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { type = 'all', dateFrom, dateTo } = req.query;
-    
+
     const whereClause: any = {};
     if (dateFrom && dateTo) {
       whereClause.createdAt = {
@@ -2177,7 +2177,7 @@ router.get('/reports/financial', authenticate, requireAdmin, asyncHandler(async 
 router.get('/reports/users', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { dateFrom, dateTo, segment = 'all' } = req.query;
-    
+
     const whereClause: any = {};
     if (dateFrom && dateTo) {
       whereClause.createdAt = {
