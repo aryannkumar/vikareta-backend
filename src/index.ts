@@ -225,6 +225,15 @@ app.use(csrfProtection);
 app.use('/health', healthRoutes);
 app.use('/monitoring', monitoringRoutes);
 app.use('/csrf-token', (req, res) => {
+  // Set CORS headers explicitly for CSRF token endpoint
+  const origin = req.headers.origin;
+  if (origin && (origin.includes('vikareta.com') || origin.includes('localhost'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin');
+  }
+  
   const token = require('crypto').randomBytes(32).toString('hex');
   if (req.session) {
     (req.session as any).csrfToken = token;

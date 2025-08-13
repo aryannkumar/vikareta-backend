@@ -122,6 +122,22 @@ export const securityHeaders = helmet({
 
 // Additional security headers middleware to ensure all required headers are present
 export const additionalSecurityHeaders = (req: Request, res: Response, next: NextFunction) => {
+  // Ensure CORS headers are always set for production
+  const origin = req.headers.origin;
+  if (origin && (origin.includes('vikareta.com') || origin.includes('localhost'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID');
+  }
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
   // Ensure X-Frame-Options is set
   if (!res.getHeader('X-Frame-Options')) {
     res.setHeader('X-Frame-Options', 'DENY');
@@ -285,11 +301,24 @@ export const corsOptions = {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    if (config.cors.allowedOrigins.includes(origin)) {
+    // Get allowed origins from config
+    const allowedOrigins = config.cors.allowedOrigins;
+    
+    // Log the origin and allowed origins for debugging
+    logger.info(`CORS check - Origin: ${origin}, Allowed: ${allowedOrigins.join(', ')}`);
+    
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      logger.warn(`CORS blocked request from origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+      // In production, be more permissive for vikareta.com domains
+      if (process.env.NODE_ENV === 'production' && 
+          (origin.includes('vikareta.com') || origin.includes('localhost'))) {
+        logger.info(`CORS allowing production domain: ${origin}`);
+        callback(null, true);
+      } else {
+        logger.warn(`CORS blocked request from origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
     }
   },
   credentials: true,
@@ -302,10 +331,14 @@ export const corsOptions = {
     'X-CSRF-Token',
     'Accept',
     'Origin',
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Allow-Methods',
   ],
-  exposedHeaders: ['X-Request-ID'],
+  exposedHeaders: ['X-Request-ID', 'Access-Control-Allow-Origin'],
   maxAge: 86400, // 24 hours
   optionsSuccessStatus: 200, // Return 200 for OPTIONS requests instead of 204
+  preflightContinue: false,
 };
 
 // Extend global type for DDoS store

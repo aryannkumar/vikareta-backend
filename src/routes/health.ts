@@ -7,13 +7,24 @@ import { prisma } from '@/lib/prisma';
 const router = Router();
 
 // Basic health check
-router.get('/', asyncHandler(async (_req: Request, res: Response) => {
+router.get('/', asyncHandler(async (req: Request, res: Response) => {
+  // Set CORS headers explicitly for health check
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  
   return res.json({
     success: true,
     message: 'Vikareta Backend API is running',
     timestamp: new Date().toISOString(),
     environment: config.env,
     version: '1.0.0',
+    cors: {
+      origin: origin,
+      allowedOrigins: config.cors.allowedOrigins,
+    },
   });
 }));
 
