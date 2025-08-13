@@ -1,3 +1,8 @@
+/**
+ * SSO Authentication Middleware
+ * Updated to work with HttpOnly cookies instead of Authorization headers
+ */
+
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
@@ -5,9 +10,12 @@ import { logger } from '@/utils/logger';
 
 const prisma = new PrismaClient();
 
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+
 interface JwtPayload {
-  userId: string;
+  id: string;
   email: string;
+  role: string;
   userType: string;
 }
 
@@ -15,20 +23,37 @@ declare global {
   namespace Express {
     interface Request {
       authUser?: {
-        userId: string;
+        id: string;
+        userId: string; // For backward compatibility
         email: string;
         userType: string;
+        role: string;
         verificationTier: string;
       };
     }
   }
 }
 
+/**
+ * SSO Authentication Middleware
+ * Reads access token from HttpOnly cookie
+ */
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Try cookie-based authentication first (SSO)
+    let token = req.cookies.access_token;
+    let isSSO = true;
+
+    // Fallback to Authorization header for backward compatibility
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+        isSSO = false;
+      }
+    }
+
+    if (!token) {
       return res.status(401).json({
         success: false,
         error: {
@@ -38,10 +63,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       });
     }
 
-    const token = authHeader.substring(7);
-    const jwtSecret = process.env.JWT_SECRET;
-
-    if (!jwtSecret) {
+    if (!JWT_SECRET) {
       logger.error('JWT_SECRET not configured');
       return res.status(500).json({
         success: false,
@@ -52,11 +74,14 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       });
     }
 
-    const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    
+    // Handle both old and new token formats
+    const userId = decoded.id || (decoded as any).userId;
     
     // Get user from database
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: userId },
       select: {
         id: true,
         email: true,
@@ -77,15 +102,32 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 
     req.authUser = {
-      userId: user.id,
+      id: user.id,
+      userId: user.id, // For backward compatibility
       email: user.email || '',
       userType: user.userType || 'user',
+      role: user.userType || 'user',
       verificationTier: user.verificationTier || 'basic',
     };
+
+    logger.debug(`SSO: User authenticated via ${isSSO ? 'cookie' : 'header'}:`, { 
+      userId: user.id, 
+      email: user.email 
+    });
 
     next();
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'TOKEN_EXPIRED',
+            message: 'Access token expired',
+          },
+        });
+      }
+      
       return res.status(401).json({
         success: false,
         error: {
@@ -95,7 +137,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       });
     }
 
-    logger.error('Authentication error:', error);
+    logger.error('SSO: Authentication error:', error);
     return res.status(500).json({
       success: false,
       error: {

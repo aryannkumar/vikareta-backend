@@ -1,3 +1,8 @@
+/**
+ * SSO Authentication Routes
+ * Secure Cross-Subdomain Single Sign-On with JWT + Refresh Tokens in HttpOnly Cookies
+ */
+
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import bcrypt from 'bcryptjs';
@@ -8,6 +13,28 @@ import { logger } from '@/utils/logger';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// JWT Configuration
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-super-secret-refresh-key';
+const ACCESS_TOKEN_EXPIRY = '15m';
+const REFRESH_TOKEN_EXPIRY = '7d';
+
+// Cookie Configuration
+const COOKIE_CONFIG = {
+  domain: process.env.NODE_ENV === 'production' ? '.vikareta.com' : undefined,
+  path: '/',
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const
+};
+
+// In-memory refresh token storage (replace with Redis in production)
+const refreshTokens = new Map<string, {
+  userId: string;
+  createdAt: Date;
+  expiresAt: Date;
+}>();
 
 // Validation middleware
 const handleValidationErrors = (req: Request, res: Response, next: any) => {
@@ -25,27 +52,159 @@ const handleValidationErrors = (req: Request, res: Response, next: any) => {
   return next();
 };
 
-// Generate JWT tokens
-const generateTokens = (userId: string, email: string, userType: string) => {
-  const jwtSecret = process.env.JWT_SECRET!;
-  const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET!;
+/**
+ * Generate JWT Access Token
+ */
+function generateAccessToken(user: any) {
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      role: user.userType,
+      userType: user.userType
+    },
+    JWT_SECRET,
+    { expiresIn: ACCESS_TOKEN_EXPIRY }
+  );
+}
 
-  const accessToken = jwt.sign(
-    { userId, email, userType },
-    jwtSecret,
+/**
+ * Generate Refresh Token
+ */
+function generateRefreshToken(user: any) {
+  const refreshToken = jwt.sign(
+    { id: user.id, email: user.email },
+    REFRESH_SECRET,
+    { expiresIn: REFRESH_TOKEN_EXPIRY }
+  );
+
+  // Store refresh token
+  refreshTokens.set(refreshToken, {
+    userId: user.id,
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  });
+
+  return refreshToken;
+}
+
+/**
+ * Generate CSRF Token
+ */
+function generateCSRFToken() {
+  return jwt.sign(
+    { type: 'csrf', timestamp: Date.now() },
+    JWT_SECRET,
     { expiresIn: '1h' }
   );
+}
 
-  const refreshToken = jwt.sign(
-    { userId, email, userType },
-    jwtRefreshSecret,
-    { expiresIn: '7d' }
-  );
+/**
+ * Set Authentication Cookies
+ */
+function setAuthCookies(res: Response, user: any) {
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
+  const csrfToken = generateCSRFToken();
 
-  return { accessToken, refreshToken };
-};
+  // Set HttpOnly cookies for tokens
+  res.cookie('access_token', accessToken, {
+    ...COOKIE_CONFIG,
+    maxAge: 15 * 60 * 1000 // 15 minutes
+  });
 
-// POST /api/auth/register
+  res.cookie('refresh_token', refreshToken, {
+    ...COOKIE_CONFIG,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+
+  // Set CSRF token (non-HttpOnly for JavaScript access)
+  res.cookie('XSRF-TOKEN', csrfToken, {
+    ...COOKIE_CONFIG,
+    httpOnly: false,
+    maxAge: 60 * 60 * 1000 // 1 hour
+  });
+}
+
+/**
+ * Clear Authentication Cookies
+ */
+function clearAuthCookies(res: Response) {
+  const expiredConfig = {
+    ...COOKIE_CONFIG,
+    expires: new Date(0)
+  };
+
+  res.cookie('access_token', '', expiredConfig);
+  res.cookie('refresh_token', '', expiredConfig);
+  res.cookie('XSRF-TOKEN', '', { ...expiredConfig, httpOnly: false });
+}
+
+/**
+ * Middleware: Verify Access Token from Cookie
+ */
+function verifyAccessToken(req: Request, res: Response, next: any) {
+  const accessToken = req.cookies.access_token;
+
+  if (!accessToken) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'NO_TOKEN', message: 'Access token required' }
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(accessToken, JWT_SECRET) as any;
+    req.authUser = decoded;
+    next();
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'TOKEN_EXPIRED', message: 'Access token expired' }
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: { code: 'INVALID_TOKEN', message: 'Invalid access token' }
+    });
+  }
+}
+
+/**
+ * Middleware: Verify CSRF Token
+ */
+function verifyCSRF(req: Request, res: Response, next: any) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+
+  const csrfToken = req.headers['x-xsrf-token'] as string;
+  const csrfCookie = req.cookies['XSRF-TOKEN'];
+
+  if (!csrfToken || !csrfCookie || csrfToken !== csrfCookie) {
+    return res.status(403).json({
+      success: false,
+      error: { code: 'CSRF_TOKEN_INVALID', message: 'CSRF token validation failed' }
+    });
+  }
+
+  try {
+    jwt.verify(csrfToken, JWT_SECRET);
+    next();
+  } catch (error) {
+    return res.status(403).json({
+      success: false,
+      error: { code: 'CSRF_TOKEN_INVALID', message: 'Invalid CSRF token' }
+    });
+  }
+}
+
+/**
+ * POST /auth/register
+ * Register new user with SSO cookies
+ */
 router.post('/register', [
   body('email').isEmail().withMessage('Valid email is required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
@@ -53,6 +212,7 @@ router.post('/register', [
   body('lastName').trim().isLength({ min: 1 }).withMessage('Last name is required'),
   body('userType').isIn(['buyer', 'seller', 'both']).withMessage('Invalid user type'),
   handleValidationErrors,
+  verifyCSRF,
 ], async (req: Request, res: Response) => {
   try {
     const { email, password, firstName, lastName, userType, businessName, phone, location } = req.body;
@@ -68,7 +228,7 @@ router.post('/register', [
     });
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         error: {
           code: 'USER_EXISTS',
@@ -108,22 +268,26 @@ router.post('/register', [
       },
     });
 
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user.id, user.email!, user.userType!);
+    // Set authentication cookies
+    setAuthCookies(res, user);
 
-    logger.info('User registered successfully:', { userId: user.id, email: user.email });
+    // Create user response with name field
+    const userResponse = {
+      ...user,
+      name: `${user.firstName} ${user.lastName}`,
+      role: user.userType,
+      verified: user.isVerified
+    };
+
+    logger.info('SSO: User registered successfully:', { userId: user.id, email: user.email });
 
     return res.status(201).json({
       success: true,
-      data: {
-        user,
-        token: accessToken,
-        refreshToken,
-      },
+      user: userResponse,
       message: 'User registered successfully',
     });
   } catch (error) {
-    logger.error('Registration error:', error);
+    logger.error('SSO: Registration error:', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -134,11 +298,15 @@ router.post('/register', [
   }
 });
 
-// POST /api/auth/login
+/**
+ * POST /auth/login
+ * Login with username/password and set SSO cookies
+ */
 router.post('/login', [
   body('email').isEmail().withMessage('Valid email is required'),
   body('password').notEmpty().withMessage('Password is required'),
   handleValidationErrors,
+  verifyCSRF,
 ], async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -182,25 +350,34 @@ router.post('/login', [
       });
     }
 
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user.id, user.email!, user.userType!);
+    // Set authentication cookies
+    setAuthCookies(res, user);
 
-    // Remove password hash from response
-    const { passwordHash, ...userResponse } = user;
+    // Create user response with name field
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      name: `${user.firstName} ${user.lastName}`,
+      businessName: user.businessName,
+      role: user.userType,
+      userType: user.userType,
+      verificationTier: user.verificationTier,
+      verified: user.isVerified,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+    };
 
-    logger.info('User logged in successfully:', { userId: user.id, email: user.email });
+    logger.info('SSO: User logged in successfully:', { userId: user.id, email: user.email });
 
     return res.json({
       success: true,
-      data: {
-        user: userResponse,
-        token: accessToken,
-        refreshToken,
-      },
+      user: userResponse,
       message: 'Login successful',
     });
   } catch (error) {
-    logger.error('Login error:', error);
+    logger.error('SSO: Login error:', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -211,30 +388,58 @@ router.post('/login', [
   }
 });
 
-// POST /api/auth/refresh
-router.post('/refresh', [
-  body('refreshToken').notEmpty().withMessage('Refresh token is required'),
-  handleValidationErrors,
-], async (req: Request, res: Response) => {
+/**
+ * POST /auth/refresh
+ * Refresh access token using refresh token from cookie
+ */
+router.post('/refresh', verifyCSRF, async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.body;
-    const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET!;
+    const refreshToken = req.cookies.refresh_token;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'NO_REFRESH_TOKEN',
+          message: 'Refresh token required',
+        },
+      });
+    }
+
+    // Check if refresh token exists and is valid
+    const tokenData = refreshTokens.get(refreshToken);
+    if (!tokenData || tokenData.expiresAt < new Date()) {
+      refreshTokens.delete(refreshToken);
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_REFRESH_TOKEN',
+          message: 'Invalid or expired refresh token',
+        },
+      });
+    }
 
     // Verify refresh token
-    const decoded = jwt.verify(refreshToken, jwtRefreshSecret) as any;
+    const decoded = jwt.verify(refreshToken, REFRESH_SECRET) as any;
 
     // Get user
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: decoded.id },
       select: {
         id: true,
         email: true,
+        firstName: true,
+        lastName: true,
+        businessName: true,
         userType: true,
+        verificationTier: true,
+        isVerified: true,
+        createdAt: true,
       },
     });
 
     if (!user) {
-      return res.status(401).json({
+      return res.status(404).json({
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
@@ -243,14 +448,39 @@ router.post('/refresh', [
       });
     }
 
-    // Generate new tokens
-    const tokens = generateTokens(user.id, user.email!, user.userType!);
+    // Generate new access token
+    const newAccessToken = generateAccessToken(user);
+
+    // Set new access token cookie
+    res.cookie('access_token', newAccessToken, {
+      ...COOKIE_CONFIG,
+      maxAge: 15 * 60 * 1000 // 15 minutes
+    });
+
+    // Create user response
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      name: `${user.firstName} ${user.lastName}`,
+      businessName: user.businessName,
+      role: user.userType,
+      userType: user.userType,
+      verificationTier: user.verificationTier,
+      verified: user.isVerified,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+    };
+
+    logger.info('SSO: Token refreshed successfully:', { userId: user.id });
 
     return res.json({
       success: true,
-      data: tokens,
+      user: userResponse,
     });
   } catch (error) {
+    logger.error('SSO: Token refresh error:', error);
     return res.status(401).json({
       success: false,
       error: {
@@ -261,11 +491,14 @@ router.post('/refresh', [
   }
 });
 
-// GET /api/auth/me
-router.get('/me', authenticate, async (req: Request, res: Response) => {
+/**
+ * GET /auth/me
+ * Get current user profile using access token from cookie
+ */
+router.get('/me', verifyAccessToken, async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.authUser!.userId },
+      where: { id: req.authUser!.id },
       select: {
         id: true,
         email: true,
@@ -291,12 +524,30 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
       });
     }
 
+    // Create user response with name field
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      name: `${user.firstName} ${user.lastName}`,
+      businessName: user.businessName,
+      role: user.userType,
+      userType: user.userType,
+      verificationTier: user.verificationTier,
+      verified: user.isVerified,
+      isVerified: user.isVerified,
+      phone: user.phone,
+      gstin: user.gstin,
+      createdAt: user.createdAt,
+    };
+
     return res.json({
       success: true,
-      data: user,
+      user: userResponse,
     });
   } catch (error) {
-    logger.error('Get user error:', error);
+    logger.error('SSO: Get user error:', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -307,8 +558,45 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/auth/profile
-router.put('/profile', authenticate, [
+/**
+ * POST /auth/logout
+ * Logout and clear all cookies across subdomains
+ */
+router.post('/logout', verifyCSRF, async (req: Request, res: Response) => {
+  try {
+    const refreshToken = req.cookies.refresh_token;
+
+    // Remove refresh token from storage
+    if (refreshToken) {
+      refreshTokens.delete(refreshToken);
+    }
+
+    // Clear all authentication cookies
+    clearAuthCookies(res);
+
+    logger.info('SSO: User logged out successfully');
+
+    return res.json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error) {
+    logger.error('SSO: Logout error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'LOGOUT_ERROR',
+        message: 'Logout failed',
+      },
+    });
+  }
+});
+
+/**
+ * PUT /auth/profile
+ * Update user profile
+ */
+router.put('/profile', verifyAccessToken, verifyCSRF, [
   body('firstName').optional().trim().isLength({ min: 1 }).withMessage('First name cannot be empty'),
   body('lastName').optional().trim().isLength({ min: 1 }).withMessage('Last name cannot be empty'),
   body('businessName').optional().trim(),
@@ -320,7 +608,7 @@ router.put('/profile', authenticate, [
     const { firstName, lastName, businessName, phone, gstin } = req.body;
 
     const user = await prisma.user.update({
-      where: { id: req.authUser!.userId },
+      where: { id: req.authUser!.id },
       data: {
         firstName,
         lastName,
@@ -343,15 +631,33 @@ router.put('/profile', authenticate, [
       },
     });
 
-    logger.info('Profile updated successfully:', { userId: user.id });
+    // Create user response with name field
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      name: `${user.firstName} ${user.lastName}`,
+      businessName: user.businessName,
+      role: user.userType,
+      userType: user.userType,
+      verificationTier: user.verificationTier,
+      verified: user.isVerified,
+      isVerified: user.isVerified,
+      phone: user.phone,
+      gstin: user.gstin,
+      createdAt: user.createdAt,
+    };
+
+    logger.info('SSO: Profile updated successfully:', { userId: user.id });
 
     return res.json({
       success: true,
-      data: { user },
+      user: userResponse,
       message: 'Profile updated successfully',
     });
   } catch (error) {
-    logger.error('Profile update error:', error);
+    logger.error('SSO: Profile update error:', error);
     return res.status(500).json({
       success: false,
       error: {

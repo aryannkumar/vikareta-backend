@@ -9,6 +9,7 @@ import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
 import session from 'express-session';
+import cookieParser from 'cookie-parser';
 import { createClient } from 'redis';
 import passport from '@/config/passport';
 
@@ -220,7 +221,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin, Cache-Control, Pragma');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-XSRF-TOKEN, X-CSRF-Token, Accept, Origin, Cache-Control, Pragma');
     res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID');
     res.setHeader('Vary', 'Origin');
   }
@@ -251,6 +252,7 @@ app.use(compression());
 // Body parsing middleware with input sanitization
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser()); // Add cookie parser for SSO
 app.use(sanitizeInput);
 
 // Logging
@@ -303,21 +305,43 @@ app.get('/cors-test', (req, res) => {
   });
 });
 
-app.use('/csrf-token', (req, res) => {
+// CSRF token endpoint for SSO system
+app.get('/csrf-token', (req, res) => {
   // Set CORS headers explicitly for CSRF token endpoint
   const origin = req.headers.origin;
   if (origin && (origin.includes('vikareta.com') || origin.includes('localhost'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-XSRF-TOKEN, Accept, Origin');
   }
 
-  const token = require('crypto').randomBytes(32).toString('hex');
-  if (req.session) {
-    (req.session as any).csrfToken = token;
-  }
-  res.json({ success: true, data: { csrfToken: token } });
+  // Generate CSRF token using JWT
+  const jwt = require('jsonwebtoken');
+  const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+  
+  const csrfToken = jwt.sign(
+    { type: 'csrf', timestamp: Date.now() },
+    JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+
+  // Set CSRF token as non-HttpOnly cookie for JavaScript access
+  const cookieConfig = {
+    domain: process.env.NODE_ENV === 'production' ? '.vikareta.com' : undefined,
+    path: '/',
+    httpOnly: false, // Allow JavaScript access
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const,
+    maxAge: 60 * 60 * 1000 // 1 hour
+  };
+
+  res.cookie('XSRF-TOKEN', csrfToken, cookieConfig);
+  
+  res.json({ 
+    success: true, 
+    data: { csrfToken } 
+  });
 });
 
 // API routes (with /api prefix)
