@@ -8,7 +8,7 @@ import { body, validationResult } from 'express-validator';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '@/middleware/auth';
+
 import { logger } from '@/utils/logger';
 
 const router = Router();
@@ -231,8 +231,7 @@ router.post('/register', [
   body('lastName').trim().isLength({ min: 1 }).withMessage('Last name is required'),
   body('userType').isIn(['buyer', 'seller', 'both']).withMessage('Invalid user type'),
   handleValidationErrors,
-  // Temporarily disable CSRF for testing
-  // verifyCSRF,
+  verifyCSRF,
 ], async (req: Request, res: Response) => {
   try {
     const { email, password, firstName, lastName, userType, businessName, phone, location } = req.body;
@@ -326,8 +325,7 @@ router.post('/login', [
   body('email').isEmail().withMessage('Valid email is required'),
   body('password').notEmpty().withMessage('Password is required'),
   handleValidationErrors,
-  // Temporarily disable CSRF for testing
-  // verifyCSRF,
+  verifyCSRF,
 ], async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -413,7 +411,7 @@ router.post('/login', [
  * POST /auth/refresh
  * Refresh access token using refresh token from cookie
  */
-router.post('/refresh', /* verifyCSRF, */ async (req: Request, res: Response) => {
+router.post('/refresh', verifyCSRF, async (req: Request, res: Response) => {
   try {
     const refreshToken = req.cookies.refresh_token;
 
@@ -583,7 +581,7 @@ router.get('/me', verifyAccessToken, async (req: Request, res: Response) => {
  * POST /auth/logout
  * Logout and clear all cookies across subdomains
  */
-router.post('/logout', /* verifyCSRF, */ async (req: Request, res: Response) => {
+router.post('/logout', verifyCSRF, async (req: Request, res: Response) => {
   try {
     const refreshToken = req.cookies.refresh_token;
 
@@ -617,7 +615,7 @@ router.post('/logout', /* verifyCSRF, */ async (req: Request, res: Response) => 
  * PUT /auth/profile
  * Update user profile
  */
-router.put('/profile', verifyAccessToken, /* verifyCSRF, */[
+router.put('/profile', verifyAccessToken, verifyCSRF, [
   body('firstName').optional().trim().isLength({ min: 1 }).withMessage('First name cannot be empty'),
   body('lastName').optional().trim().isLength({ min: 1 }).withMessage('Last name cannot be empty'),
   body('businessName').optional().trim(),
