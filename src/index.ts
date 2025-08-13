@@ -212,28 +212,6 @@ app.use(httpsSecurityHeaders);
 app.use(requestId);
 app.use(securityHeaders);
 
-// Global CORS handler - must come before other middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const origin = req.headers.origin;
-
-  // Allow all vikareta.com domains and localhost
-  if (origin && (origin.includes('vikareta.com') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-XSRF-TOKEN, X-CSRF-Token, Accept, Origin, Cache-Control, Pragma');
-    res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID');
-    res.setHeader('Vary', 'Origin');
-  }
-
-  // Handle preflight requests immediately
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  next();
-});
-
 app.use(additionalSecurityHeaders);
 app.use(ddosProtection);
 app.use(ipFilter);
@@ -243,7 +221,7 @@ app.use(securityLogger);
 // Performance monitoring middleware
 app.use(performanceMiddleware);
 
-// CORS configuration with enhanced security
+// CORS configuration with enhanced security - this handles all CORS logic
 app.use(cors(corsOptions));
 
 // Compression
@@ -307,16 +285,8 @@ app.get('/cors-test', (req, res) => {
 
 // CSRF token endpoint for SSO system
 app.get('/csrf-token', (req, res) => {
-  // Set CORS headers explicitly for CSRF token endpoint
   const origin = req.headers.origin;
   logger.info('CSRF token request from origin:', origin);
-  
-  if (origin && (origin.includes('vikareta.com') || origin.includes('localhost'))) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-XSRF-TOKEN, Accept, Origin');
-  }
 
   // Generate CSRF token using JWT
   const jwt = require('jsonwebtoken');

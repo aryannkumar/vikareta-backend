@@ -320,7 +320,6 @@ export const corsOptions = {
     // In production, be more permissive for vikareta.com domains and localhost
     const isVikaretaDomain = origin.includes('vikareta.com');
     const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-    const isHttps = origin.startsWith('https://');
     
     if (isVikaretaDomain || isLocalhost) {
       logger.info(`CORS allowing domain: ${origin}`);
