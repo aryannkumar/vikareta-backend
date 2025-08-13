@@ -72,6 +72,7 @@ import featuredRoutes from '@/routes/featured';
 import featuredServicesRoutes from '@/routes/featuredServices';
 import { subcategoryRoutes } from '@/routes/subcategory';
 import providerRoutes from '@/routes/provider';
+import wishlistRoutes from '@/routes/wishlist';
 
 const app = express();
 
@@ -273,6 +274,7 @@ app.use('/api/services', apiLimiter, serviceRoutes);
 app.use('/api/marketplace', apiLimiter, marketplaceRoutes);
 app.use('/api/users', apiLimiter, userRoutes);
 app.use('/api/wallet', apiLimiter, walletRoutes);
+app.use('/api/wishlist', apiLimiter, wishlistRoutes);
 
 // Admin routes (with /api prefix)
 app.use('/api/admin/notifications', apiLimiter, adminNotificationRoutes);

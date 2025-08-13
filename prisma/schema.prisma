@@ -126,6 +126,7 @@ model User {
   dealsSeller               Deal[] @relation("DealSeller")
   dealMessages              DealMessage[] @relation("DealMessageSender")
   adApprovalReviews         AdApproval[] @relation("AdApprovalReviewer")
+  wishlist                  Wishlist[]
 
   @@map("users")
 }
@@ -205,6 +206,7 @@ model Product {
   quoteItems           QuoteItem[]
   featuredProducts     FeaturedProduct[]
   reviews              Review[]
+  wishlist             Wishlist[]
 
   @@map("products")
 }
@@ -284,6 +286,7 @@ model Service {
   serviceOrders    ServiceOrder[]
   reviews          Review[]
   appointments     ServiceAppointment[]
+  wishlist         Wishlist[]
 
   @@index([providerId, status])
   @@index([categoryId, subcategoryId])
@@ -1348,6 +1351,27 @@ model ServiceAppointment {
   @@index([orderId, scheduledDate])
   @@index([serviceId, scheduledDate])
   @@map("service_appointments")
+}
+
+// ================================
+// WISHLIST
+// ================================
+
+model Wishlist {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  productId String?  @map("product_id") @db.Uuid
+  serviceId String?  @map("service_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@unique([userId, serviceId])
+  @@index([userId, createdAt])
+  @@map("wishlists")
 }
 
 // End of schema - duplicate models removed
