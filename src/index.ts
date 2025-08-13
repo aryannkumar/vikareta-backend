@@ -84,9 +84,25 @@ let redisClient: any = null;
 let redisConnected = false;
 
 try {
-  redisClient = createClient({
-    url: config.redis.url,
+  // Parse Redis URL to extract components
+  const redisUrl = new URL(config.redis.url);
+  
+  logger.info('Redis configuration:', {
+    host: redisUrl.hostname,
+    port: parseInt(redisUrl.port) || 6379,
+    username: redisUrl.username || 'none',
+    hasPassword: !!redisUrl.password,
+    database: parseInt(redisUrl.pathname.slice(1)) || 0
+  });
+  
+  // Try URL-based connection first, fallback to explicit config
+  const redisConfig = redisUrl.username ? {
+    // ACL-based authentication (Redis 6+)
+    username: redisUrl.username,
+    password: redisUrl.password,
     socket: {
+      host: redisUrl.hostname,
+      port: parseInt(redisUrl.port) || 6379,
       reconnectStrategy: (retries) => {
         if (retries > 10) {
           logger.error('Redis reconnection failed after 10 attempts, giving up');
@@ -95,10 +111,35 @@ try {
         return Math.min(retries * 50, 500);
       },
     },
-  });
+    database: parseInt(redisUrl.pathname.slice(1)) || 0,
+  } : {
+    // Legacy password-only authentication
+    password: redisUrl.password,
+    socket: {
+      host: redisUrl.hostname,
+      port: parseInt(redisUrl.port) || 6379,
+      reconnectStrategy: (retries) => {
+        if (retries > 10) {
+          logger.error('Redis reconnection failed after 10 attempts, giving up');
+          return false;
+        }
+        return Math.min(retries * 50, 500);
+      },
+    },
+    database: parseInt(redisUrl.pathname.slice(1)) || 0,
+  };
+  
+  redisClient = createClient(redisConfig);
 
   redisClient.on('error', (err) => {
-    logger.error('Redis cache error:', err);
+    logger.error('Redis cache error:', {
+      message: err.message,
+      code: err.code,
+      errno: err.errno,
+      syscall: err.syscall,
+      address: err.address,
+      port: err.port
+    });
     redisConnected = false;
   });
 
