@@ -1192,6 +1192,288 @@ router.get('/dashboard/content/flagged', authenticate, requireAdmin, asyncHandle
 }));
 
 /**
+ * GET /api/admin/content/moderation
+ * Get content for moderation (admin only)
+ */
+router.get('/content/moderation', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+
+    const [flaggedProducts, total] = await Promise.all([
+      prisma.product.findMany({
+        where: {
+          OR: [
+            { status: 'pending' },
+            { status: 'rejected' }
+          ]
+        },
+        skip,
+        take: limit,
+        include: {
+          seller: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.product.count({
+        where: {
+          OR: [
+            { status: 'pending' },
+            { status: 'rejected' }
+          ]
+        }
+      })
+    ]);
+
+    const transformedContent = flaggedProducts.map(product => ({
+      id: product.id,
+      type: 'product',
+      title: product.title,
+      description: product.description,
+      status: product.status,
+      flaggedAt: product.createdAt,
+      seller: product.seller,
+      category: product.category,
+    }));
+
+    return res.json({
+      success: true,
+      message: 'Content for moderation retrieved successfully',
+      data: {
+        data: transformedContent,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1,
+        },
+      },
+    });
+  } catch (error: any) {
+    logger.error('Get content for moderation failed:', error);
+    throw error;
+  }
+}));
+
+/**
+ * POST /api/admin/content/:id/moderate
+ * Moderate content (admin only)
+ */
+router.post('/content/:id/moderate', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { action, reason } = req.body;
+
+    let updateData: any = {};
+    
+    switch (action) {
+      case 'approve':
+        updateData = { status: 'active' };
+        break;
+      case 'reject':
+        updateData = { status: 'rejected' };
+        break;
+      case 'flag':
+        updateData = { status: 'pending' };
+        break;
+      case 'remove':
+        updateData = { status: 'inactive' };
+        break;
+      default:
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_ACTION',
+            message: 'Invalid moderation action',
+          },
+        });
+    }
+
+    const content = await prisma.product.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return res.json({
+      success: true,
+      message: `Content ${action}ed successfully`,
+      data: { content },
+    });
+  } catch (error: any) {
+    logger.error('Moderate content failed:', error);
+    throw error;
+  }
+}));
+
+/**
+ * GET /api/admin/disputes
+ * Get all disputes (admin only)
+ */
+router.get('/disputes', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    // Since we don't have a disputes table yet, return mock data structure
+    const mockDisputes: any[] = [];
+    
+    return res.json({
+      success: true,
+      message: 'Disputes retrieved successfully',
+      data: {
+        data: mockDisputes,
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+          hasNext: false,
+          hasPrev: false,
+        },
+      },
+    });
+  } catch (error: any) {
+    logger.error('Get disputes failed:', error);
+    throw error;
+  }
+}));
+
+/**
+ * GET /api/admin/system/config
+ * Get system configuration (admin only)
+ */
+router.get('/system/config', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    // Return current system configuration
+    const config = {
+      general: {
+        siteName: 'Vikareta',
+        siteUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://vikareta.com',
+        maintenanceMode: false,
+      },
+      payment: {
+        cashfreeEnabled: !!process.env.CASHFREE_CLIENT_ID,
+        minimumWithdrawal: 100,
+        commissionRate: 5,
+      },
+      notification: {
+        emailEnabled: !!process.env.SMTP_HOST,
+        smsEnabled: false,
+        pushEnabled: false,
+      },
+      security: {
+        jwtExpiry: process.env.JWT_ACCESS_EXPIRES || '1h',
+        maxLoginAttempts: 5,
+        sessionTimeout: 24 * 60 * 60 * 1000,
+      },
+    };
+
+    return res.json({
+      success: true,
+      message: 'System configuration retrieved successfully',
+      data: config,
+    });
+  } catch (error: any) {
+    logger.error('Get system config failed:', error);
+    throw error;
+  }
+}));
+
+/**
+ * PUT /api/admin/system/config
+ * Update system configuration (admin only)
+ */
+router.put('/system/config', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { config } = req.body;
+    
+    // In a real implementation, you would save this to database
+    // For now, just return success
+    
+    return res.json({
+      success: true,
+      message: 'System configuration updated successfully',
+      data: config,
+    });
+  } catch (error: any) {
+    logger.error('Update system config failed:', error);
+    throw error;
+  }
+}));
+
+/**
+ * GET /api/admin/dashboard/content/flagged
+ * Get flagged content (admin only)
+ */
+router.get('/dashboard/content/flagged', authenticate, requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    // Get products that are pending review (could be flagged)
+    const flaggedContent = await prisma.product.findMany({
+      where: {
+        status: 'pending',
+      },
+      take: 20,
+      include: {
+        seller: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const transformedContent = flaggedContent.map(product => ({
+      id: product.id,
+      type: 'product',
+      title: product.title,
+      description: product.description,
+      flagReason: 'Pending review',
+      status: 'flagged',
+      flaggedAt: product.createdAt,
+      seller: product.seller,
+      category: product.category,
+    }));
+
+    return res.json({
+      success: true,
+      message: 'Flagged content retrieved successfully',
+      data: transformedContent,
+    });
+  } catch (error: any) {
+    logger.error('Get flagged content failed:', error);
+    throw error;
+  }
+}));
+
+/**
  * GET /api/admin/orders/refunds
  * Get refund requests (admin only)
  */

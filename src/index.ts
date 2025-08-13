@@ -4,7 +4,7 @@ import 'module-alias/register';
 // Initialize APM first
 import './config/apm';
 
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
@@ -123,10 +123,10 @@ try {
 
   // Initialize Redis connection with timeout
   const connectWithTimeout = async () => {
-    const timeout = new Promise((_, reject) => 
+    const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Redis connection timeout')), 10000)
     );
-    
+
     try {
       await Promise.race([redisClient.connect(), timeout]);
       logger.info('✅ Redis connection established');
@@ -169,6 +169,29 @@ app.use(httpsSecurityHeaders);
 // Enhanced security middleware
 app.use(requestId);
 app.use(securityHeaders);
+
+// Global CORS handler - must come before other middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+
+  // Allow all vikareta.com domains and localhost
+  if (origin && (origin.includes('vikareta.com') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin, Cache-Control, Pragma');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID');
+    res.setHeader('Vary', 'Origin');
+  }
+
+  // Handle preflight requests immediately
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  next();
+});
+
 app.use(additionalSecurityHeaders);
 app.use(ddosProtection);
 app.use(ipFilter);
@@ -225,6 +248,20 @@ app.use(csrfProtection);
 // System routes (without /api prefix)
 app.use('/health', healthRoutes);
 app.use('/monitoring', monitoringRoutes);
+
+// CORS test endpoint
+app.get('/cors-test', (req, res) => {
+  const origin = req.headers.origin;
+  logger.info(`CORS test endpoint hit from origin: ${origin}`);
+
+  res.json({
+    success: true,
+    message: 'CORS is working correctly',
+    origin: origin,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use('/csrf-token', (req, res) => {
   // Set CORS headers explicitly for CSRF token endpoint
   const origin = req.headers.origin;
@@ -234,7 +271,7 @@ app.use('/csrf-token', (req, res) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin');
   }
-  
+
   const token = require('crypto').randomBytes(32).toString('hex');
   if (req.session) {
     (req.session as any).csrfToken = token;
@@ -276,10 +313,27 @@ app.use('/api/users', apiLimiter, userRoutes);
 app.use('/api/wallet', apiLimiter, walletRoutes);
 app.use('/api/wishlist', apiLimiter, wishlistRoutes);
 
-// Admin routes (with /api prefix)
+// Admin routes (with /api prefix) - with explicit CORS handling
+app.use('/api/admin', (req, res, next) => {
+  // Ensure CORS headers for admin routes
+  const origin = req.headers.origin;
+  if (origin && (origin.includes('admin.vikareta.com') || origin.includes('vikareta.com') || origin.includes('localhost'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, Accept, Origin, Cache-Control, Pragma');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID');
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  next();
+}, apiLimiter, adminRoutes);
+
 app.use('/api/admin/notifications', apiLimiter, adminNotificationRoutes);
 app.use('/api/admin/workers', apiLimiter, workerManagementRoutes);
-app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 
 // Error handling middleware
