@@ -84,6 +84,16 @@ model User {
   userType          String    @default("user") @map("user_type") @db.VarChar(20)
   verificationTier  String    @default("basic") @map("verification_tier") @db.VarChar(20)
   isVerified        Boolean   @default(false) @map("is_verified")
+  isActive          Boolean   @default(true) @map("is_active")
+  avatar            String?   @db.VarChar(500)
+  location          String?   @db.VarChar(255)
+  latitude          Float?
+  longitude         Float?
+  address           String?   @db.Text
+  city              String?   @db.VarChar(100)
+  state             String?   @db.VarChar(100)
+  country           String?   @db.VarChar(100)
+  postalCode        String?   @map("postal_code") @db.VarChar(20)
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 

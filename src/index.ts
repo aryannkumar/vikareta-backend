@@ -70,6 +70,7 @@ import { dashboardRoutes } from '@/routes/dashboard';
 import featuredRoutes from '@/routes/featured';
 import featuredServicesRoutes from '@/routes/featuredServices';
 import { subcategoryRoutes } from '@/routes/subcategory';
+import providerRoutes from '@/routes/provider';
 
 const app = express();
 
@@ -235,6 +236,7 @@ app.use('/api/auth', authLimiter, regenerateSession, authRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/categories', apiLimiter, categoryRoutes);
 app.use('/api/subcategories', apiLimiter, subcategoryRoutes);
+app.use('/api/providers', apiLimiter, providerRoutes);
 app.use('/api/featured', apiLimiter, featuredRoutes);
 app.use('/api/featured-services', apiLimiter, featuredServicesRoutes);
 app.use('/api/media', apiLimiter, mediaRoutes);

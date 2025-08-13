@@ -55,7 +55,7 @@ router.post('/register', [
   handleValidationErrors,
 ], async (req: Request, res: Response) => {
   try {
-    const { email, password, firstName, lastName, userType, businessName, phone } = req.body;
+    const { email, password, firstName, lastName, userType, businessName, phone, location } = req.body;
 
     // Check if user already exists
     const existingUser = await prisma.user.findFirst({
@@ -89,9 +89,11 @@ router.post('/register', [
         lastName,
         businessName,
         phone,
+        location,
         userType,
         verificationTier: 'basic',
         isVerified: false,
+        isActive: true,
       },
       select: {
         id: true,
