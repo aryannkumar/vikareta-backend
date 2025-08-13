@@ -309,6 +309,8 @@ app.get('/cors-test', (req, res) => {
 app.get('/csrf-token', (req, res) => {
   // Set CORS headers explicitly for CSRF token endpoint
   const origin = req.headers.origin;
+  logger.info('CSRF token request from origin:', origin);
+  
   if (origin && (origin.includes('vikareta.com') || origin.includes('localhost'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -326,7 +328,7 @@ app.get('/csrf-token', (req, res) => {
     { expiresIn: '1h' }
   );
 
-  // Set CSRF token as non-HttpOnly cookie for JavaScript access
+  // More flexible cookie configuration for production
   const cookieConfig = {
     domain: process.env.NODE_ENV === 'production' ? '.vikareta.com' : undefined,
     path: '/',
@@ -336,11 +338,19 @@ app.get('/csrf-token', (req, res) => {
     maxAge: 60 * 60 * 1000 // 1 hour
   };
 
+  logger.info('Setting CSRF cookie with config:', { 
+    domain: cookieConfig.domain, 
+    secure: cookieConfig.secure, 
+    sameSite: cookieConfig.sameSite 
+  });
+
   res.cookie('XSRF-TOKEN', csrfToken, cookieConfig);
   
+  // Also return token in response body as fallback
   res.json({ 
     success: true, 
-    data: { csrfToken } 
+    data: { csrfToken },
+    cookieSet: true
   });
 });
 
