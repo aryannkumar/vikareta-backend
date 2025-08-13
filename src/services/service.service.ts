@@ -43,114 +43,163 @@ interface BookingData {
 
 class ServiceService {
   async getServices(filters: ServiceFilters) {
-    const {
-      categoryId,
-      subcategoryId,
-      providerId,
-      minPrice,
-      maxPrice,
-      location,
-      serviceType,
-      search,
-      serviceArea,
-      page,
-      limit,
-      sortBy,
-      sortOrder,
-    } = filters;
-
-    const skip = (page - 1) * limit;
-
-    // Build where clause
-    const where: any = {
-      isService: true,
-      status: 'active',
-    };
-
-    if (categoryId) where.categoryId = categoryId;
-    if (subcategoryId) where.subcategoryId = subcategoryId;
-    if (providerId) where.sellerId = providerId;
-    if (minPrice !== undefined || maxPrice !== undefined) {
-      where.price = {};
-      if (minPrice !== undefined) where.price.gte = minPrice;
-      if (maxPrice !== undefined) where.price.lte = maxPrice;
-    }
-
-    if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    // Build orderBy clause
-    let orderBy: any = {};
-    if (sortBy === 'rating') {
-      // For rating, we'll need to calculate average rating
-      orderBy = { createdAt: sortOrder };
-    } else {
-      orderBy[sortBy] = sortOrder;
-    }
-
-    const [services, total] = await Promise.all([
-      prisma.product.findMany({
-        where,
-        include: {
-          seller: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-              verificationTier: true,
-              isVerified: true,
-            },
-          },
-          category: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          subcategory: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          media: {
-            orderBy: { sortOrder: 'asc' },
-            take: 5,
-          },
-        },
-        orderBy,
-        skip,
-        take: limit,
-      }),
-      prisma.product.count({ where }),
-    ]);
-
-    // Transform services to include service-specific data
-    const transformedServices = services.map(service => ({
-      ...service,
-      provider: service.seller,
-      serviceType: 'one_time', // Default, should be stored in metadata
-      location: 'both', // Default, should be stored in metadata
-      rating: 4.5, // Placeholder, calculate from reviews
-      reviewCount: 0, // Placeholder, calculate from reviews
-    }));
-
-    return {
-      services: transformedServices,
-      pagination: {
+    try {
+      const {
+        categoryId,
+        subcategoryId,
+        providerId,
+        minPrice,
+        maxPrice,
+        search,
         page,
         limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    };
+        sortBy,
+        sortOrder,
+      } = filters;
+
+      const skip = (page - 1) * limit;
+
+      // First check if any services exist at all
+      const [serviceCount, totalProducts] = await Promise.all([
+        prisma.product.count({ where: { isService: true } }),
+        prisma.product.count()
+      ]);
+
+      logger.info(`Total products in database: ${totalProducts}`);
+      logger.info(`Total services in database: ${serviceCount}`);
+
+      // Build where clause
+      const where: any = {
+        isService: true,
+        status: 'active',
+      };
+
+      if (categoryId) where.categoryId = categoryId;
+      if (subcategoryId) where.subcategoryId = subcategoryId;
+      if (providerId) where.sellerId = providerId;
+      if (minPrice !== undefined || maxPrice !== undefined) {
+        where.price = {};
+        if (minPrice !== undefined) where.price.gte = minPrice;
+        if (maxPrice !== undefined) where.price.lte = maxPrice;
+      }
+
+      if (search) {
+        where.OR = [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      // Build orderBy clause
+      let orderBy: any = {};
+      if (sortBy === 'rating') {
+        // For rating, we'll need to calculate average rating
+        orderBy = { createdAt: sortOrder };
+      } else {
+        orderBy[sortBy] = sortOrder;
+      }
+
+      const [services, total] = await Promise.all([
+        prisma.product.findMany({
+          where,
+          include: {
+            seller: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                businessName: true,
+                verificationTier: true,
+                isVerified: true,
+              },
+            },
+            category: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+            subcategory: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+            media: {
+              orderBy: { sortOrder: 'asc' },
+              take: 5,
+            },
+          },
+          orderBy,
+          skip,
+          take: limit,
+        }).catch(error => {
+          logger.error('Error querying products:', error);
+          throw error;
+        }),
+        prisma.product.count({ where }).catch(error => {
+          logger.error('Error counting products:', error);
+          throw error;
+        }),
+      ]);
+
+      // Transform services to match frontend Service interface
+      const transformedServices = services.map(service => ({
+        id: service.id,
+        name: service.title,
+        description: service.description || '',
+        basePrice: Number(service.price),
+        originalPrice: undefined, // No originalPrice field in Product model
+        images: service.media?.map(m => m.url) || [],
+        rating: 4.5, // TODO: Calculate from actual reviews
+        reviewCount: 0, // TODO: Calculate from actual reviews
+        provider: {
+          id: service.seller.id,
+          name: service.seller.businessName || `${service.seller.firstName || ''} ${service.seller.lastName || ''}`.trim() || 'Unknown Provider',
+          location: 'India', // TODO: Get from seller profile
+          verified: service.seller.isVerified || false,
+          experience: '2+ years', // TODO: Calculate from seller data
+          avatar: '',
+          responseTime: '2 hours', // TODO: Calculate from seller data
+          completedProjects: 0, // TODO: Calculate from order history
+        },
+        category: service.category?.name || 'General',
+        subcategory: service.subcategory?.name,
+        available: service.status === 'active',
+        deliveryTime: '3-5 days', // TODO: Get from service metadata
+        serviceType: 'one-time' as const, // TODO: Store in service metadata
+        tags: [], // TODO: Implement tags system
+        features: [], // TODO: Implement features system
+        packages: [], // TODO: Implement packages system
+        reviews: [], // TODO: Load actual reviews
+        faqs: [], // TODO: Implement FAQs system
+        specifications: {}, // TODO: Store in service metadata
+        createdAt: service.createdAt.toISOString(),
+        updatedAt: service.updatedAt.toISOString(),
+      }));
+
+      logger.info(`Found ${services.length} services out of ${total} total`);
+
+      return {
+        services: transformedServices,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      logger.error('Error in getServices:', error);
+      logger.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        code: error.code
+      });
+      throw new Error(`Failed to fetch services: ${error.message}`);
+    }
   }
 
   async getFeaturedServices(limit: number, categoryId?: string) {
@@ -204,7 +253,7 @@ class ServiceService {
     }));
   }
 
-  async getNearbyServices(latitude: number, longitude: number, radius: number, limit: number) {
+  async getNearbyServices(_latitude: number, _longitude: number, radius: number, limit: number) {
     // For now, return all services since we don't have location data in the schema
     // In a real implementation, you'd use PostGIS or similar for geospatial queries
     const services = await prisma.product.findMany({
@@ -546,8 +595,8 @@ class ServiceService {
     }
 
     // Create order for the service
-    const orderNumber = `SRV-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    
+    const orderNumber = `SRV-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
+
     const order = await prisma.order.create({
       data: {
         buyerId: userId,
@@ -576,7 +625,7 @@ class ServiceService {
     });
 
     // Create service order
-    const serviceOrder = await prisma.serviceOrder.create({
+    await prisma.serviceOrder.create({
       data: {
         orderId: order.id,
         serviceId: serviceId,
@@ -591,8 +640,6 @@ class ServiceService {
     });
 
     // Create service appointment
-    const scheduledDateTime = new Date(`${bookingData.scheduledDate}T${bookingData.scheduledTime}:00`);
-    
     const appointment = await prisma.serviceAppointment.create({
       data: {
         // serviceOrderId: serviceOrder.id, // This field doesn't exist in the schema

@@ -86,6 +86,8 @@ model User {
   isVerified        Boolean   @default(false) @map("is_verified")
   isActive          Boolean   @default(true) @map("is_active")
   avatar            String?   @db.VarChar(500)
+  bio               String?   @db.Text
+  website           String?   @db.VarChar(255)
   location          String?   @db.VarChar(255)
   latitude          Float?
   longitude         Float?

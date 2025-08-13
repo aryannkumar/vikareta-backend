@@ -102,15 +102,24 @@ router.get('/', [
 
     return res.json({
       success: true,
-      data: result,
+      data: {
+        services: result.services,
+        total: result.pagination.total,
+        page: result.pagination.page,
+        limit: result.pagination.limit,
+        hasMore: result.pagination.page < result.pagination.pages,
+      },
     });
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Error fetching services:', error);
     return res.status(500).json({
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
         message: 'Failed to fetch services',
+        details: error.message || 'Unknown error occurred',
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] || 'unknown',
       },
     });
   }

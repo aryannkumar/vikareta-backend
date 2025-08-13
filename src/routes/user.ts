@@ -1,29 +1,46 @@
 import { Router, Request, Response } from 'express';
+import { PrismaClient } from '@prisma/client';
 import { authenticate } from '@/middleware/auth';
 import { AuthService } from '@/services/auth.service';
-import { ProfileService } from '@/services/profile.service';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { logger } from '@/utils/logger';
+
+const prisma = new PrismaClient();
 
 const router = Router();
 
 /**
  * GET /api/users/profile
- * Get current user profile
+ * Get current user profile with complete information
  */
 router.get('/profile', authenticate, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const user = await AuthService.getUserById(req.authUser!.userId);
-
-    return res.json({
-      success: true,
-      message: 'User profile retrieved successfully',
-      data: { user },
-    });
-  } catch (error: any) {
-    logger.error('Get user profile failed:', error);
+    const userId = req.authUser!.userId;
     
-    if (error.message === 'User not found') {
+    // Get user with additional profile information
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        businessName: true,
+        phone: true,
+        gstin: true,
+        userType: true,
+        verificationTier: true,
+        isVerified: true,
+        location: true,
+        avatar: true,
+        bio: true,
+        website: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) {
       return res.status(404).json({
         success: false,
         error: {
@@ -35,7 +52,45 @@ router.get('/profile', authenticate, asyncHandler(async (req: Request, res: Resp
       });
     }
 
-    throw error;
+    // Get user statistics
+    const [orderCount, totalSpent, reviewCount] = await Promise.all([
+      // Count orders
+      prisma.order.count({
+        where: { buyerId: userId }
+      }),
+      // Sum total spent (mock for now)
+      Promise.resolve(0),
+      // Count reviews (mock for now)
+      Promise.resolve(0)
+    ]);
+
+    const profileData = {
+      ...user,
+      stats: {
+        totalOrders: orderCount,
+        totalSpent: totalSpent,
+        reviewsGiven: reviewCount,
+        averageRating: 4.5 // Mock rating
+      }
+    };
+
+    return res.json({
+      success: true,
+      message: 'User profile retrieved successfully',
+      data: profileData,
+    });
+  } catch (error: any) {
+    logger.error('Get user profile failed:', error);
+    
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'PROFILE_FETCH_FAILED',
+        message: 'Failed to retrieve user profile',
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] || 'unknown',
+      },
+    });
   }
 }));
 
@@ -45,37 +100,87 @@ router.get('/profile', authenticate, asyncHandler(async (req: Request, res: Resp
  */
 router.put('/profile', authenticate, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { firstName, lastName, businessName, gstin, phone } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      businessName, 
+      gstin, 
+      phone, 
+      location,
+      bio,
+      website,
+      avatar
+    } = req.body;
 
-    const updatedUser = await ProfileService.updateProfile(req.authUser!.userId, {
-      firstName,
-      lastName,
-      businessName,
-      gstin,
-      phone,
-    });
+    const userId = req.authUser!.userId;
 
-    return res.json({
-      success: true,
-      message: 'Profile updated successfully',
-      data: { user: updatedUser },
-    });
-  } catch (error: any) {
-    logger.error('Update profile failed:', error);
-    
-    if (error.message.includes('Invalid GSTIN')) {
+    // Validate website URL if provided
+    if (website && !/^https?:\/\/.+/.test(website)) {
       return res.status(400).json({
         success: false,
         error: {
-          code: 'INVALID_GSTIN',
-          message: error.message,
+          code: 'INVALID_WEBSITE',
+          message: 'Please provide a valid website URL',
           timestamp: new Date().toISOString(),
           requestId: req.headers['x-request-id'] || 'unknown',
         },
       });
     }
 
-    throw error;
+    // Update user profile
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        firstName,
+        lastName,
+        businessName,
+        gstin,
+        phone,
+        location,
+        bio,
+        website,
+        avatar,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        businessName: true,
+        phone: true,
+        gstin: true,
+        userType: true,
+        verificationTier: true,
+        isVerified: true,
+        location: true,
+        avatar: true,
+        bio: true,
+        website: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    logger.info('Profile updated successfully:', { userId });
+
+    return res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: updatedUser,
+    });
+  } catch (error: any) {
+    logger.error('Update profile failed:', error);
+    
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'PROFILE_UPDATE_FAILED',
+        message: 'Failed to update profile',
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] || 'unknown',
+      },
+    });
   }
 }));
 
@@ -85,7 +190,32 @@ router.put('/profile', authenticate, asyncHandler(async (req: Request, res: Resp
  */
 router.get('/settings', authenticate, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const user = await AuthService.getUserById(req.authUser!.userId);
+    const userId = req.authUser!.userId;
+    
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        businessName: true,
+        userType: true,
+        isVerified: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+        },
+      });
+    }
 
     // Return user settings/preferences
     const settings = {
@@ -113,19 +243,72 @@ router.get('/settings', authenticate, asyncHandler(async (req: Request, res: Res
   } catch (error: any) {
     logger.error('Get user settings failed:', error);
     
-    if (error.message === 'User not found') {
-      return res.status(404).json({
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SETTINGS_FETCH_FAILED',
+        message: 'Failed to retrieve user settings',
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] || 'unknown',
+      },
+    });
+  }
+}));
+
+/**
+ * POST /api/users/avatar
+ * Upload user avatar
+ */
+router.post('/avatar', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { avatar } = req.body;
+
+    if (!avatar) {
+      return res.status(400).json({
         success: false,
         error: {
-          code: 'USER_NOT_FOUND',
-          message: 'User not found',
+          code: 'VALIDATION_ERROR',
+          message: 'Avatar data is required',
           timestamp: new Date().toISOString(),
           requestId: req.headers['x-request-id'] || 'unknown',
         },
       });
     }
 
-    throw error;
+    const userId = req.authUser!.userId;
+
+    // Update user avatar
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        avatar,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        avatar: true,
+      },
+    });
+
+    logger.info('Avatar updated successfully:', { userId });
+
+    return res.json({
+      success: true,
+      message: 'Avatar updated successfully',
+      data: { avatarUrl: updatedUser.avatar },
+    });
+  } catch (error: any) {
+    logger.error('Avatar upload failed:', error);
+    
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'AVATAR_UPLOAD_FAILED',
+        message: 'Failed to update avatar',
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] || 'unknown',
+      },
+    });
   }
 }));
 
