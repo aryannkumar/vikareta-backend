@@ -183,10 +183,13 @@ function verifyCSRF(req: Request, res: Response, next: any) {
     return next();
   }
 
-  const csrfToken = req.headers['x-xsrf-token'] as string;
+  const csrfToken = (req.headers['x-xsrf-token'] || req.headers['X-XSRF-TOKEN']) as string;
   const csrfCookie = req.cookies['XSRF-TOKEN'];
 
-  logger.info(`CSRF Check: Header=${!!csrfToken}, Cookie=${!!csrfCookie}, Match=${csrfToken === csrfCookie}`);
+  logger.info(`CSRF Check: Header=${!!csrfToken}, Cookie=${!!csrfCookie}, Match=${csrfToken === csrfCookie}`, {
+    headerKeys: Object.keys(req.headers).filter(k => k.toLowerCase().includes('xsrf')),
+    cookieKeys: Object.keys(req.cookies)
+  });
 
   if (!csrfToken || !csrfCookie || csrfToken !== csrfCookie) {
     logger.warn('CSRF validation failed');
