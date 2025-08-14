@@ -129,10 +129,19 @@ function clearAuthCookies(res: Response) {
 }
 
 /**
- * Middleware: Verify Access Token from Cookie
+ * Middleware: Verify Access Token from Cookie or Authorization Header
  */
 function verifyAccessToken(req: Request, res: Response, next: any) {
-  const accessToken = req.cookies.access_token;
+  // Try to get token from Authorization header first (Bearer token)
+  let accessToken = null;
+  const authHeader = req.headers.authorization;
+  
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+  } else {
+    // Fallback to cookie-based token
+    accessToken = req.cookies.access_token;
+  }
 
   if (!accessToken) {
     return res.status(401).json({
@@ -330,25 +339,16 @@ router.post('/login', [
 
     logger.info('SSO: User logged in successfully:', { userId: user.id, email: user.email });
 
-    // For admin users, also return tokens in response body for frontend localStorage
-    if (user.userType === 'admin') {
-      const accessToken = generateAccessToken(user);
-      const refreshToken = generateRefreshToken(user);
-      
-      return res.json({
-        success: true,
-        data: {
-          user: userResponse,
-          token: accessToken,
-          refreshToken: refreshToken,
-        },
-        message: 'Login successful',
-      });
-    }
+    // Generate tokens for localStorage storage
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
 
+    // Return tokens in response body for localStorage storage
     return res.json({
       success: true,
       user: userResponse,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
       message: 'Login successful',
     });
   } catch (error) {
