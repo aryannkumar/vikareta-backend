@@ -224,35 +224,6 @@ app.use(performanceMiddleware);
 // CORS configuration with enhanced security - this handles all CORS logic
 app.use(cors(corsOptions));
 
-// Additional CORS middleware to ensure headers are always set (Coolify/Traefik fix)
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const origin = req.headers.origin;
-  
-  // Always set CORS headers for allowed origins
-  if (origin && (
-    origin.includes('vikareta.com') || 
-    origin.includes('localhost') || 
-    origin.includes('127.0.0.1')
-  )) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, X-XSRF-TOKEN, x-xsrf-token, Accept, Origin, Cache-Control, Pragma');
-    res.header('Access-Control-Expose-Headers', 'X-Request-ID, Set-Cookie');
-    res.header('Access-Control-Max-Age', '86400');
-    
-    logger.info(`Manual CORS headers set for origin: ${origin}`);
-  }
-  
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    logger.info(`OPTIONS request handled for ${req.path} from ${origin}`);
-    return res.status(200).end();
-  }
-  
-  next();
-});
-
 // Compression
 app.use(compression());
 

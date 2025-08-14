@@ -29,31 +29,7 @@ const COOKIE_CONFIG = {
   sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const
 };
 
-// Debug middleware for auth routes
-router.use((req: Request, res: Response, next) => {
-  logger.info(`Auth route: ${req.method} ${req.path}`);
-  logger.info(`Origin: ${req.headers.origin}`);
-  logger.info(`Headers: ${JSON.stringify(req.headers, null, 2)}`);
-  next();
-});
 
-// Handle all OPTIONS requests for auth routes
-router.options('*', (req: Request, res: Response) => {
-  const origin = req.headers.origin;
-  logger.info(`OPTIONS request to auth route: ${req.path} from origin: ${origin}`);
-  
-  if (origin && (origin.includes('vikareta.com') || origin.includes('localhost'))) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, X-XSRF-TOKEN, x-xsrf-token, Accept, Origin, Cache-Control, Pragma');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Max-Age', '86400');
-    logger.info(`CORS headers set for origin: ${origin}`);
-  } else {
-    logger.warn(`OPTIONS request denied for origin: ${origin}`);
-  }
-  res.status(200).end();
-});
 
 // In-memory refresh token storage (replace with Redis in production)
 const refreshTokens = new Map<string, {
@@ -348,19 +324,6 @@ router.post('/register', [
       },
     });
   }
-});
-
-/**
- * OPTIONS /auth/login
- * Handle preflight request for login
- */
-router.options('/login', (req: Request, res: Response) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, X-XSRF-TOKEN, x-xsrf-token, Accept, Origin, Cache-Control, Pragma');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400');
-  res.status(200).end();
 });
 
 /**
