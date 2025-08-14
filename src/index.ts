@@ -41,7 +41,8 @@ import authRoutes from '@/routes/auth';
 import { healthRoutes } from '@/routes/health';
 import productRoutes from '@/routes/product';
 import { categoryRoutes } from '@/routes/category';
-import { mediaRoutes } from '@/routes/media';
+import mediaRoutes from '@/routes/media';
+import { minioService } from '@/services/minio.service';
 import { searchRoutes } from '@/routes/search';
 import { rfqRoutes } from '@/routes/rfq';
 import { quoteRoutes } from '@/routes/quote';
@@ -190,6 +191,10 @@ try {
 // Initialize performance monitoring and cache warming
 async function initializeServices() {
   try {
+    // Initialize MinIO service
+    await minioService.initialize();
+    logger.info('✅ MinIO service initialized successfully');
+
     // Warm up cache on startup (will skip if Redis is not available)
     await cacheService.warmCache();
     logger.info('✅ Cache service initialization completed');
