@@ -354,9 +354,7 @@ export const corsOptions = {
   exposedHeaders: ['X-Request-ID', 'Access-Control-Allow-Origin'],
   maxAge: 86400, // 24 hours
   preflightContinue: false,
-  optionsSuccessStatus: 200
-  optionsSuccessStatus: 200, // Return 200 for OPTIONS requests instead of 204
-  preflightContinue: false,
+  optionsSuccessStatus: 200 // Return 200 for OPTIONS requests instead of 204
 };
 
 // Extend global type for DDoS store
