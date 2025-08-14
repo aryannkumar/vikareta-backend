@@ -397,6 +397,22 @@ router.post('/login', [
 
     logger.info('SSO: User logged in successfully:', { userId: user.id, email: user.email });
 
+    // For admin users, also return tokens in response body for frontend localStorage
+    if (user.userType === 'admin') {
+      const accessToken = generateAccessToken(user);
+      const refreshToken = generateRefreshToken(user);
+      
+      return res.json({
+        success: true,
+        data: {
+          user: userResponse,
+          token: accessToken,
+          refreshToken: refreshToken,
+        },
+        message: 'Login successful',
+      });
+    }
+
     return res.json({
       success: true,
       user: userResponse,
