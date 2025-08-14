@@ -337,6 +337,7 @@ export const corsOptions = {
     'X-Requested-With',
     'X-Request-ID',
     'X-CSRF-Token',
+    'X-XSRF-TOKEN',
     'Accept',
     'Origin',
     'Access-Control-Allow-Origin',
