@@ -5,7 +5,7 @@
 import { Client as MinioClient } from 'minio';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
-import sharp from 'sharp';
+import { processImage, createThumbnail, getImageMetadata } from '@/utils/sharp-wrapper';
 
 export interface UploadResult {
     success: boolean;
@@ -167,24 +167,22 @@ export class MinIOService {
         buffer: Buffer,
         options: MediaProcessingOptions
     ): Promise<Buffer> {
-        let sharpInstance = sharp(buffer);
-
-        // Resize if specified
-        if (options.resize) {
-            sharpInstance = sharpInstance.resize(
-                options.resize.width,
-                options.resize.height,
-                { fit: 'inside', withoutEnlargement: true }
-            );
+        try {
+            const result = await processImage(buffer, {
+                resize: options.resize ? {
+                    width: options.resize.width,
+                    height: options.resize.height,
+                    fit: 'inside',
+                    quality: options.resize.quality || 85
+                } : undefined,
+                format: 'jpeg',
+                quality: options.resize?.quality || 85
+            });
+            
+            return result.buffer;
+        } catch (error) {
+            throw new Error(`Image processing failed: ${error}`);
         }
-
-        // Convert to JPEG with quality setting
-        sharpInstance = sharpInstance.jpeg({
-            quality: options.resize?.quality || 85,
-            progressive: true,
-        });
-
-        return await sharpInstance.toBuffer();
     }
 
     /**
@@ -195,10 +193,7 @@ export class MinIOService {
         originalKey: string
     ): Promise<string> {
         try {
-            const thumbnailBuffer = await sharp(originalBuffer)
-                .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
-                .jpeg({ quality: 70 })
-                .toBuffer();
+            const thumbnailBuffer = await createThumbnail(originalBuffer, 300, 300);
 
             const thumbnailKey = originalKey.replace(/(\.[^.]+)$/, '_thumb$1');
 

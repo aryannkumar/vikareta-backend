@@ -1,10 +1,16 @@
-# Multi-stage build for Node.js backend
-FROM node:24-alpine AS builder
+# Use Debian-based Node.js image instead of Alpine to avoid Sharp issues
+FROM node:24-slim AS builder
 
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache python3 make g++
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    libvips-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and prisma schema
 COPY package*.json ./
@@ -25,12 +31,15 @@ RUN npm run build
 RUN rm -rf node_modules && npm ci --only=production && npm cache clean --force
 
 # Production stage
-FROM node:24-alpine AS production
+FROM node:24-slim AS production
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    libvips42 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

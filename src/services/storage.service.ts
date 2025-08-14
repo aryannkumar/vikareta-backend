@@ -1,6 +1,6 @@
 import { Client as MinioClient } from 'minio';
 import multer from 'multer';
-import sharp from 'sharp';
+import { processImage, createThumbnail, getImageMetadata } from '@/utils/sharp-wrapper';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@/utils/logger';
 import { config } from '@/config/environment';
@@ -345,41 +345,21 @@ export class StorageService {
     options: StorageProcessingOptions = {}
   ): Promise<{ buffer: Buffer; width: number; height: number }> {
     try {
-      let sharpInstance = sharp(buffer);
-
-      // Apply resize if specified
-      if (options.resize) {
-        sharpInstance = sharpInstance.resize({
+      const result = await processImage(buffer, {
+        resize: options.resize ? {
           width: options.resize.width,
           height: options.resize.height,
           fit: options.resize.fit || 'cover',
-          withoutEnlargement: true,
-        });
-      }
-
-      // Set format and quality
-      const format = options.format || 'jpeg';
-      const quality = options.quality || 85;
-
-      switch (format) {
-        case 'jpeg':
-          sharpInstance = sharpInstance.jpeg({ quality });
-          break;
-        case 'png':
-          sharpInstance = sharpInstance.png({ quality });
-          break;
-        case 'webp':
-          sharpInstance = sharpInstance.webp({ quality });
-          break;
-      }
-
-      const processedBuffer = await sharpInstance.toBuffer();
-      const metadata = await sharp(processedBuffer).metadata();
+          quality: options.quality || 85
+        } : undefined,
+        format: options.format || 'jpeg',
+        quality: options.quality || 85
+      });
 
       return {
-        buffer: processedBuffer,
-        width: metadata.width || 0,
-        height: metadata.height || 0,
+        buffer: result.buffer,
+        width: result.width,
+        height: result.height,
       };
     } catch (error) {
       logger.error('Image processing failed:', error);
