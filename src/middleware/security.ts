@@ -303,7 +303,10 @@ export const sanitizeInput = (req: Request, _res: Response, next: NextFunction) 
 export const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      logger.info('CORS: Allowing request with no origin');
+      return callback(null, true);
+    }
     
     // Get allowed origins from config
     const allowedOrigins = config.cors.allowedOrigins;
@@ -313,6 +316,7 @@ export const corsOptions = {
     
     // Check exact match first
     if (allowedOrigins.includes(origin)) {
+      logger.info(`CORS: Exact match found for origin: ${origin}`);
       callback(null, true);
       return;
     }
@@ -338,6 +342,7 @@ export const corsOptions = {
     'X-Request-ID',
     'X-CSRF-Token',
     'X-XSRF-TOKEN',
+    'x-xsrf-token', // lowercase version for compatibility
     'Accept',
     'Origin',
     'Access-Control-Allow-Origin',
@@ -348,6 +353,8 @@ export const corsOptions = {
   ],
   exposedHeaders: ['X-Request-ID', 'Access-Control-Allow-Origin'],
   maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 200
   optionsSuccessStatus: 200, // Return 200 for OPTIONS requests instead of 204
   preflightContinue: false,
 };
