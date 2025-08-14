@@ -517,9 +517,15 @@ router.get('/me', verifyAccessToken, async (req: Request, res: Response) => {
       createdAt: user.createdAt,
     };
 
+    // Generate fresh tokens for localStorage storage (cross-domain compatibility)
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
     return res.json({
       success: true,
       user: userResponse,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
     });
   } catch (error) {
     logger.error('SSO: Get user error:', error);
