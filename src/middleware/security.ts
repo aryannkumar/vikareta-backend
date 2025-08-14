@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import slowDown from 'express-slow-down';
 import helmet from 'helmet';
+import jwt from 'jsonwebtoken';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 import crypto from 'crypto';
@@ -473,9 +474,54 @@ export const ipFilter = (req: Request, res: Response, next: NextFunction) => {
 
 // CSRF Protection middleware
 export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
-  // TEMPORARY: Disable CSRF protection for debugging
-  logger.info('CSRF protection temporarily disabled for debugging');
-  return next();
+  // Skip CSRF protection for safe methods
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  // Skip CSRF protection in development and test
+  if (process.env.NODE_ENV !== 'production') {
+    return next();
+  }
+
+  // JWT-based CSRF validation (double-submit cookie pattern)
+  const csrfToken = (req.headers['x-xsrf-token'] || req.headers['X-XSRF-TOKEN']) as string;
+  const csrfCookie = req.cookies['XSRF-TOKEN'];
+
+  if (!csrfToken || !csrfCookie || csrfToken !== csrfCookie) {
+    logger.warn('CSRF validation failed', {
+      path: req.path,
+      method: req.method,
+      hasHeader: !!csrfToken,
+      hasCookie: !!csrfCookie,
+      tokensMatch: csrfToken === csrfCookie
+    });
+
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'CSRF_TOKEN_INVALID',
+        message: 'CSRF token validation failed'
+      }
+    });
+  }
+
+  // Verify JWT signature
+  try {
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+    jwt.verify(csrfToken, JWT_SECRET);
+    next();
+  } catch (error) {
+    logger.warn('CSRF token JWT verification failed', { error: error.message });
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'CSRF_TOKEN_INVALID',
+        message: 'Invalid CSRF token'
+      }
+    });
+  }
 
   /* Original CSRF protection (temporarily disabled)
   // Skip CSRF protection for GET, HEAD, OPTIONS requests
@@ -526,20 +572,7 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
   */
 };
 
-// Generate CSRF token endpoint
-export const generateCSRFToken = (req: Request, res: Response) => {
-  const token = crypto.randomBytes(32).toString('hex');
-  
-  // Store token in session
-  if (req.session) {
-    (req.session as any).csrfToken = token;
-  }
-
-  res.json({
-    success: true,
-    data: { csrfToken: token },
-  });
-};
+// Old session-based CSRF token generation removed - using JWT-based instead
 
 // Session regeneration middleware for preventing session fixation
 export const regenerateSession = (req: Request, res: Response, next: NextFunction) => {
@@ -559,6 +592,16 @@ export const regenerateSession = (req: Request, res: Response, next: NextFunctio
   } else {
     next();
   }
+};
+
+// Unified CSRF Token Generation
+export const generateCSRFToken = (): string => {
+  const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+  return jwt.sign(
+    { type: 'csrf', timestamp: Date.now() },
+    JWT_SECRET,
+    { expiresIn: '1h' }
+  );
 };
 
 // Export all security middleware

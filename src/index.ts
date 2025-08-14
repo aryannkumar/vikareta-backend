@@ -310,15 +310,9 @@ app.get('/csrf-token', (req, res) => {
   const origin = req.headers.origin;
   logger.info('CSRF token request from origin:', origin);
 
-  // Generate CSRF token using JWT
-  const jwt = require('jsonwebtoken');
-  const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
-  
-  const csrfToken = jwt.sign(
-    { type: 'csrf', timestamp: Date.now() },
-    JWT_SECRET,
-    { expiresIn: '1h' }
-  );
+  // Generate CSRF token using unified function
+  const { generateCSRFToken } = require('@/middleware/security');
+  const csrfToken = generateCSRFToken();
 
   // More flexible cookie configuration for production
   const cookieConfig = {
