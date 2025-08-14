@@ -10,6 +10,7 @@ const authMiddleware = (req: any, res: any, next: any) => {
 };
 
 const router = Router();
+const prisma = new (require('@prisma/client').PrismaClient)();
 
 // Validation middleware
 const handleValidationErrors = (req: Request, res: Response, next: any) => {
@@ -26,6 +27,198 @@ const handleValidationErrors = (req: Request, res: Response, next: any) => {
   }
   return next();
 };
+
+// GET /api/analytics/revenue - Get revenue analytics
+router.get('/revenue', [
+  query('period').optional().isIn(['7d', '30d', '90d', '1y']).withMessage('Invalid period'),
+  handleValidationErrors,
+], async (req: Request, res: Response) => {
+  try {
+    const period = req.query.period as string || '30d';
+    const userId = (req as any).user?.id;
+
+    // Calculate date range based on period
+    const now = new Date();
+    const startDate = new Date();
+    
+    switch (period) {
+      case '7d':
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(now.getDate() - 30);
+        break;
+      case '90d':
+        startDate.setDate(now.getDate() - 90);
+        break;
+      case '1y':
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+    }
+
+    // Get revenue data from orders
+    const revenueData = await prisma.order.groupBy({
+      by: ['createdAt'],
+      where: {
+        createdAt: {
+          gte: startDate,
+          lte: now,
+        },
+        status: 'completed',
+        ...(userId && { sellerId: userId }),
+      },
+      _sum: {
+        totalAmount: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    // Format data for chart
+    const chartData = revenueData.map(item => ({
+      date: item.createdAt.toISOString().split('T')[0],
+      revenue: item._sum.totalAmount || 0,
+    }));
+
+    // Calculate totals
+    const totalRevenue = revenueData.reduce((sum, item) => sum + (item._sum.totalAmount || 0), 0);
+    const previousPeriodStart = new Date(startDate);
+    previousPeriodStart.setDate(previousPeriodStart.getDate() - (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    const previousRevenue = await prisma.order.aggregate({
+      where: {
+        createdAt: {
+          gte: previousPeriodStart,
+          lt: startDate,
+        },
+        status: 'completed',
+        ...(userId && { sellerId: userId }),
+      },
+      _sum: {
+        totalAmount: true,
+      },
+    });
+
+    const previousTotal = previousRevenue._sum.totalAmount || 0;
+    const growthRate = previousTotal > 0 ? ((totalRevenue - previousTotal) / previousTotal) * 100 : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        period,
+        totalRevenue,
+        growthRate: Math.round(growthRate * 100) / 100,
+        chartData,
+        summary: {
+          currentPeriod: totalRevenue,
+          previousPeriod: previousTotal,
+          change: totalRevenue - previousTotal,
+        },
+      },
+    });
+  } catch (error) {
+    logger.error('Revenue analytics error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'ANALYTICS_ERROR',
+        message: 'Failed to fetch revenue analytics',
+      },
+    });
+  }
+});
+
+// GET /api/analytics/products/performance - Get product performance analytics
+router.get('/products/performance', [
+  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
+  query('sortBy').optional().isIn(['revenue', 'orders', 'views']).withMessage('Invalid sort field'),
+  handleValidationErrors,
+], async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const sortBy = req.query.sortBy as string || 'revenue';
+    const userId = (req as any).user?.id;
+
+    // Get product performance data
+    const products = await prisma.product.findMany({
+      where: {
+        ...(userId && { sellerId: userId }),
+      },
+      include: {
+        _count: {
+          select: {
+            orders: true,
+          },
+        },
+        orders: {
+          where: {
+            status: 'completed',
+          },
+          select: {
+            totalAmount: true,
+          },
+        },
+      },
+      take: limit,
+    });
+
+    // Calculate performance metrics
+    const performanceData = products.map(product => {
+      const totalRevenue = product.orders.reduce((sum, order) => sum + order.totalAmount, 0);
+      const totalOrders = product._count.orders;
+      
+      return {
+        id: product.id,
+        name: product.name,
+        image: product.images?.[0] || null,
+        price: product.price,
+        revenue: totalRevenue,
+        orders: totalOrders,
+        views: Math.floor(Math.random() * 1000) + 100, // Mock views data
+        conversionRate: totalOrders > 0 ? (totalOrders / (Math.floor(Math.random() * 1000) + 100)) * 100 : 0,
+        stock: product.stock,
+        category: product.categoryId,
+      };
+    });
+
+    // Sort by requested field
+    performanceData.sort((a, b) => {
+      switch (sortBy) {
+        case 'revenue':
+          return b.revenue - a.revenue;
+        case 'orders':
+          return b.orders - a.orders;
+        case 'views':
+          return b.views - a.views;
+        default:
+          return b.revenue - a.revenue;
+      }
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        products: performanceData,
+        summary: {
+          totalProducts: products.length,
+          totalRevenue: performanceData.reduce((sum, p) => sum + p.revenue, 0),
+          totalOrders: performanceData.reduce((sum, p) => sum + p.orders, 0),
+          averageConversion: performanceData.reduce((sum, p) => sum + p.conversionRate, 0) / performanceData.length,
+        },
+      },
+    });
+  } catch (error) {
+    logger.error('Product performance analytics error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'ANALYTICS_ERROR',
+        message: 'Failed to fetch product performance analytics',
+      },
+    });
+  }
+});
 
 // POST /api/analytics/track - Track user behavior event
 router.post('/track', [
