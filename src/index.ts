@@ -282,7 +282,8 @@ app.use(session({
     secure: config.env === 'production',
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'strict',
+    sameSite: config.env === 'production' ? 'none' : 'lax', // Allow cross-subdomain sharing
+    domain: config.env === 'production' ? '.vikareta.com' : undefined, // Share across subdomains
   },
 }));
 

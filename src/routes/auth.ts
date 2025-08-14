@@ -17,7 +17,7 @@ const prisma = new PrismaClient();
 // JWT Configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-super-secret-refresh-key';
-const ACCESS_TOKEN_EXPIRY = '15m';
+const ACCESS_TOKEN_EXPIRY = '1h'; // Increased from 15m to 1h to reduce frequent logouts
 const REFRESH_TOKEN_EXPIRY = '7d';
 
 // Cookie Configuration
@@ -103,7 +103,7 @@ function setAuthCookies(res: Response, user: any) {
   // Set HttpOnly cookies for tokens
   res.cookie('access_token', accessToken, {
     ...COOKIE_CONFIG,
-    maxAge: 15 * 60 * 1000 // 15 minutes
+    maxAge: 60 * 60 * 1000 // 1 hour (matches ACCESS_TOKEN_EXPIRY)
   });
 
   res.cookie('refresh_token', refreshToken, {
@@ -429,7 +429,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     // Set new access token cookie
     res.cookie('access_token', newAccessToken, {
       ...COOKIE_CONFIG,
-      maxAge: 15 * 60 * 1000 // 15 minutes
+      maxAge: 60 * 60 * 1000 // 1 hour (matches ACCESS_TOKEN_EXPIRY)
     });
 
     // Create user response
