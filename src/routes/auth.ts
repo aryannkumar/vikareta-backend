@@ -178,6 +178,7 @@ function verifyAccessToken(req: Request, res: Response, next: any) {
  * Middleware: Verify CSRF Token
  */
 function verifyCSRF(req: Request, res: Response, next: any) {
+  // Skip CSRF for safe methods
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     return next();
   }
@@ -185,46 +186,30 @@ function verifyCSRF(req: Request, res: Response, next: any) {
   const csrfToken = req.headers['x-xsrf-token'] as string;
   const csrfCookie = req.cookies['XSRF-TOKEN'];
 
-  // Debug logging
-  logger.info('CSRF Validation Debug:', {
-    hasHeader: !!csrfToken,
-    hasCookie: !!csrfCookie,
-    headerToken: csrfToken ? csrfToken.substring(0, 20) + '...' : 'none',
-    cookieToken: csrfCookie ? csrfCookie.substring(0, 20) + '...' : 'none',
-    tokensMatch: csrfToken === csrfCookie,
-    allCookies: Object.keys(req.cookies),
-    allHeaders: Object.keys(req.headers).filter(h => h.toLowerCase().includes('xsrf') || h.toLowerCase().includes('csrf'))
-  });
+  logger.info(`CSRF Check: Header=${!!csrfToken}, Cookie=${!!csrfCookie}, Match=${csrfToken === csrfCookie}`);
 
   if (!csrfToken || !csrfCookie || csrfToken !== csrfCookie) {
-    logger.warn('CSRF Token Validation Failed:', {
-      reason: !csrfToken ? 'No header token' : !csrfCookie ? 'No cookie token' : 'Tokens do not match',
-      headerPresent: !!csrfToken,
-      cookiePresent: !!csrfCookie,
-      headerTokenPreview: csrfToken ? csrfToken.substring(0, 20) + '...' : 'none',
-      cookieTokenPreview: csrfCookie ? csrfCookie.substring(0, 20) + '...' : 'none',
-      tokensEqual: csrfToken === csrfCookie
-    });
-
+    logger.warn('CSRF validation failed');
     return res.status(403).json({
       success: false,
       error: { 
         code: 'CSRF_TOKEN_INVALID', 
-        message: 'CSRF token validation failed',
-        timestamp: new Date().toISOString()
+        message: 'CSRF token validation failed'
       }
     });
   }
 
   try {
     jwt.verify(csrfToken, JWT_SECRET);
-    logger.info('CSRF Token validated successfully');
     next();
   } catch (error) {
-    logger.error('CSRF Token JWT verification failed:', error);
+    logger.warn('CSRF token verification failed:', error);
     return res.status(403).json({
       success: false,
-      error: { code: 'CSRF_TOKEN_INVALID', message: 'Invalid CSRF token' }
+      error: { 
+        code: 'CSRF_TOKEN_INVALID', 
+        message: 'Invalid CSRF token'
+      }
     });
   }
 }
