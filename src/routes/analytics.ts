@@ -1,34 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { query, body, validationResult } from 'express-validator';
+import { query, validationResult } from 'express-validator';
 import { PrismaClient } from '@prisma/client';
+import { authenticate } from '@/middleware/auth';
+import { asyncHandler } from '@/middleware/errorHandler';
+import { logger } from '@/utils/logger';
+import { AnalyticsService } from '@/services/analytics.service';
 
 const router = Router();
 const prisma = new PrismaClient();
-
-// Import actual dependencies with fallbacks
-let logger: any;
-let authenticate: any;
-
-try {
-  const loggerModule = require('@/utils/logger');
-  logger = loggerModule.logger;
-} catch {
-  logger = {
-    info: (message: string, ...args: any[]) => console.log(`[INFO] ${message}`, ...args),
-    error: (message: string, ...args: any[]) => console.error(`[ERROR] ${message}`, ...args),
-    warn: (message: string, ...args: any[]) => console.warn(`[WARN] ${message}`, ...args),
-  };
-}
-
-try {
-  const authModule = require('@/middleware/auth');
-  authenticate = authModule.authenticate;
-} catch {
-  authenticate = (req: any, res: Response, next: any) => {
-    req.authUser = { id: 'test-user-id' };
-    next();
-  };
-}
 
 // Validation middleware
 const handleValidationErrors = (req: Request, res: Response, next: any) => {
@@ -46,352 +25,208 @@ const handleValidationErrors = (req: Request, res: Response, next: any) => {
   return next();
 };
 
-// GET /api/analytics/revenue - Get revenue analytics
-router.get('/revenue', [
+/**
+ * GET /api/analytics/dashboard
+ * Get real-time dashboard analytics
+ */
+router.get('/dashboard', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const dashboardData = await AnalyticsService.getRealTimeDashboard();
+  
+  return res.json({
+    success: true,
+    message: 'Dashboard analytics retrieved successfully',
+    data: dashboardData,
+  });
+}));
+
+/**
+ * GET /api/analytics/orders/recent
+ * Get recent orders with details
+ */
+router.get('/orders/recent', [
   authenticate,
-  query('period').optional().isIn(['7d', '30d', '90d', '1y']).withMessage('Invalid period'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
   handleValidationErrors,
-], async (req: Request, res: Response) => {
-  try {
-    const period = req.query.period as string || '30d';
-    const userId = (req as any).authUser?.id;
+], asyncHandler(async (req: Request, res: Response) => {
+  const limit = parseInt(req.query.limit as string) || 20;
+  const userId = req.authUser?.userId;
 
-    // Calculate date range based on period
-    const now = new Date();
-    const startDate = new Date();
-    
-    switch (period) {
-      case '7d':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case '30d':
-        startDate.setDate(now.getDate() - 30);
-        break;
-      case '90d':
-        startDate.setDate(now.getDate() - 90);
-        break;
-      case '1y':
-        startDate.setFullYear(now.getFullYear() - 1);
-        break;
-    }
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'User not authenticated',
+      },
+    });
+  }
 
-    // Get revenue data from completed orders
-    const orders = await prisma.order.findMany({
+  const recentOrders = await prisma.order.findMany({
+    where: {
+      OR: [
+        { buyerId: userId },
+        { sellerId: userId },
+      ],
+    },
+    include: {
+      buyer: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      seller: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      items: {
+        include: {
+          product: {
+            select: {
+              id: true,
+              title: true,
+              price: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+    take: limit,
+  });
+
+  const ordersWithDetails = recentOrders.map(order => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    totalAmount: Number(order.totalAmount),
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    buyer: order.buyer,
+    seller: order.seller,
+    itemCount: order.items.length,
+    items: order.items.map(item => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.product.title,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      totalPrice: Number(item.totalPrice),
+    })),
+    userRole: order.buyerId === userId ? 'buyer' : 'seller',
+  }));
+
+  return res.json({
+    success: true,
+    message: 'Recent orders retrieved successfully',
+    data: {
+      orders: ordersWithDetails,
+      total: ordersWithDetails.length,
+    },
+  });
+}));
+
+/**
+ * GET /api/analytics/summary
+ * Get overall analytics summary for the user
+ */
+router.get('/summary', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.authUser?.userId;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'User not authenticated',
+      },
+    });
+  }
+
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // Get counts for different entities
+  const [
+    totalOrders,
+    totalProducts,
+    totalRfqs,
+    totalQuotes,
+    recentOrders,
+    recentRevenue,
+  ] = await Promise.all([
+    prisma.order.count({
       where: {
-        ...(userId && { sellerId: userId }),
-        status: 'completed',
+        OR: [
+          { buyerId: userId },
+          { sellerId: userId },
+        ],
+      },
+    }),
+    prisma.product.count({
+      where: {
+        sellerId: userId,
+      },
+    }),
+    prisma.rfq.count({
+      where: {
+        buyerId: userId,
+      },
+    }),
+    prisma.quote.count({
+      where: {
+        sellerId: userId,
+      },
+    }),
+    prisma.order.count({
+      where: {
+        OR: [
+          { buyerId: userId },
+          { sellerId: userId },
+        ],
         createdAt: {
-          gte: startDate,
-          lte: now,
+          gte: thirtyDaysAgo,
         },
       },
-      select: {
+    }),
+    prisma.order.aggregate({
+      where: {
+        sellerId: userId,
+        status: { in: ['completed', 'delivered'] },
+        createdAt: {
+          gte: thirtyDaysAgo,
+        },
+      },
+      _sum: {
         totalAmount: true,
-        createdAt: true,
       },
-    });
+    }),
+  ]);
 
-    const totalRevenue = orders.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0);
-    
-    // Mock previous period data for growth calculation
-    const previousTotal = totalRevenue * 0.8; // Mock 20% growth
-    const growthRate = previousTotal > 0 ? ((totalRevenue - previousTotal) / previousTotal) * 100 : 0;
+  const summary = {
+    totalOrders,
+    totalProducts,
+    totalRfqs,
+    totalQuotes,
+    recentOrders,
+    recentRevenue: Number(recentRevenue._sum.totalAmount || 0),
+    period: '30 days',
+  };
 
-    // Generate chart data (simplified)
-    const chartData = [];
-    const days = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 365;
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      chartData.push({
-        date: date.toISOString().split('T')[0],
-        revenue: Math.floor(Math.random() * 1000) + 100, // Mock data
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        period,
-        totalRevenue,
-        growthRate,
-        chartData,
-        summary: {
-          current: totalRevenue,
-          previous: previousTotal,
-          change: totalRevenue - previousTotal,
-        },
-      },
-    });
-  } catch (error) {
-    logger.error('Revenue analytics error:', error);
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'ANALYTICS_ERROR',
-        message: 'Failed to fetch revenue analytics',
-      },
-    });
-  }
-});
-
-// GET /api/analytics/products/performance - Get product performance analytics
-router.get('/products/performance', [
-  authenticate,
-  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
-  query('sortBy').optional().isIn(['revenue', 'orders', 'views']).withMessage('Invalid sort field'),
-  handleValidationErrors,
-], async (req: Request, res: Response) => {
-  try {
-    const limit = parseInt(req.query.limit as string) || 10;
-    const sortBy = req.query.sortBy as string || 'revenue';
-    const userId = (req as any).authUser?.id;
-    
-    logger.info(`Analytics: Product performance request - userId: ${userId}, limit: ${limit}, sortBy: ${sortBy}`);
-
-    // Get products with basic info first
-    const products = await prisma.product.findMany({
-      where: {
-        ...(userId && { sellerId: userId }),
-        status: 'active',
-      },
-      include: {
-        category: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      take: limit,
-    });
-
-    // Get order items for these products separately to avoid complex joins
-    const productIds = products.map(p => p.id);
-    const orderItems = productIds.length > 0 ? await prisma.orderItem.findMany({
-      where: {
-        productId: { in: productIds },
-        order: {
-          status: 'completed',
-        },
-      },
-      include: {
-        order: {
-          select: {
-            status: true,
-            totalAmount: true,
-          },
-        },
-      },
-    }) : [];
-
-    // Calculate performance metrics
-    const performanceData = products.map(product => {
-      // Find order items for this product
-      const productOrderItems = orderItems.filter(item => item.productId === product.id);
-      
-      const totalRevenue = productOrderItems.reduce((sum, item) => {
-        return sum + Number(item.totalPrice || 0);
-      }, 0);
-      
-      const totalOrders = productOrderItems.length;
-      const views = Math.floor(Math.random() * 1000) + 100; // Mock views data - replace with actual analytics
-      
-      return {
-        id: product.id,
-        name: product.title || 'Unnamed Product',
-        image: null, // TODO: Add product images support
-        price: Number(product.price || 0),
-        revenue: totalRevenue,
-        orders: totalOrders,
-        views: views,
-        conversionRate: views > 0 ? (totalOrders / views) * 100 : 0,
-        stock: Number(product.stockQuantity || 0),
-        category: product.category?.name || 'Uncategorized',
-      };
-    });
-
-    // Sort by requested field
-    performanceData.sort((a, b) => {
-      switch (sortBy) {
-        case 'revenue':
-          return b.revenue - a.revenue;
-        case 'orders':
-          return b.orders - a.orders;
-        case 'views':
-          return b.views - a.views;
-        default:
-          return b.revenue - a.revenue;
-      }
-    });
-
-    const summary = {
-      totalProducts: products.length,
-      totalRevenue: performanceData.reduce((sum, p) => sum + p.revenue, 0),
-      totalOrders: performanceData.reduce((sum, p) => sum + p.orders, 0),
-      averageConversion: performanceData.length > 0 
-        ? performanceData.reduce((sum, p) => sum + p.conversionRate, 0) / performanceData.length 
-        : 0,
-    };
-
-    return res.json({
-      success: true,
-      data: {
-        products: performanceData,
-        summary,
-      },
-    });
-  } catch (error) {
-    logger.error('Product performance analytics error:', error);
-    
-    // Return a more detailed error for debugging
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'ANALYTICS_ERROR',
-        message: 'Failed to fetch product performance analytics',
-        details: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
-      },
-    });
-  }
-});
-
-// POST /api/analytics/track - Track user behavior event (simplified)
-router.post('/track', [
-  body('eventType').isIn(['page_view', 'search', 'product_view', 'add_to_cart', 'purchase', 'rfq_created', 'quote_submitted']).withMessage('Invalid event type'),
-  body('sessionId').isString().withMessage('Session ID is required'),
-  body('eventData').isObject().withMessage('Event data must be an object'),
-  handleValidationErrors,
-], async (req: Request, res: Response) => {
-  try {
-    const { eventType, sessionId, eventData } = req.body;
-    
-    // For now, just log the event - in production, store in database or analytics service
-    logger.info('Analytics event tracked:', { eventType, sessionId, eventData });
-
-    return res.json({
-      success: true,
-      message: 'Event tracked successfully',
-    });
-  } catch (error) {
-    logger.error('Failed to track user behavior:', error);
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'TRACKING_FAILED',
-        message: 'Failed to track user behavior',
-      },
-    });
-  }
-});
-
-// GET /api/analytics/health - Check analytics service health
-router.get('/health', async (_req: Request, res: Response) => {
-  try {
-    // Test database connection first
-    const productCount = await prisma.product.count();
-    
-    let elasticsearchStatus: any = { connected: false, error: 'Not configured' };
-    
-    try {
-      const { Client } = await import('@elastic/elasticsearch');
-      
-      // Try to get config, fallback to env vars
-      let esUrl = 'http://localhost:9200';
-      let esAuth: any = undefined;
-      
-      try {
-        const configModule = require('@/config/environment');
-        const config = configModule.config;
-        esUrl = config?.elasticsearch?.url || esUrl;
-        esAuth = config?.elasticsearch?.auth;
-      } catch {
-        esUrl = process.env.ELASTICSEARCH_URL || esUrl;
-        if (process.env.ELASTICSEARCH_USERNAME && process.env.ELASTICSEARCH_PASSWORD) {
-          esAuth = {
-            username: process.env.ELASTICSEARCH_USERNAME,
-            password: process.env.ELASTICSEARCH_PASSWORD,
-          };
-        }
-      }
-      
-      const elasticsearch = new Client({
-        node: esUrl,
-        auth: esAuth,
-        tls: {
-          rejectUnauthorized: false,
-        },
-      });
-
-      // Test Elasticsearch connection
-      const pingResult = await elasticsearch.ping();
-      elasticsearchStatus = {
-        connected: true,
-        cluster: pingResult ? 'Connected' : 'Disconnected',
-      };
-    } catch (esError) {
-      elasticsearchStatus = {
-        connected: false,
-        error: esError instanceof Error ? esError.message : 'Connection failed',
-      };
-    }
-    
-    return res.json({
-      success: true,
-      message: 'Analytics service is healthy',
-      database: {
-        connected: true,
-        productCount,
-      },
-      elasticsearch: elasticsearchStatus,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    logger.error('Analytics health check failed:', error);
-    
-    return res.json({
-      success: false,
-      message: 'Analytics service health check failed',
-      database: {
-        connected: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      elasticsearch: {
-        connected: false,
-        error: 'Not tested due to database failure',
-      },
-      timestamp: new Date().toISOString(),
-    });
-  }
-});
-
-// GET /api/analytics/test - Simple test endpoint
-router.get('/test', async (_req: Request, res: Response) => {
-  try {
-    const productCount = await prisma.product.count();
-    const orderCount = await prisma.order.count();
-    
-    return res.json({
-      success: true,
-      message: 'Analytics test endpoint working',
-      data: {
-        productCount,
-        orderCount,
-        timestamp: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    logger.error('Analytics test failed:', error);
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'TEST_FAILED',
-        message: 'Analytics test endpoint failed',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-    });
-  }
-});
+  return res.json({
+    success: true,
+    message: 'Analytics summary retrieved successfully',
+    data: summary,
+  });
+}));
 
 export { router as analyticsRoutes };

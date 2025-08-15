@@ -62,7 +62,7 @@ import privacyRoutes from '@/routes/privacy';
 import fraudRoutes from '@/routes/fraud';
 import kycRoutes from '@/routes/kyc';
 import adsRoutes from '@/routes/ads';
-import { analyticsRoutes } from '@/routes/analytics';
+// import { analyticsRoutes } from '@/routes/analytics';
 import adminNotificationRoutes from '@/routes/admin-notifications';
 import { workerManagementRoutes } from '@/routes/worker-management';
 import { serviceRoutes } from '@/routes/service';
@@ -386,7 +386,7 @@ app.use('/api/fraud', apiLimiter, fraudRoutes);
 app.use('/api/kyc', apiLimiter, kycRoutes);
 app.use('/api/ads', apiLimiter, adsRoutes);
 app.use('/api/advertisements', apiLimiter, adsRoutes); // Alternative route for ads
-app.use('/api/analytics', apiLimiter, analyticsRoutes);
+// app.use('/api/analytics', apiLimiter, analyticsRoutes);
 app.use('/api/services', apiLimiter, serviceRoutes);
 app.use('/api/marketplace', apiLimiter, marketplaceRoutes);
 // User routes with explicit CORS handling

@@ -14,7 +14,8 @@ import {
   ServiceOrderUpdateRequest,
   ServiceBookingRequest,
   OrderError,
-  ServiceBookingError
+  ServiceBookingError,
+  OrderStatus
 } from '../types/orders';
 
 const router = Router();
@@ -174,6 +175,55 @@ router.get('/', authenticate, async (req, res) => {
       error: {
         code: 'INTERNAL_ERROR',
         message: 'Failed to retrieve orders'
+      }
+    });
+  }
+});
+
+/**
+ * Get completed orders
+ * GET /api/orders/completed
+ */
+router.get('/completed', authenticate, async (req, res) => {
+  try {
+    const userId = req.authUser?.userId;
+    const {
+      role = 'buyer',
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    const filters: OrderFilters = {
+      status: OrderStatus.DELIVERED, // Use 'delivered' as the completed status for product orders
+    };
+
+    // Set buyer or seller filter based on role
+    if (role === 'buyer') {
+      filters.buyerId = userId;
+    } else if (role === 'seller') {
+      filters.sellerId = userId;
+    }
+
+    const result = await orderService.getOrders(
+      filters,
+      parseInt(page as string),
+      parseInt(limit as string)
+    );
+
+    res.json({
+      success: true,
+      data: result.orders,
+      pagination: result.pagination,
+      message: 'Completed orders retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Get completed orders error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to retrieve completed orders'
       }
     });
   }

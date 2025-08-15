@@ -57,7 +57,7 @@ export const generalLimiter = createRateLimiter({
 
 export const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'test' ? 1000 : 20, // Increased from 5 to 20
+  max: process.env.NODE_ENV === 'production' ? 20 : 1000, // Much higher limit for dev/test
   message: 'Too many authentication attempts, please try again later.',
   skipSuccessfulRequests: true,
 });
@@ -71,7 +71,7 @@ export const paymentLimiter = createRateLimiter({
 
 export const apiLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
-  max: process.env.NODE_ENV === 'test' ? 10000 : 300, // Increased from 60 to 300
+  max: process.env.NODE_ENV === 'production' ? 300 : 10000, // Much higher limit for dev/test
   message: 'API rate limit exceeded, please slow down your requests.',
 });
 

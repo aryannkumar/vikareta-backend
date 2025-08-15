@@ -23,7 +23,7 @@ import walletRoutes from './wallet';
 import paymentRoutes from './payment';
 import { userRoutes } from './user';
 import { dashboardRoutes } from './dashboard';
-import { analyticsRoutes } from './analytics';
+// import { analyticsRoutes } from './analytics';
 import { searchRoutes } from './search';
 import { marketplaceRoutes } from './marketplace';
 import dealRoutes from './deal';
@@ -215,13 +215,13 @@ export class RouteRegistry {
     });
 
     // Analytics and reporting
-    this.addRoute({
-      path: '/analytics',
-      router: analyticsRoutes,
-      middleware: [apiLimiter, authenticate],
-      description: 'Analytics and reporting',
-      version: 'v1',
-    });
+    // this.addRoute({
+    //   path: '/analytics',
+    //   router: analyticsRoutes,
+    //   middleware: [apiLimiter, authenticate],
+    //   description: 'Analytics and reporting',
+    //   version: 'v1',
+    // });
 
     // Search and discovery
     this.addRoute({
