@@ -89,7 +89,7 @@ let redisConnected = false;
 try {
   // Parse Redis URL to extract components
   const redisUrl = new URL(config.redis.url);
-  
+
   logger.info('Redis configuration:', {
     host: redisUrl.hostname,
     port: parseInt(redisUrl.port) || 6379,
@@ -97,7 +97,7 @@ try {
     hasPassword: !!redisUrl.password,
     database: parseInt(redisUrl.pathname.slice(1)) || 0
   });
-  
+
   // Try URL-based connection first, fallback to explicit config
   const redisConfig = redisUrl.username ? {
     // ACL-based authentication (Redis 6+)
@@ -131,7 +131,7 @@ try {
     },
     database: parseInt(redisUrl.pathname.slice(1)) || 0,
   };
-  
+
   redisClient = createClient(redisConfig);
 
   redisClient.on('error', (err) => {
@@ -243,10 +243,10 @@ app.use(cors(corsOptions));
 // Handle all OPTIONS requests before other middleware
 app.options('*', (req: Request, res: Response) => {
   const origin = req.headers.origin;
-  
+
   if (origin && (
-    origin.includes('vikareta.com') || 
-    origin.includes('localhost') || 
+    origin.includes('vikareta.com') ||
+    origin.includes('localhost') ||
     origin.includes('127.0.0.1')
   )) {
     res.header('Access-Control-Allow-Origin', origin);
@@ -254,11 +254,11 @@ app.options('*', (req: Request, res: Response) => {
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, X-CSRF-Token, X-XSRF-TOKEN, x-xsrf-token, Accept, Origin, Cache-Control, Pragma');
     res.header('Access-Control-Max-Age', '86400');
-    
+
     logger.info(`OPTIONS handled for ${req.path} from ${origin}`);
     return res.status(200).end();
   }
-  
+
   res.status(403).end();
 });
 
@@ -341,17 +341,17 @@ app.get('/csrf-token', (req, res) => {
     maxAge: 60 * 60 * 1000 // 1 hour
   };
 
-  logger.info('Setting CSRF cookie with config:', { 
-    domain: cookieConfig.domain, 
-    secure: cookieConfig.secure, 
-    sameSite: cookieConfig.sameSite 
+  logger.info('Setting CSRF cookie with config:', {
+    domain: cookieConfig.domain,
+    secure: cookieConfig.secure,
+    sameSite: cookieConfig.sameSite
   });
 
   res.cookie('XSRF-TOKEN', csrfToken, cookieConfig);
-  
+
   // Also return token in response body as fallback
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     data: { csrfToken },
     cookieSet: true
   });
