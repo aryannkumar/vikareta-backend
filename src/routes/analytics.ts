@@ -3,7 +3,7 @@ import { query, validationResult } from 'express-validator';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '@/middleware/auth';
 import { asyncHandler } from '@/middleware/errorHandler';
-import { logger } from '@/utils/logger';
+
 import { AnalyticsService } from '@/services/analytics.service';
 
 const router = Router();
