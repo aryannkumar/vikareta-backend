@@ -1,13 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { query, body, validationResult } from 'express-validator';
 import { AnalyticsService } from '@/services/analytics.service';
+import { authenticate } from '@/middleware/auth';
 import { logger } from '@/utils/logger';
-// Mock auth middleware for now - replace with actual implementation
-const authMiddleware = (req: any, res: any, next: any) => {
-  // Mock user for testing
-  req.user = { id: 'mock-user-id' };
-  return next();
-};
 
 const router = Router();
 const prisma = new (require('@prisma/client').PrismaClient)();
@@ -30,12 +25,13 @@ const handleValidationErrors = (req: Request, res: Response, next: any) => {
 
 // GET /api/analytics/revenue - Get revenue analytics
 router.get('/revenue', [
+  authenticate,
   query('period').optional().isIn(['7d', '30d', '90d', '1y']).withMessage('Invalid period'),
   handleValidationErrors,
 ], async (req: Request, res: Response) => {
   try {
     const period = req.query.period as string || '30d';
-    const userId = (req as any).user?.id;
+    const userId = req.authUser?.id;
 
     // Calculate date range based on period
     const now = new Date();
@@ -131,6 +127,7 @@ router.get('/revenue', [
 
 // GET /api/analytics/products/performance - Get product performance analytics
 router.get('/products/performance', [
+  authenticate,
   query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
   query('sortBy').optional().isIn(['revenue', 'orders', 'views']).withMessage('Invalid sort field'),
   handleValidationErrors,
@@ -138,25 +135,27 @@ router.get('/products/performance', [
   try {
     const limit = parseInt(req.query.limit as string) || 10;
     const sortBy = req.query.sortBy as string || 'revenue';
-    const userId = (req as any).user?.id;
+    const userId = req.authUser?.id;
 
-    // Get product performance data
+    // Get product performance data with proper relations
     const products = await prisma.product.findMany({
       where: {
         ...(userId && { sellerId: userId }),
+        status: 'active',
       },
       include: {
-        _count: {
-          select: {
-            orders: true,
+        orderItems: {
+          include: {
+            order: {
+              where: {
+                status: 'completed',
+              },
+            },
           },
         },
-        orders: {
-          where: {
-            status: 'completed',
-          },
+        category: {
           select: {
-            totalAmount: true,
+            name: true,
           },
         },
       },
@@ -165,20 +164,29 @@ router.get('/products/performance', [
 
     // Calculate performance metrics
     const performanceData = products.map(product => {
-      const totalRevenue = product.orders.reduce((sum, order) => sum + order.totalAmount, 0);
-      const totalOrders = product._count.orders;
+      // Calculate revenue from completed order items
+      const completedOrderItems = product.orderItems.filter(item => 
+        item.order && item.order.status === 'completed'
+      );
+      
+      const totalRevenue = completedOrderItems.reduce((sum, item) => 
+        sum + Number(item.totalPrice || item.price * item.quantity), 0
+      );
+      
+      const totalOrders = completedOrderItems.length;
+      const views = Math.floor(Math.random() * 1000) + 100; // Mock views data - replace with actual analytics
       
       return {
         id: product.id,
-        name: product.name,
+        name: product.title || product.name,
         image: product.images?.[0] || null,
-        price: product.price,
+        price: Number(product.price),
         revenue: totalRevenue,
         orders: totalOrders,
-        views: Math.floor(Math.random() * 1000) + 100, // Mock views data
-        conversionRate: totalOrders > 0 ? (totalOrders / (Math.floor(Math.random() * 1000) + 100)) * 100 : 0,
-        stock: product.stock,
-        category: product.categoryId,
+        views: views,
+        conversionRate: views > 0 ? (totalOrders / views) * 100 : 0,
+        stock: product.stock || 0,
+        category: product.category?.name || 'Uncategorized',
       };
     });
 
@@ -196,16 +204,20 @@ router.get('/products/performance', [
       }
     });
 
+    const summary = {
+      totalProducts: products.length,
+      totalRevenue: performanceData.reduce((sum, p) => sum + p.revenue, 0),
+      totalOrders: performanceData.reduce((sum, p) => sum + p.orders, 0),
+      averageConversion: performanceData.length > 0 
+        ? performanceData.reduce((sum, p) => sum + p.conversionRate, 0) / performanceData.length 
+        : 0,
+    };
+
     return res.json({
       success: true,
       data: {
         products: performanceData,
-        summary: {
-          totalProducts: products.length,
-          totalRevenue: performanceData.reduce((sum, p) => sum + p.revenue, 0),
-          totalOrders: performanceData.reduce((sum, p) => sum + p.orders, 0),
-          averageConversion: performanceData.reduce((sum, p) => sum + p.conversionRate, 0) / performanceData.length,
-        },
+        summary,
       },
     });
   } catch (error) {
@@ -261,14 +273,14 @@ router.post('/track', [
 
 // GET /api/analytics/business-performance - Get business performance metrics
 router.get('/business-performance', [
-  authMiddleware,
+  authenticate,
   query('startDate').isISO8601().withMessage('Start date must be a valid ISO date'),
   query('endDate').isISO8601().withMessage('End date must be a valid ISO date'),
   query('groupBy').optional().isIn(['day', 'week', 'month']).withMessage('Invalid group by value'),
   handleValidationErrors,
 ], async (req: Request, res: Response) => {
   try {
-    const sellerId = (req as any).user.id;
+    const sellerId = req.authUser!.id;
     const startDate = new Date(req.query['startDate'] as string);
     const endDate = new Date(req.query['endDate'] as string);
     const groupBy = req.query['groupBy'] as 'day' | 'week' | 'month' || 'day';
@@ -297,7 +309,7 @@ router.get('/business-performance', [
 
 // GET /api/analytics/user-behavior - Get user behavior analytics
 router.get('/user-behavior', [
-  authMiddleware, // Admin only in production
+  authenticate, // Admin only in production
   query('startDate').isISO8601().withMessage('Start date must be a valid ISO date'),
   query('endDate').isISO8601().withMessage('End date must be a valid ISO date'),
   query('userId').optional().isUUID().withMessage('User ID must be a valid UUID'),
@@ -335,7 +347,7 @@ router.get('/user-behavior', [
 
 // POST /api/analytics/custom-report - Generate custom report
 router.post('/custom-report', [
-  authMiddleware,
+  authenticate,
   body('name').isString().withMessage('Report name is required'),
   body('metrics').isArray().withMessage('Metrics must be an array'),
   body('dimensions').isArray().withMessage('Dimensions must be an array'),
@@ -377,7 +389,7 @@ router.post('/custom-report', [
 
 // GET /api/analytics/dashboard - Get real-time dashboard data
 router.get('/dashboard', [
-  authMiddleware, // Admin only in production
+  authenticate, // Admin only in production
 ], async (_req: Request, res: Response) => {
   try {
     const dashboardData = await AnalyticsService.getRealTimeDashboard();
@@ -400,7 +412,7 @@ router.get('/dashboard', [
 
 // GET /api/analytics/export - Export analytics data
 router.get('/export', [
-  authMiddleware,
+  authenticate,
   query('startDate').isISO8601().withMessage('Start date must be a valid ISO date'),
   query('endDate').isISO8601().withMessage('End date must be a valid ISO date'),
   query('format').optional().isIn(['csv', 'json', 'excel']).withMessage('Invalid export format'),
@@ -471,7 +483,7 @@ router.get('/export', [
 
 // GET /api/analytics/search-analytics - Get search analytics
 router.get('/search-analytics', [
-  authMiddleware,
+  authenticate,
   query('startDate').isISO8601().withMessage('Start date must be a valid ISO date'),
   query('endDate').isISO8601().withMessage('End date must be a valid ISO date'),
   handleValidationErrors,
@@ -509,7 +521,7 @@ router.get('/search-analytics', [
 
 // POST /api/analytics/initialize - Initialize analytics indices (admin only)
 router.post('/initialize', [
-  authMiddleware, // Admin only
+  authenticate, // Admin only
 ], async (_req: Request, res: Response) => {
   try {
     await AnalyticsService.initializeAnalyticsIndices();
@@ -525,7 +537,50 @@ router.post('/initialize', [
       error: {
         code: 'INITIALIZATION_FAILED',
         message: 'Failed to initialize analytics indices',
+        details: error instanceof Error ? error.message : 'Unknown error',
       },
+    });
+  }
+});
+
+// GET /api/analytics/health - Check analytics service health
+router.get('/health', async (_req: Request, res: Response) => {
+  try {
+    const { Client } = await import('@elastic/elasticsearch');
+    const { config } = await import('@/config/environment');
+    
+    const elasticsearch = new Client({
+      node: config.elasticsearch?.url || 'http://localhost:9200',
+      auth: config.elasticsearch?.auth ? {
+        username: config.elasticsearch.auth.username,
+        password: config.elasticsearch.auth.password,
+      } : undefined,
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+
+    // Test Elasticsearch connection
+    const pingResult = await elasticsearch.ping();
+    
+    return res.json({
+      success: true,
+      message: 'Analytics service is healthy',
+      elasticsearch: {
+        connected: true,
+        cluster: pingResult.body || 'Connected',
+      },
+    });
+  } catch (error) {
+    logger.error('Analytics health check failed:', error);
+    return res.json({
+      success: false,
+      message: 'Analytics service health check failed',
+      elasticsearch: {
+        connected: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      fallback: 'Database-only mode available',
     });
   }
 });

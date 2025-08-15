@@ -199,6 +199,16 @@ async function initializeServices() {
     await cacheService.warmCache();
     logger.info('✅ Cache service initialization completed');
 
+    // Initialize analytics indices
+    try {
+      const { AnalyticsService } = await import('@/services/analytics.service');
+      await AnalyticsService.initializeAnalyticsIndices();
+      logger.info('✅ Analytics indices initialized successfully');
+    } catch (analyticsError) {
+      logger.warn('⚠️ Analytics initialization failed:', analyticsError);
+      logger.info('📊 Analytics will fall back to database-only mode');
+    }
+
     // Initialize error tracking
     logger.info('✅ Error tracking service initialized');
   } catch (error) {
