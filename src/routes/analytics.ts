@@ -302,9 +302,10 @@ router.get('/health', async (_req: Request, res: Response) => {
       let esAuth: any = undefined;
       
       try {
-        const { config } = await import('@/config/environment');
-        esUrl = config.elasticsearch?.url || esUrl;
-        esAuth = config.elasticsearch?.auth;
+        const configModule = require('@/config/environment');
+        const config = configModule.config;
+        esUrl = config?.elasticsearch?.url || esUrl;
+        esAuth = config?.elasticsearch?.auth;
       } catch {
         esUrl = process.env.ELASTICSEARCH_URL || esUrl;
         if (process.env.ELASTICSEARCH_USERNAME && process.env.ELASTICSEARCH_PASSWORD) {
