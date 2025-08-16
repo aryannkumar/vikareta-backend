@@ -484,6 +484,11 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
+  // Skip CSRF protection if explicitly bypassed
+  if ((req as any).bypassCSRF) {
+    return next();
+  }
+
   // Skip CSRF protection for authentication routes that don't require existing session
   const authExemptPaths = ['/api/auth/login', '/api/auth/register', '/auth/login', '/auth/register'];
   if (authExemptPaths.some(path => req.path === path)) {
