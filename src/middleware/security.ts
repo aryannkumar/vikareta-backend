@@ -484,6 +484,12 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
+  // Skip CSRF protection for authentication routes that don't require existing session
+  const authExemptPaths = ['/api/auth/login', '/api/auth/register', '/auth/login', '/auth/register'];
+  if (authExemptPaths.some(path => req.path === path)) {
+    return next();
+  }
+
   // JWT-based CSRF validation (double-submit cookie pattern)
   const csrfToken = (req.headers['x-xsrf-token'] || req.headers['X-XSRF-TOKEN']) as string;
   const csrfCookie = req.cookies['XSRF-TOKEN'];

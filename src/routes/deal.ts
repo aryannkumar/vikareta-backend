@@ -104,6 +104,49 @@ router.get('/', async (req: Request, res: Response)=> {
 });
 
 /**
+ * GET /api/deals/count
+ * Get total count of user's deals
+ */
+router.get('/count', async (req: Request, res: Response) => {
+  try {
+    const userId = req.authUser?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const role = req.query.role as 'buyer' | 'seller' | 'both' || 'both';
+    const status = req.query.status as string;
+
+    // Get deals with filtering but only count
+    const result = await dealService.getUserDeals(userId, {
+      role,
+      status,
+      page: 1,
+      limit: 1 // We only need the count, not the actual deals
+    });
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        count: result.pagination?.total || 0,
+        message: 'Deal count retrieved successfully'
+      });
+    } else {
+      return res.status(400).json(result);
+    }
+  } catch (error) {
+    logger.error('Error in GET /api/deals/count:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
  * GET /api/deals/metrics
  * Get deal performance metrics
  */
@@ -127,6 +170,50 @@ router.get('/metrics', async (req: Request, res: Response)=> {
     }
   } catch (error) {
     logger.error('Error in GET /api/deals/metrics:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * GET /api/deals/stats
+ * Get basic deal statistics (lightweight version of metrics)
+ */
+router.get('/stats', async (req: Request, res: Response) => {
+  try {
+    const userId = req.authUser?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const role = req.query.role as 'buyer' | 'seller' | 'both' || 'both';
+    
+    // Get basic counts for different deal statuses
+    const [totalResult, completedResult, activeResult] = await Promise.all([
+      dealService.getUserDeals(userId, { role, page: 1, limit: 1 }),
+      dealService.getUserDeals(userId, { role, status: 'completed', page: 1, limit: 1 }),
+      dealService.getUserDeals(userId, { role, status: 'confirmed', page: 1, limit: 1 })
+    ]);
+
+    const stats = {
+      total: totalResult.pagination?.total || 0,
+      completed: completedResult.pagination?.total || 0,
+      active: activeResult.pagination?.total || 0,
+      pending: Math.max(0, (totalResult.pagination?.total || 0) - (completedResult.pagination?.total || 0) - (activeResult.pagination?.total || 0))
+    };
+
+    return res.json({
+      success: true,
+      stats,
+      message: 'Deal statistics retrieved successfully'
+    });
+  } catch (error) {
+    logger.error('Error in GET /api/deals/stats:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error'
