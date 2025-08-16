@@ -247,18 +247,11 @@ router.post('/fund', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// CSRF bypass middleware for specific endpoints
-const bypassCSRF = (req: Request, res: Response, next: NextFunction) => {
-  // Mark this request to bypass CSRF protection
-  (req as any).bypassCSRF = true;
-  next();
-};
-
 /**
  * Add money to wallet (simplified endpoint for frontend compatibility)
  * POST /api/wallet/add-money
  */
-router.post('/add-money', authenticate, bypassCSRF, async (req: Request, res: Response) => {
+router.post('/add-money', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser?.userId;
     if (!userId) {
