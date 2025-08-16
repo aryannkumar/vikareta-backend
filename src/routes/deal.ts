@@ -104,83 +104,6 @@ router.get('/', async (req: Request, res: Response)=> {
 });
 
 /**
- * GET /api/deals/:id
- * Get deal by ID
- */
-router.get('/:id', async (req: Request, res: Response)=> {
-  try {
-    const userId = req.authUser?.userId;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not authenticated'
-      });
-    }
-
-    const dealId = req.params.id;
-    const result = await dealService.getDealById(dealId, userId);
-
-    if (result.success) {
-      return res.json(result);
-    } else {
-      return res.status(404).json(result);
-    }
-  } catch (error) {
-    logger.error('Error in GET /api/deals/:id:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
-});
-
-/**
- * PUT /api/deals/:id/status
- * Update deal status
- */
-router.put('/:id/status', async (req: Request, res: Response)=> {
-  try {
-    const userId = req.authUser?.userId;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not authenticated'
-      });
-    }
-
-    const updateRequest: UpdateDealStatusRequest = {
-      dealId: req.params.id,
-      status: req.body.status,
-      milestone: req.body.milestone,
-      nextFollowUp: req.body.nextFollowUp ? new Date(req.body.nextFollowUp) : undefined
-    };
-
-    // Validate status
-    const validStatuses = ['initiated', 'negotiating', 'confirmed', 'completed', 'cancelled'];
-    if (!validStatuses.includes(updateRequest.status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid status. Must be one of: ' + validStatuses.join(', ')
-      });
-    }
-
-    const result = await dealService.updateDealStatus(updateRequest, userId);
-
-    if (result.success) {
-      return res.json(result);
-    } else {
-      return res.status(400).json(result);
-    }
-  } catch (error) {
-    logger.error('Error in PUT /api/deals/:id/status:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
-});
-
-/**
  * GET /api/deals/metrics
  * Get deal performance metrics
  */
@@ -309,6 +232,117 @@ router.post('/archive', async (req: Request, res: Response)=> {
     });
   }
 });
+
+/**
+ * POST /api/deals/process-follow-ups
+ * Process automated follow-up reminders (admin/system endpoint)
+ */
+router.post('/process-follow-ups', async (req: Request, res: Response)=> {
+  try {
+    // This would typically be protected by admin authentication
+    // For now, we'll allow any authenticated user to trigger it
+    const userId = req.authUser?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const result = await dealService.processFollowUpReminders();
+
+    if (result.success) {
+      return res.json(result);
+    } else {
+      return res.status(400).json(result);
+    }
+  } catch (error) {
+    logger.error('Error in POST /api/deals/process-follow-ups:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * GET /api/deals/:id
+ * Get deal by ID
+ */
+router.get('/:id', async (req: Request, res: Response)=> {
+  try {
+    const userId = req.authUser?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const dealId = req.params.id;
+    const result = await dealService.getDealById(dealId, userId);
+
+    if (result.success) {
+      return res.json(result);
+    } else {
+      return res.status(404).json(result);
+    }
+  } catch (error) {
+    logger.error('Error in GET /api/deals/:id:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * PUT /api/deals/:id/status
+ * Update deal status
+ */
+router.put('/:id/status', async (req: Request, res: Response)=> {
+  try {
+    const userId = req.authUser?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const updateRequest: UpdateDealStatusRequest = {
+      dealId: req.params.id,
+      status: req.body.status,
+      milestone: req.body.milestone,
+      nextFollowUp: req.body.nextFollowUp ? new Date(req.body.nextFollowUp) : undefined
+    };
+
+    // Validate status
+    const validStatuses = ['initiated', 'negotiating', 'confirmed', 'completed', 'cancelled'];
+    if (!validStatuses.includes(updateRequest.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be one of: ' + validStatuses.join(', ')
+      });
+    }
+
+    const result = await dealService.updateDealStatus(updateRequest, userId);
+
+    if (result.success) {
+      return res.json(result);
+    } else {
+      return res.status(400).json(result);
+    }
+  } catch (error) {
+    logger.error('Error in PUT /api/deals/:id/status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+
 
 /**
  * POST /api/deals/:id/messages
