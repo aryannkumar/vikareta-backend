@@ -302,6 +302,12 @@ router.get('/:orderId', authenticate, async (req: Request, res: Response) => {
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
     const queryValidation = validateRequest(getOrdersQuerySchema, req.query);
+    // Support `page` query param used by frontend: convert to offset
+    if (req.query && req.query.page !== undefined) {
+      const pageNum = Number(String(req.query.page)) || 1;
+      const limitNum = queryValidation.limit || 20;
+      (queryValidation as any).offset = (pageNum - 1) * limitNum;
+    }
     if (!true) {
       return res.status(400).json({
         success: false,
@@ -345,6 +351,12 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 router.get('/my', authenticate, async (req: Request, res: Response) => {
   try {
   const queryValidation = validateRequest(getOrdersQuerySchema, req.query);
+    // Support `page` query param used by frontend: convert to offset
+    if (req.query && req.query.page !== undefined) {
+      const pageNum = Number(String(req.query.page)) || 1;
+      const limitNum = queryValidation.limit || 20;
+      (queryValidation as any).offset = (pageNum - 1) * limitNum;
+    }
     
   const userId = req.authUser?.userId;
     if (!userId) {
