@@ -37,7 +37,7 @@ export class MinIOService {
 
     constructor() {
         // Prefer validated config values
-        const minioCfg = config.minio || {};
+    const minioCfg: any = config.minio || {};
 
         // Support full URL for endpoint (e.g. https://storage.vikareta.com)
         let endpoint = minioCfg.endpoint || process.env.MINIO_ENDPOINT || 'localhost';
