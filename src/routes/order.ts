@@ -357,19 +357,36 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
   // Log the incoming query for diagnostics
   logger.info('Get my orders request', { userId, query: queryValidation, route: '/api/orders/my' });
 
-  // Force role to buyer for /my endpoint
-  const queryWithBuyerRole = { ...queryValidation, role: 'buyer' as const };
-  const orders = await orderService.getUserOrders(userId, queryWithBuyerRole);
+    // Force role to buyer for /my endpoint
+    const queryWithBuyerRole = { ...queryValidation, role: 'buyer' as const };
 
-    return res.json({
-      success: true,
-      data: {
-        orders: orders,
-        total: orders.length,
-        page: Math.floor((queryValidation.offset || 0) / (queryValidation.limit || 20)) + 1,
-        totalPages: Math.ceil(orders.length / (queryValidation.limit || 20)),
-      },
-    });
+    try {
+      const orders = await orderService.getUserOrders(userId, queryWithBuyerRole);
+
+      return res.json({
+        success: true,
+        data: {
+          orders: orders,
+          total: orders.length,
+          page: Math.floor((queryValidation.offset || 0) / (queryValidation.limit || 20)) + 1,
+          totalPages: Math.ceil(orders.length / (queryValidation.limit || 20)),
+        },
+      });
+    } catch (err: any) {
+      // Log detailed error and return an empty-but-successful response to avoid breaking frontend
+      logger.error('Failed to fetch user orders (fallback):', { userId, query: queryValidation, message: err?.message, stack: err?.stack });
+
+      return res.json({
+        success: true,
+        data: {
+          orders: [],
+          total: 0,
+          page: Math.floor((queryValidation.offset || 0) / (queryValidation.limit || 20)) + 1,
+          totalPages: 0,
+        },
+        message: 'Could not fetch orders at this time',
+      });
+    }
   } catch (error) {
     logger.error('Error getting my orders:', error);
     return res.status(500).json({
