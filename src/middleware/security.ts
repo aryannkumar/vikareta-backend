@@ -28,13 +28,26 @@ export const createRateLimiter = (options: {
     skipSuccessfulRequests: options.skipSuccessfulRequests || false,
     skipFailedRequests: options.skipFailedRequests || false,
     handler: (req: Request, res: Response) => {
+      // Ensure clients receive standard retry headers
+      try {
+        const retryAfterSec = Math.ceil(options.windowMs / 1000);
+        res.setHeader('Retry-After', String(retryAfterSec));
+        res.setHeader('X-RateLimit-Limit', String(options.max));
+        // If express-rate-limit set remaining info on req, use it; otherwise set to 0
+        // @ts-ignore
+        const remaining = (req as any).rateLimit?.remaining ?? 0;
+        res.setHeader('X-RateLimit-Remaining', String(remaining));
+      } catch (err) {
+        // swallow header-setting errors
+      }
+
       logger.warn(`Rate limit exceeded for IP: ${req.ip}, Path: ${req.path}`, {
         ip: req.ip,
         path: req.path,
         userAgent: req.get('User-Agent'),
         timestamp: new Date().toISOString(),
       });
-      
+
       res.status(429).json({
         success: false,
         error: {
@@ -57,7 +70,8 @@ export const generalLimiter = createRateLimiter({
 
 export const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'production' ? 20 : 1000, // Much higher limit for dev/test
+  // Increase auth limiter in production to reduce accidental 429s from frequent frontend checks
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000,
   message: 'Too many authentication attempts, please try again later.',
   skipSuccessfulRequests: true,
 });

@@ -386,10 +386,8 @@ router.post('/refresh', async (req: Request, res: Response) => {
       body: !!(req.body && typeof req.body.refreshToken === 'string')
     };
 
-    // Log an info-level message with limited context to aid debugging in staging.
-    logger.info('SSO: Refresh token request - sources', { ip: req.ip, path: req.path, origin: req.headers.origin, tokenSources });
-
     if (!refreshToken) {
+      // Don't log token source details when no token is present to reduce log noise from unauthenticated clients.
       return res.status(401).json({
         success: false,
         error: {
@@ -398,6 +396,9 @@ router.post('/refresh', async (req: Request, res: Response) => {
         },
       });
     }
+
+    // Log an info-level message with limited context to aid debugging in staging.
+    logger.info('SSO: Refresh token request - sources', { ip: req.ip, path: req.path, origin: req.headers.origin, tokenSources });
 
     // Check if refresh token exists and is valid
     const tokenData = refreshTokens.get(refreshToken);
