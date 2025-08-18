@@ -10,7 +10,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import passport from '@/config/passport';
 
 import { config } from '@/config/environment';
@@ -101,8 +101,8 @@ let redisClient: any = null;
 let redisConnected = false;
 
 try {
-  // Parse Redis URL to extract components
-  const redisUrl = new URL(config.redis.url);
+  const redisUrlStr = config.redis.url || process.env.REDIS_URL || 'redis://localhost:6379';
+  const redisUrl = new URL(redisUrlStr);
 
   logger.info('Redis configuration:', {
     host: redisUrl.hostname,
@@ -112,50 +112,23 @@ try {
     database: parseInt(redisUrl.pathname.slice(1)) || 0
   });
 
-  // Try URL-based connection first, fallback to explicit config
-  const redisConfig = redisUrl.username ? {
-    // ACL-based authentication (Redis 6+)
-    username: redisUrl.username,
-    password: redisUrl.password,
-    socket: {
-      host: redisUrl.hostname,
-      port: parseInt(redisUrl.port) || 6379,
-      reconnectStrategy: (retries) => {
-        if (retries > 10) {
-          logger.error('Redis reconnection failed after 10 attempts, giving up');
-          return false;
-        }
-        return Math.min(retries * 50, 500);
-      },
-    },
-    database: parseInt(redisUrl.pathname.slice(1)) || 0,
-  } : {
-    // Legacy password-only authentication
-    password: redisUrl.password,
-    socket: {
-      host: redisUrl.hostname,
-      port: parseInt(redisUrl.port) || 6379,
-      reconnectStrategy: (retries) => {
-        if (retries > 10) {
-          logger.error('Redis reconnection failed after 10 attempts, giving up');
-          return false;
-        }
-        return Math.min(retries * 50, 500);
-      },
-    },
-    database: parseInt(redisUrl.pathname.slice(1)) || 0,
-  };
+  // Create an ioredis client (unified across the codebase)
+  redisClient = new Redis(redisUrlStr, {
+    lazyConnect: true,
+    connectTimeout: 10000,
+    maxRetriesPerRequest: 5,
+    enableAutoPipelining: true,
+    retryStrategy(times) {
+      if (times > 10) return null;
+      return Math.min(times * 50, 500);
+    }
+  });
 
-  redisClient = createClient(redisConfig);
-
-  redisClient.on('error', (err) => {
+  // Event handlers
+  redisClient.on('error', (err: any) => {
     logger.error('Redis cache error:', {
-      message: err.message,
-      code: err.code,
-      errno: err.errno,
-      syscall: err.syscall,
-      address: err.address,
-      port: err.port
+      message: err && err.message ? err.message : String(err),
+      code: err && err.code,
     });
     redisConnected = false;
   });
@@ -175,11 +148,11 @@ try {
     redisConnected = false;
   });
 
-  redisClient.on('reconnecting', () => {
-    logger.warn('Redis cache reconnecting...');
+  redisClient.on('reconnecting', (delay: number) => {
+    logger.warn('Redis cache reconnecting...', { delay });
   });
 
-  // Initialize Redis connection with timeout
+  // Initialize Redis connection with timeout; attempt single short fallback on auth failure
   const connectWithTimeout = async () => {
     const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Redis connection timeout')), 10000)
@@ -191,40 +164,42 @@ try {
     } catch (error) {
       logger.error('❌ Redis connection failed:', error);
 
-      // If auth failed with WRONGPASS, attempt a password-only fallback
-      const errMsg = (error && (error as any).message) ? String((error as any).message) : '';
+      const errMsg = error && (error as any).message ? String((error as any).message) : '';
       if (errMsg.includes('WRONGPASS') || errMsg.toLowerCase().includes('invalid username-password')) {
-        logger.warn('🔁 Redis auth failed with WRONGPASS — attempting password-only fallback');
+        logger.warn('🔁 Redis auth failed with WRONGPASS — attempting a single password-only fallback (short timeout)');
 
         try {
-          // Build a fallback config using REDIS_PASSWORD if available
           const fallbackPassword = process.env.REDIS_PASSWORD || redisUrl.password || '';
           if (fallbackPassword) {
-            const fallbackConfig: any = {
+            const fallbackClient = new Redis({
+              host: redisUrl.hostname,
+              port: parseInt(redisUrl.port) || 6379,
               password: fallbackPassword,
-              socket: {
-                host: redisUrl.hostname,
-                port: parseInt(redisUrl.port) || 6379,
-                reconnectStrategy: (retries) => {
-                  if (retries > 10) {
-                    logger.error('Redis reconnection failed after 10 attempts, giving up');
-                    return false;
-                  }
-                  return Math.min(retries * 50, 500);
-                },
-              },
-              database: parseInt(redisUrl.pathname.slice(1)) || 0,
-            };
+              lazyConnect: true,
+              connectTimeout: 5000,
+              maxRetriesPerRequest: 1,
+              retryStrategy(times) {
+                if (times > 1) return null;
+                return Math.min(times * 50, 200);
+              }
+            });
 
-            const fallbackClient = createClient(fallbackConfig);
-            fallbackClient.on('error', (e) => logger.error('Redis fallback client error:', e));
-            const fallbackTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Redis fallback connection timeout')), 10000));
-            await Promise.race([fallbackClient.connect(), fallbackTimeout]);
+            // Only log a single error from the fallback attempt
+            let fallbackConnected = false;
+            try {
+              const fbTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Redis fallback connection timeout')), 5000));
+              await Promise.race([fallbackClient.connect(), fbTimeout]);
+              fallbackConnected = true;
+            } catch (fbErr) {
+              logger.error('❌ Redis fallback connection failed:', fbErr && (fbErr as any).message ? (fbErr as any).message : fbErr);
+            }
 
-            logger.info('✅ Redis fallback (password-only) connection established');
-            redisClient = fallbackClient;
-            redisConnected = true;
-            return;
+            if (fallbackConnected) {
+              logger.info('✅ Redis fallback (password-only) connection established');
+              redisClient = fallbackClient;
+              redisConnected = true;
+              return;
+            }
           } else {
             logger.warn('No fallback password available in env to attempt Redis password-only fallback');
           }
