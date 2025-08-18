@@ -369,7 +369,23 @@ router.post('/login', [
  */
 router.post('/refresh', async (req: Request, res: Response) => {
   try {
-    const refreshToken = req.cookies.refresh_token;
+    // Accept refresh token from cookie (preferred), Authorization header, or request body
+    let refreshToken = req.cookies.refresh_token as string | undefined;
+    const authHeader = req.headers.authorization as string | undefined;
+    if (!refreshToken && authHeader && authHeader.startsWith('Bearer ')) {
+      refreshToken = authHeader.substring(7);
+    }
+    if (!refreshToken && req.body && typeof req.body.refreshToken === 'string') {
+      refreshToken = req.body.refreshToken;
+    }
+
+    // Debug: record where the token was found (do not log token value)
+    const tokenSources = {
+      cookie: !!req.cookies.refresh_token,
+      authHeader: !!(authHeader && authHeader.startsWith('Bearer ')),
+      body: !!(req.body && typeof req.body.refreshToken === 'string')
+    };
+    logger.info('SSO: Refresh token request', { ip: req.ip, path: req.path, origin: req.headers.origin, tokenSources });
 
     if (!refreshToken) {
       return res.status(401).json({
