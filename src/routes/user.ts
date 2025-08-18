@@ -114,17 +114,27 @@ router.put('/profile', authenticate, asyncHandler(async (req: Request, res: Resp
 
     const userId = req.authUser!.userId;
 
-    // Validate website URL if provided
-    if (website && !/^https?:\/\/.+/.test(website)) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_WEBSITE',
-          message: 'Please provide a valid website URL',
-          timestamp: new Date().toISOString(),
-          requestId: req.headers['x-request-id'] || 'unknown',
-        },
-      });
+    // Validate and normalize website URL if provided
+    let normalizedWebsite = website;
+    if (website) {
+      if (!/^https?:\/\/.+/.test(website)) {
+        // Try to be helpful: prepend https:// and validate again
+        const tried = `https://${website}`;
+        if (/^https?:\/\/.+/.test(tried)) {
+          normalizedWebsite = tried;
+          logger.info('Normalized website by prepending https://', { userId, original: website, normalized: normalizedWebsite });
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_WEBSITE',
+              message: 'Please provide a valid website URL',
+              timestamp: new Date().toISOString(),
+              requestId: req.headers['x-request-id'] || 'unknown',
+            },
+          });
+        }
+      }
     }
 
     // Update user profile
@@ -138,7 +148,7 @@ router.put('/profile', authenticate, asyncHandler(async (req: Request, res: Resp
         phone,
         location,
         bio,
-        website,
+        website: normalizedWebsite,
         avatar,
         updatedAt: new Date(),
       },

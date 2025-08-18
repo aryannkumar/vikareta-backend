@@ -309,27 +309,7 @@ app.use(csrfProtection);
 app.use('/health', healthRoutes);
 app.use('/monitoring', monitoringRoutes);
 
-// Temporary debug endpoint to inspect request headers and cookie names (no values).
-// Use this to verify whether browser is sending cookies/CSRF during cross-site requests.
-app.get('/debug/request-info', (req, res) => {
-  const origin = req.headers.origin;
-  const headers = Object.keys(req.headers).reduce((acc: any, k) => {
-    acc[k] = req.headers[k];
-    return acc;
-  }, {} as any);
-
-  const cookieHeader = typeof req.headers.cookie === 'string' ? req.headers.cookie : '';
-  const cookieNames = cookieHeader.split(';').map(c => c.split('=')[0].trim()).filter(Boolean);
-
-  logger.info('Debug endpoint hit', { path: req.path, origin, cookieNames });
-
-  res.json({
-    success: true,
-    origin,
-    headers: headers,
-    cookieNames,
-  });
-});
+// Debug endpoints removed - use structured logging in auth.refresh and browser devtools to inspect requests.
 
 // CORS test endpoint
 app.get('/cors-test', (req, res) => {

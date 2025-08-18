@@ -379,19 +379,15 @@ router.post('/refresh', async (req: Request, res: Response) => {
       refreshToken = req.body.refreshToken;
     }
 
-    // Debug: record where the token was found (do not log token value)
+    // Record where a refresh token appears (cookie / auth header / body) for debugging purposes
     const tokenSources = {
       cookie: !!req.cookies.refresh_token,
       authHeader: !!(authHeader && authHeader.startsWith('Bearer ')),
       body: !!(req.body && typeof req.body.refreshToken === 'string')
     };
-  // Log basic request context and which sources contained a token
-  logger.info('SSO: Refresh token request', { ip: req.ip, path: req.path, origin: req.headers.origin, tokenSources });
 
-  // Also log the cookie names present on the request (do NOT log values)
-  const cookieHeader = typeof req.headers.cookie === 'string' ? req.headers.cookie : '';
-  const cookieNames = cookieHeader.split(';').map(c => c.split('=')[0].trim()).filter(Boolean);
-  logger.info('SSO: Cookies present on refresh request (names only)', { cookieNames });
+    // Log an info-level message with limited context to aid debugging in staging.
+    logger.info('SSO: Refresh token request - sources', { ip: req.ip, path: req.path, origin: req.headers.origin, tokenSources });
 
     if (!refreshToken) {
       return res.status(401).json({
