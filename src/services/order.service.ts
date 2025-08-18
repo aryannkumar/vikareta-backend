@@ -2204,8 +2204,8 @@ export class OrderService {
       });
 
       return orders;
-    } catch (error) {
-      logger.error('Error getting user orders:', error);
+    } catch (error: any) {
+      logger.error('Error getting user orders:', { userId, options, message: error?.message, stack: error?.stack });
       throw error;
     }
   }

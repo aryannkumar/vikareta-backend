@@ -344,9 +344,9 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
  */
 router.get('/my', authenticate, async (req: Request, res: Response) => {
   try {
-    const queryValidation = validateRequest(getOrdersQuerySchema, req.query);
+  const queryValidation = validateRequest(getOrdersQuerySchema, req.query);
     
-    const userId = req.authUser?.userId;
+  const userId = req.authUser?.userId;
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -354,9 +354,12 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
       });
     }
 
-    // Force role to buyer for /my endpoint
-    const queryWithBuyerRole = { ...queryValidation, role: 'buyer' as const };
-    const orders = await orderService.getUserOrders(userId, queryWithBuyerRole);
+  // Log the incoming query for diagnostics
+  logger.info('Get my orders request', { userId, query: queryValidation, route: '/api/orders/my' });
+
+  // Force role to buyer for /my endpoint
+  const queryWithBuyerRole = { ...queryValidation, role: 'buyer' as const };
+  const orders = await orderService.getUserOrders(userId, queryWithBuyerRole);
 
     return res.json({
       success: true,
