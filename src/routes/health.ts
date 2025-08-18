@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { config } from '@/config/environment';
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import { prisma } from '@/lib/prisma';
 
 const router = Router();
@@ -42,18 +42,18 @@ router.get('/detailed', asyncHandler(async (_req: Request, res: Response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     healthChecks.database.status = 'healthy';
-  } catch (error) {
+  } catch {
     healthChecks.database.status = 'unhealthy';
   }
 
-  // Check Redis connection
+  // Check Redis connection using ioredis (short connect)
   try {
-    const redisClient = createClient({ url: config.redis.url });
+    const redisClient = new Redis(config.redis.url, { lazyConnect: true, connectTimeout: 5000, maxRetriesPerRequest: 1 });
     await redisClient.connect();
     await redisClient.ping();
     healthChecks.redis.status = 'healthy';
     await redisClient.quit();
-  } catch (error) {
+  } catch {
     healthChecks.redis.status = 'unhealthy';
   }
 

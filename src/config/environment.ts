@@ -35,6 +35,10 @@ const envSchema = z.object({
   
   DIGILOCKER_CLIENT_ID: z.string().optional(),
   DIGILOCKER_CLIENT_SECRET: z.string().optional(),
+  // Optional explicit callback URLs for production deployments
+  GOOGLE_CALLBACK_URL: z.string().optional(),
+  LINKEDIN_CALLBACK_URL: z.string().optional(),
+  DIGILOCKER_CALLBACK_URL: z.string().optional(),
   
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
@@ -150,19 +154,19 @@ export const config = {
     google: {
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
-      callbackUrl: `http://localhost:${env.PORT}/auth/google/callback`,
+  callbackUrl: env.GOOGLE_CALLBACK_URL || `http://localhost:${env.PORT}/api/auth/google/callback`,
     },
     
     linkedin: {
       clientId: env.LINKEDIN_CLIENT_ID,
       clientSecret: env.LINKEDIN_CLIENT_SECRET,
-      callbackUrl: `http://localhost:${env.PORT}/auth/linkedin/callback`,
+  callbackUrl: env.LINKEDIN_CALLBACK_URL || `http://localhost:${env.PORT}/api/auth/linkedin/callback`,
     },
 
     digilocker: {
       clientId: env.DIGILOCKER_CLIENT_ID,
       clientSecret: env.DIGILOCKER_CLIENT_SECRET,
-      callbackUrl: `http://localhost:${env.PORT}/auth/digilocker/callback`,
+  callbackUrl: env.DIGILOCKER_CALLBACK_URL || `http://localhost:${env.PORT}/api/auth/digilocker/callback`,
     },
   },
   

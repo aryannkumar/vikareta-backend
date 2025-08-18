@@ -1,18 +1,16 @@
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 
-const redisClient = createClient({
-  url: config.redis.url,
+const redisClient = new Redis(config.redis.url, { lazyConnect: true, connectTimeout: 5000, maxRetriesPerRequest: 3 });
+
+redisClient.on('error', (err: any) => {
+  logger.error('OTP Redis Client Error:', { message: err && err.message ? err.message : String(err) });
 });
 
-redisClient.on('error', (err) => {
-  logger.error('OTP Redis Client Error:', err);
-});
-
-// Initialize Redis connection for OTP service
+// Initialize Redis connection for OTP service (non-blocking)
 redisClient.connect().catch((err) => {
-  logger.error('Failed to connect to Redis for OTP service:', err);
+  logger.error('Failed to connect to Redis for OTP service:', err && err.message ? err.message : err);
 });
 
 export interface OtpData {
@@ -57,7 +55,7 @@ export class OtpService {
       const key = this.getOtpKey(identifier, type);
       
       // Store OTP in Redis with expiration
-      await redisClient.setEx(
+      await redisClient.setex(
         key,
         this.OTP_EXPIRY_MINUTES * 60,
         JSON.stringify(otpData)
@@ -112,7 +110,7 @@ export class OtpService {
 
       // Increment attempts
       otpData.attempts += 1;
-      await redisClient.setEx(
+      await redisClient.setex(
         key,
         Math.ceil((otpData.expiresAt - Date.now()) / 1000),
         JSON.stringify(otpData)

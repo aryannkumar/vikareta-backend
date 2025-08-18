@@ -10,6 +10,10 @@ import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 
 import { logger } from '@/utils/logger';
+import passport from '@/config/passport';
+import { DigiLockerService } from '@/services/digilocker.service';
+import { OtpService } from '@/services/otp.service';
+import { notificationService } from '@/services/notification.service';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -772,6 +776,164 @@ router.put('/profile', verifyAccessToken, [
       },
     });
   }
+});
+
+// POST /auth/send-otp
+router.post('/send-otp', [
+  body('identifier').isString().notEmpty(),
+  body('type').isIn(['email', 'phone']),
+  handleValidationErrors
+], async (req: Request, res: Response) => {
+  try {
+    const { identifier, type } = req.body;
+
+    // Generate and store OTP
+    const otp = await OtpService.generateOtp(identifier, type);
+
+    // Try to send via configured notification channel (best-effort)
+    (async () => {
+      try {
+        const channel = type === 'email' ? 'email' : 'sms';
+        await notificationService.sendNotification({
+          userId: 'system',
+          templateName: 'verification_otp',
+          channel: channel as any,
+          recipient: identifier,
+          variables: { otp, identifier }
+        });
+        logger.info('Sent OTP notification (best-effort) to', { identifier, type });
+      } catch (sendErr) {
+        logger.warn('Failed to send OTP notification (best-effort):', { error: sendErr && (sendErr as any).message ? (sendErr as any).message : String(sendErr) });
+      }
+    })();
+
+    // In development return the OTP for convenience
+    const responsePayload: any = { success: true, message: 'OTP generated' };
+    if (process.env.NODE_ENV === 'development') responsePayload.otp = otp;
+
+    return res.json(responsePayload);
+  } catch (error) {
+    logger.error('Send OTP failed:', error);
+    return res.status(500).json({ success: false, error: { code: 'OTP_GENERATION_FAILED', message: 'Failed to generate OTP' } });
+  }
+});
+
+// POST /auth/verify-otp
+router.post('/verify-otp', [
+  body('identifier').isString().notEmpty(),
+  body('type').isIn(['email', 'phone']),
+  body('otp').isString().isLength({ min: 4, max: 8 }),
+  handleValidationErrors
+], async (req: Request, res: Response) => {
+  try {
+    const { identifier, type, otp } = req.body;
+
+    const ok = await OtpService.verifyOtp(identifier, type, otp);
+    if (!ok) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_OTP', message: 'Invalid or expired OTP' } });
+    }
+
+    // Mark user as verified when identifier maps to a user
+    try {
+      const user = type === 'email'
+        ? await prisma.user.findUnique({ where: { email: identifier } })
+        : await prisma.user.findFirst({ where: { phone: identifier } });
+
+      if (user) {
+        await prisma.user.update({ where: { id: user.id }, data: { isVerified: true } });
+        logger.info('User marked verified via OTP', { userId: user.id, identifier });
+      }
+    } catch (uErr) {
+      logger.warn('Failed to mark user verified after OTP (non-fatal):', uErr);
+    }
+
+    return res.json({ success: true, message: 'OTP verified' });
+  } catch (error) {
+    logger.error('Verify OTP failed:', error);
+    return res.status(500).json({ success: false, error: { code: 'OTP_VERIFY_FAILED', message: 'Failed to verify OTP' } });
+  }
+});
+
+// --- OAuth Routes ---
+
+// Initiate Google OAuth
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false }));
+
+// Google callback
+router.get('/google/callback', (req: Request, res: Response, next: any) => {
+  passport.authenticate('google', { session: false }, (err: any, result: any) => {
+    if (err || !result) {
+      logger.error('Google OAuth callback error', err);
+      return res.redirect(`${process.env.FRONTEND_URL || '/'}?auth=failed`);
+    }
+
+    try {
+      // Set cookies and redirect to frontend relay page for popup flows
+      setAuthCookies(res, result.user);
+
+      const state = typeof req.query.state === 'string' ? req.query.state : '';
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      const relay = `${frontendBase}/sso-relay.html${state ? '?state=' + encodeURIComponent(state) : ''}`;
+      return res.redirect(relay);
+    } catch (e) {
+      logger.error('Google OAuth post-processing failed', e);
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      return res.redirect(`${frontendBase}/sso-relay.html?error=1`);
+    }
+  })(req, res, next);
+});
+
+// Initiate LinkedIn OAuth
+router.get('/linkedin', passport.authenticate('linkedin', { scope: ['r_emailaddress', 'r_liteprofile'], session: false }));
+
+// LinkedIn callback
+router.get('/linkedin/callback', (req: Request, res: Response, next: any) => {
+  passport.authenticate('linkedin', { session: false }, (err: any, result: any) => {
+    if (err || !result) {
+      logger.error('LinkedIn OAuth callback error', err);
+      return res.redirect(`${process.env.FRONTEND_URL || '/'}?auth=failed`);
+    }
+
+    try {
+      setAuthCookies(res, result.user);
+      const state = typeof req.query.state === 'string' ? req.query.state : '';
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      const relay = `${frontendBase}/sso-relay.html${state ? '?state=' + encodeURIComponent(state) : ''}`;
+      return res.redirect(relay);
+    } catch (e) {
+      logger.error('LinkedIn OAuth post-processing failed', e);
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      return res.redirect(`${frontendBase}/sso-relay.html?error=1`);
+    }
+  })(req, res, next);
+});
+
+// Initiate DigiLocker OAuth (redirect to provider)
+router.get('/digilocker', (req: Request, res: Response) => {
+  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+  const url = DigiLockerService.getAuthorizationUrl(state);
+  return res.redirect(url);
+});
+
+// DigiLocker callback
+router.get('/digilocker/callback', async (req: Request, res: Response) => {
+  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+  if (!code) {
+    return res.redirect(`${process.env.FRONTEND_URL || '/'}?auth=failed`);
+  }
+
+    try {
+      const result = await DigiLockerService.handleDigiLockerAuth(code);
+      setAuthCookies(res, result.user);
+      const state = typeof req.query.state === 'string' ? req.query.state : '';
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      const relay = `${frontendBase}/sso-relay.html${state ? '?state=' + encodeURIComponent(state) : ''}`;
+      return res.redirect(relay);
+    } catch (e) {
+      logger.error('DigiLocker callback failed', e);
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      return res.redirect(`${frontendBase}/sso-relay.html?error=1`);
+    }
 });
 
 export default router;
