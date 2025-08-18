@@ -190,6 +190,49 @@ try {
       logger.info('✅ Redis connection established');
     } catch (error) {
       logger.error('❌ Redis connection failed:', error);
+
+      // If auth failed with WRONGPASS, attempt a password-only fallback
+      const errMsg = (error && (error as any).message) ? String((error as any).message) : '';
+      if (errMsg.includes('WRONGPASS') || errMsg.toLowerCase().includes('invalid username-password')) {
+        logger.warn('🔁 Redis auth failed with WRONGPASS — attempting password-only fallback');
+
+        try {
+          // Build a fallback config using REDIS_PASSWORD if available
+          const fallbackPassword = process.env.REDIS_PASSWORD || redisUrl.password || '';
+          if (fallbackPassword) {
+            const fallbackConfig: any = {
+              password: fallbackPassword,
+              socket: {
+                host: redisUrl.hostname,
+                port: parseInt(redisUrl.port) || 6379,
+                reconnectStrategy: (retries) => {
+                  if (retries > 10) {
+                    logger.error('Redis reconnection failed after 10 attempts, giving up');
+                    return false;
+                  }
+                  return Math.min(retries * 50, 500);
+                },
+              },
+              database: parseInt(redisUrl.pathname.slice(1)) || 0,
+            };
+
+            const fallbackClient = createClient(fallbackConfig);
+            fallbackClient.on('error', (e) => logger.error('Redis fallback client error:', e));
+            const fallbackTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Redis fallback connection timeout')), 10000));
+            await Promise.race([fallbackClient.connect(), fallbackTimeout]);
+
+            logger.info('✅ Redis fallback (password-only) connection established');
+            redisClient = fallbackClient;
+            redisConnected = true;
+            return;
+          } else {
+            logger.warn('No fallback password available in env to attempt Redis password-only fallback');
+          }
+        } catch (fallbackError) {
+          logger.error('❌ Redis fallback connection failed:', fallbackError);
+        }
+      }
+
       logger.warn('🔄 Application will continue without Redis cache');
       redisClient = null;
     }

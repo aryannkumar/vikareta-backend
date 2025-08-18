@@ -67,7 +67,7 @@ export class MinIOService {
             // If MinIO client cannot be constructed, keep client undefined and log
             // other methods will handle missing client gracefully
             // eslint-disable-next-line no-console
-            console.error('❌ MinIO: Failed to construct client:', err);
+            console.error('❌ MinIO: Failed to construct client for endpoint', endpoint, 'port', port, err);
             // @ts-ignore
             this.client = null;
         }
@@ -80,7 +80,13 @@ export class MinIOService {
         try {
             if (!this.client) {
                 // eslint-disable-next-line no-console
-                console.warn('⚠️ MinIO: Client not configured, skipping initialization');
+                                console.warn('⚠️ MinIO: Client not configured, skipping initialization — will check MINIO_PUBLIC_URL fallback');
+
+                                // If a public URL is provided, we can still operate in a degraded mode
+                                const publicOverride = process.env.MINIO_PUBLIC_URL || config.storage.cdnUrl;
+                                if (publicOverride) {
+                                    console.log('ℹ️ MinIO: MINIO_PUBLIC_URL is set, the service will use it for public URLs even if client is not connected:', publicOverride);
+                                }
                 return;
             }
 
