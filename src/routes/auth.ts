@@ -516,6 +516,26 @@ router.post('/sso-token', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: { code: 'MISSING_TARGET', message: 'Target host required' } });
     }
 
+    // Ensure the requesting user has permission to request an SSO token for the target
+    const requestingUser = await prisma.user.findUnique({ where: { id: decoded.id }, select: { id: true, userType: true } });
+    if (!requestingUser) {
+      return res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+
+    const targetStr = String(target).toLowerCase();
+    const isDashboardTarget = targetStr.includes('dashboard');
+    const isAdminTarget = targetStr.includes('admin');
+
+    // Dashboard SSO should only be issued to sellers or users marked as both
+    if (isDashboardTarget && !['seller', 'both'].includes(requestingUser.userType)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Insufficient role to request SSO for dashboard' } });
+    } 
+
+    // Admin SSO should only be issued to admin users
+    if (isAdminTarget && requestingUser.userType !== 'admin') {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Insufficient role to request SSO for admin' } });
+    }
+
     // Create a very short lived SSO token
     const SSO_SECRET = process.env.SSO_SECRET || process.env.JWT_SECRET || 'sso-secret';
     const ssoToken = jwt.sign({ sub: decoded.id, email: decoded.email, aud: target }, SSO_SECRET, { expiresIn: '60s' });
@@ -549,6 +569,17 @@ router.post('/validate-sso', async (req: Request, res: Response) => {
     // Verify user existence and active status
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) return res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+
+    // Enforce audience-based role constraints: dashboard -> sellers/both, admin -> admin
+    const aud = payload.aud && typeof payload.aud === 'string' ? payload.aud.toLowerCase() : '';
+    const audIsDashboard = aud.includes('dashboard');
+    const audIsAdmin = aud.includes('admin');
+    if (audIsDashboard && !['seller', 'both'].includes(user.userType)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for dashboard SSO' } });
+    }
+    if (audIsAdmin && user.userType !== 'admin') {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for admin SSO' } });
+    }
 
     // Optionally verify audience claim matches expected host pattern
     if (payload.aud && typeof payload.aud === 'string') {
