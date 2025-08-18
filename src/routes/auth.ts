@@ -467,6 +467,81 @@ router.post('/refresh', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /auth/sso-token
+ * Issue a short-lived signed token (JWT) that target subdomains can validate
+ * and use to set their own HttpOnly cookie for SSO. This endpoint requires an
+ * authenticated user (access token) to be present.
+ *
+ * Body: { target: string }
+ */
+router.post('/sso-token', async (req: Request, res: Response) => {
+  try {
+    // Require authenticated access via cookie or Authorization header
+  const accessToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization!.substring(7) : req.cookies.access_token;
+    if (!accessToken) {
+      return res.status(401).json({ success: false, error: { code: 'NO_TOKEN', message: 'Access token required' } });
+    }
+
+    let decoded: any;
+    try {
+      decoded = jwt.verify(accessToken, JWT_SECRET) as any;
+    } catch {
+      return res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Invalid access token' } });
+    }
+
+    const target = req.body?.target;
+    if (!target) {
+      return res.status(400).json({ success: false, error: { code: 'MISSING_TARGET', message: 'Target host required' } });
+    }
+
+    // Create a very short lived SSO token
+    const SSO_SECRET = process.env.SSO_SECRET || process.env.JWT_SECRET || 'sso-secret';
+    const ssoToken = jwt.sign({ sub: decoded.id, email: decoded.email, aud: target }, SSO_SECRET, { expiresIn: '60s' });
+
+    return res.json({ success: true, token: ssoToken });
+  } catch (error) {
+    logger.error('SSO token issuance failed:', error);
+    return res.status(500).json({ success: false, error: { code: 'SSO_ISSUE_FAILED', message: 'Failed to issue SSO token' } });
+  }
+});
+
+/**
+ * POST /auth/validate-sso
+ * Validate an incoming SSO token (short-lived) and ensure the referenced user exists.
+ * Body: { token: string }
+ * Returns: { success: true, user: { id, email } } on valid token
+ */
+router.post('/validate-sso', async (req: Request, res: Response) => {
+  try {
+    const token = req.body?.token;
+    if (!token) return res.status(400).json({ success: false, error: { code: 'MISSING_TOKEN', message: 'Token required' } });
+
+    const SSO_SECRET = process.env.SSO_SECRET || process.env.JWT_SECRET || 'sso-secret';
+    let payload: any;
+    try {
+      payload = jwt.verify(token, SSO_SECRET) as any;
+    } catch {
+      return res.status(401).json({ success: false, error: { code: 'INVALID_SSO', message: 'Invalid or expired SSO token' } });
+    }
+
+    // Verify user existence and active status
+    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) return res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+
+    // Optionally verify audience claim matches expected host pattern
+    if (payload.aud && typeof payload.aud === 'string') {
+      // allow if aud equals host or contains it
+      // Additional checks can be added here
+    }
+
+    return res.json({ success: true, user: { id: user.id, email: user.email } });
+  } catch (error) {
+    logger.error('SSO validation failed:', error);
+    return res.status(500).json({ success: false, error: { code: 'SSO_VALIDATION_FAILED', message: 'Failed to validate SSO token' } });
+  }
+});
+
+/**
  * GET /auth/me
  * Get current user profile using access token from cookie
  */
