@@ -4,7 +4,7 @@ import 'module-alias/register';
 // Initialize APM first
 import './config/apm';
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
@@ -79,8 +79,22 @@ import wishlistRoutes from '@/routes/wishlist';
 
 const app = express();
 
-// Trust proxy - required when running behind nginx reverse proxy
-app.set('trust proxy', true);
+// Trust proxy configuration - prefer explicit env-driven value
+// Acceptable values: 'true'|'false'|'loopback'|'linklocal'|'uniquelocal'|number|string
+// We parse the configured value and apply it safely. Default to 'loopback' in dev.
+const rawTrustProxy = config.trustProxy;
+let parsedTrustProxy: any = 'loopback';
+try {
+  if (rawTrustProxy === 'true') parsedTrustProxy = true;
+  else if (rawTrustProxy === 'false') parsedTrustProxy = false;
+  else if (!Number.isNaN(Number(rawTrustProxy))) parsedTrustProxy = Number(rawTrustProxy);
+  else parsedTrustProxy = rawTrustProxy; // allow strings like 'loopback' or comma-separated proxies
+} catch (err) {
+  logger.warn('Invalid TRUST_PROXY value, falling back to "loopback"', { rawTrustProxy, err });
+}
+
+app.set('trust proxy', parsedTrustProxy);
+logger.info('Express trust proxy set to', { trustProxy: parsedTrustProxy });
 
 // Redis client setup with proper error handling
 let redisClient: any = null;

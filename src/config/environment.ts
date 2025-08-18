@@ -97,6 +97,8 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default(() => 100),
   AUTH_RATE_LIMIT_MAX: z.string().transform(Number).default(() => 5),
   PAYMENT_RATE_LIMIT_MAX: z.string().transform(Number).default(() => 10),
+  // Trust proxy configuration for Express (number, boolean or string)
+  TRUST_PROXY: z.string().default('1'),
 });
 
 // Validate environment variables
@@ -231,4 +233,6 @@ export const config = {
       paymentMaxRequests: env.PAYMENT_RATE_LIMIT_MAX,
     },
   },
+  // Express trust proxy value (string form); parsing applied where used
+  trustProxy: env.TRUST_PROXY,
 } as const;

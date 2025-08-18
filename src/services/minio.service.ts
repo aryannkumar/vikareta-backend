@@ -3,9 +3,10 @@
  * Handles file uploads, downloads, and media management
  */
 import { Client as MinioClient } from 'minio';
+import { config } from '@/config/environment';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
-import { processImage, createThumbnail, getImageMetadata } from '@/utils/sharp-wrapper';
+import { processImage, createThumbnail } from '@/utils/sharp-wrapper';
 
 export interface UploadResult {
     success: boolean;
@@ -35,16 +36,41 @@ export class MinIOService {
     private region: string;
 
     constructor() {
-        this.client = new MinioClient({
-            endPoint: process.env.MINIO_ENDPOINT || 'localhost',
-            port: parseInt(process.env.MINIO_PORT || '9000'),
-            useSSL: process.env.MINIO_USE_SSL === 'true',
-            accessKey: process.env.MINIO_ROOT_USER || 'vikareta_admin',
-            secretKey: process.env.MINIO_ROOT_PASSWORD || 'VkRt_M1n10_2025_Pr0d_S3cur3_P@ssw0rd!',
-        });
+        // Prefer validated config values
+        const minioCfg = config.minio || {};
 
-        this.bucketName = process.env.MINIO_BUCKET_NAME || 'vikareta-media';
-        this.region = process.env.MINIO_REGION || 'us-east-1';
+        // Support full URL for endpoint (e.g. https://storage.vikareta.com)
+        let endpoint = minioCfg.endpoint || process.env.MINIO_ENDPOINT || 'localhost';
+        let port = minioCfg.port || (process.env.MINIO_PORT ? parseInt(process.env.MINIO_PORT) : 9000);
+        let useSSL = typeof minioCfg.useSSL === 'boolean' ? minioCfg.useSSL : (process.env.MINIO_USE_SSL === 'true');
+    const accessKey = (minioCfg as any).accessKey || process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || 'vikareta_admin';
+    const secretKey = (minioCfg as any).secretKey || process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || 'VkRt_M1n10_2025_Pr0d_S3cur3_P@ssw0rd!';
+    this.bucketName = process.env.MINIO_BUCKET_NAME || `${(minioCfg as any).bucketPrefix || 'vikareta'}-media`;
+    this.region = (minioCfg as any).region || process.env.MINIO_REGION || 'us-east-1';
+
+        try {
+            if (/^https?:\/\//.test(String(endpoint))) {
+                const parsed = new URL(String(endpoint));
+                endpoint = parsed.hostname;
+                if (parsed.port) port = parseInt(parsed.port);
+                useSSL = parsed.protocol === 'https:';
+            }
+
+            this.client = new MinioClient({
+                endPoint: endpoint,
+                port: typeof port === 'number' ? port : parseInt(String(port || 9000)),
+                useSSL: !!useSSL,
+                accessKey: String(accessKey),
+                secretKey: String(secretKey),
+            });
+        } catch (err) {
+            // If MinIO client cannot be constructed, keep client undefined and log
+            // other methods will handle missing client gracefully
+            // eslint-disable-next-line no-console
+            console.error('❌ MinIO: Failed to construct client:', err);
+            // @ts-ignore
+            this.client = null;
+        }
     }
 
     /**
@@ -52,20 +78,31 @@ export class MinIOService {
      */
     async initialize(): Promise<void> {
         try {
+            if (!this.client) {
+                // eslint-disable-next-line no-console
+                console.warn('⚠️ MinIO: Client not configured, skipping initialization');
+                return;
+            }
+
             // Check if bucket exists, create if not
             const bucketExists = await this.client.bucketExists(this.bucketName);
             if (!bucketExists) {
                 await this.client.makeBucket(this.bucketName, this.region);
+                // eslint-disable-next-line no-console
                 console.log(`✅ MinIO: Created bucket ${this.bucketName}`);
 
                 // Set bucket policy for public read access to certain paths
                 await this.setBucketPolicy();
             }
 
+            // eslint-disable-next-line no-console
             console.log(`✅ MinIO: Service initialized successfully`);
         } catch (error) {
-            console.error('❌ MinIO: Initialization failed:', error);
-            throw error;
+            // Log and continue - do not crash the app if MinIO is unavailable
+            // eslint-disable-next-line no-console
+            console.error('❌ MinIO: Initialization failed:', error && (error as any).message ? (error as any).message : error);
+            // Keep client reference so other callers can return friendly errors
+            // don't rethrow to avoid blocking startup
         }
     }
 
@@ -104,6 +141,12 @@ export class MinIOService {
         options: MediaProcessingOptions = {}
     ): Promise<UploadResult> {
         try {
+            if (!this.client) {
+                return {
+                    success: false,
+                    error: 'MinIO client not configured or connection failed'
+                } as UploadResult;
+            }
             const fileExtension = path.extname(originalName);
             const fileName = `${uuidv4()}${fileExtension}`;
             const objectKey = `${folder}/${fileName}`;
@@ -120,7 +163,7 @@ export class MinIOService {
             }
 
             // Upload to MinIO
-            const uploadInfo = await this.client.putObject(
+            await this.client.putObject(
                 this.bucketName,
                 objectKey,
                 processedBuffer,
@@ -136,9 +179,9 @@ export class MinIOService {
             const publicUrl = await this.getPublicUrl(objectKey);
 
             // Generate thumbnail if requested
-            let thumbnailUrl: string | undefined;
             if (options.generateThumbnail && mimetype.startsWith('image/')) {
-                thumbnailUrl = await this.generateThumbnail(processedBuffer, objectKey);
+                // generateThumbnail will upload and return URL; we don't need to keep it here
+                await this.generateThumbnail(processedBuffer, objectKey);
             }
 
             return {
@@ -152,7 +195,8 @@ export class MinIOService {
                 },
             };
         } catch (error) {
-            console.error('❌ MinIO: Upload failed:', error);
+            // eslint-disable-next-line no-console
+            console.error('❌ MinIO: Upload failed:', error && (error as any).message ? (error as any).message : error);
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Upload failed',
@@ -216,10 +260,32 @@ export class MinIOService {
      * Get public URL for object
      */
     async getPublicUrl(objectKey: string): Promise<string> {
-        const protocol = process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http';
-        const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
-        const port = process.env.MINIO_PORT || '9000';
-        return `${protocol}://${endpoint}:${port}/${this.bucketName}/${objectKey}`;
+        // Allow an explicit public URL override (CDN or gateway)
+        const publicOverride = process.env.MINIO_PUBLIC_URL || config.storage.cdnUrl;
+        if (publicOverride) {
+            // Trim trailing slash
+            return `${publicOverride.replace(/\/$/, '')}/${this.bucketName}/${objectKey}`;
+        }
+
+        const useSSL = config.minio.useSSL ? true : (process.env.MINIO_USE_SSL === 'true');
+        let endpoint = config.minio.endpoint || process.env.MINIO_ENDPOINT || 'localhost';
+        let port = config.minio.port || (process.env.MINIO_PORT ? String(process.env.MINIO_PORT) : '9000');
+
+        if (/^https?:\/\//.test(String(endpoint))) {
+            try {
+                const parsed = new URL(String(endpoint));
+                endpoint = parsed.hostname;
+                if (parsed.port) port = parsed.port;
+            } catch {
+                // ignore and use raw endpoint
+            }
+        }
+
+        const protocol = useSSL ? 'https' : 'http';
+
+        // Omit port for standard ports
+        const portPart = (port === '80' || port === '443' || !port) ? '' : `:${port}`;
+        return `${protocol}://${endpoint}${portPart}/${this.bucketName}/${objectKey}`;
     }
 
     /**

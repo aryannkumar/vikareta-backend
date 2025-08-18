@@ -5,6 +5,7 @@
 
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
+import { config } from '@/config/environment';
 import { PrismaClient } from '@prisma/client';
 
 interface CacheConfig {
@@ -93,9 +94,23 @@ class CacheService {
         // Skip Redis connection in test environment
         if (process.env.NODE_ENV !== 'test') {
             try {
-                this.redis = new Redis(process.env['REDIS_URL'] || 'redis://localhost:6379', {
-                    enableReadyCheck: false,
-                    maxRetriesPerRequest: 3,
+                const redisUrl = config.redis.url || process.env['REDIS_URL'] || 'redis://localhost:6379';
+
+                // Mask password for logs
+                let safeRedisLog = redisUrl;
+                try {
+                    const parsed = new URL(redisUrl);
+                    if (parsed.password) parsed.password = '*****';
+                    safeRedisLog = parsed.toString();
+                } catch {
+                    // ignore parsing
+                }
+
+                logger.info('Initializing Redis client', { redis: safeRedisLog });
+
+                this.redis = new Redis(redisUrl, {
+                    enableReadyCheck: true,
+                    maxRetriesPerRequest: 5,
                     lazyConnect: true,
                     // Connection optimizations
                     keepAlive: 30000,
@@ -105,12 +120,24 @@ class CacheService {
                     // Connection pool settings for better performance
                     family: 4,
                     // Pipeline optimizations
-                    enableAutoPipelining: true
+                    enableAutoPipelining: true,
+                    // Retry strategy
+                    retryStrategy(times) {
+                        if (times > 20) return null;
+                        return Math.min(times * 50, 2000);
+                    }
                 });
+
                 this.setupEventHandlers();
                 this.startStatsCollection();
+
+                // Attempt a lazy connect but don't crash on failure
+                this.redis.connect().catch((err) => {
+                    logger.warn('Redis lazy connect failed, continuing without Redis', { message: err && err.message ? err.message : String(err) });
+                    // leave this.redis as-is; event handlers will report state
+                });
             } catch (error) {
-                logger.error('Failed to initialize Redis in cache service:', error);
+                logger.error('Failed to initialize Redis in cache service:', { error: (error as any).message || String(error) });
                 logger.warn('Cache service will operate without Redis');
                 this.redis = null;
             }

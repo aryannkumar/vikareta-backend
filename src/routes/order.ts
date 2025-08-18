@@ -110,9 +110,7 @@ const shippingDetailsSchema = z.object({
   estimatedDelivery: z.string().datetime().optional(),
 });
 
-const serviceReadySchema = z.object({
-  serviceNotes: z.string().optional(),
-});
+// ...serviceReadySchema removed (unused) to keep lint clean
 
 const trackingUpdateSchema = z.object({
   trackingNumber: z.string().min(1),
@@ -254,7 +252,7 @@ router.post('/from-quote', authenticate, async (req: Request, res: Response) => 
  * GET /api/orders/:orderId
  * Note: restrict :orderId to UUID pattern to avoid collisions with literal routes like `/my`.
  */
-router.get('/:orderId([0-9a-fA-F-]{36})', authenticate, async (req: Request, res: Response) => {
+router.get('/:orderId([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})', authenticate, async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const userId = req.authUser?.userId;
@@ -309,13 +307,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       const limitNum = queryValidation.limit || 20;
       (queryValidation as any).offset = (pageNum - 1) * limitNum;
     }
-    if (!true) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid query parameters',
-        details: [],
-      });
-    }
+  // validation is handled by `validateRequest`; remove dead guard
 
     const userId = req.authUser?.userId;
     if (!userId) {

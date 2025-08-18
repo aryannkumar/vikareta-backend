@@ -4,6 +4,12 @@ import { logisticsService, CreateShipmentRequest, ShippingAddress, PackageDetail
 
 const prisma = new PrismaClient();
 
+// Simple UUID v4-ish validation to prevent non-UUID values from reaching Prisma
+function isUUID(val: string | undefined | null): boolean {
+  if (!val || typeof val !== 'string') return false;
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
+}
+
 // Mock cart service for testing
 export const cartService = {
   async addToCart(userId: string, item: { productId: string; quantity: number }) {
@@ -168,6 +174,12 @@ export class OrderService {
     message: string;
   }> {
     try {
+      if (!isUUID(orderId)) {
+        return {
+          success: false,
+          message: 'Invalid order id'
+        };
+      }
       const order = await prisma.order.findUnique({
         where: { id: orderId },
         include: {
@@ -243,6 +255,9 @@ export class OrderService {
    */
   async addShippingDetails(request: ShippingDetailsRequest, userId: string): Promise<{ success: boolean; message: string }> {
     try {
+      if (!isUUID(request.orderId)) {
+        return { success: false, message: 'Invalid order id' };
+      }
       const order = await prisma.order.findUnique({
         where: { id: request.orderId },
         include: {
@@ -465,6 +480,9 @@ export class OrderService {
     message: string;
   }> {
     try {
+      if (!isUUID(orderId)) {
+        return { success: false, message: 'Invalid order id' } as any;
+      }
       const order = await prisma.order.findUnique({
         where: { id: orderId },
         include: {
@@ -598,6 +616,9 @@ export class OrderService {
     message: string;
   }> {
     try {
+      if (!isUUID(request.orderId)) {
+        return { success: false, message: 'Invalid order id' };
+      }
       const order = await prisma.order.findUnique({
         where: { id: request.orderId },
         include: {
@@ -713,6 +734,9 @@ export class OrderService {
     message: string;
   }> {
     try {
+      if (!isUUID(request.orderId)) {
+        return { success: false, message: 'Invalid order id' };
+      }
       return await prisma.$transaction(async (tx) => {
         const order = await tx.order.findUnique({
           where: { id: request.orderId },
@@ -825,6 +849,9 @@ export class OrderService {
     message: string;
   }> {
     try {
+      if (!isUUID(request.orderId)) {
+        return { success: false, message: 'Invalid order id' };
+      }
       const order = await prisma.order.findUnique({
         where: { id: request.orderId },
         include: {
