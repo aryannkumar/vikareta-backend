@@ -117,23 +117,31 @@ router.put('/profile', authenticate, asyncHandler(async (req: Request, res: Resp
     // Validate and normalize website URL if provided
     let normalizedWebsite = website;
     if (website) {
-      if (!/^https?:\/\/.+/.test(website)) {
-        // Try to be helpful: prepend https:// and validate again
-        const tried = `https://${website}`;
-        if (/^https?:\/\/.+/.test(tried)) {
-          normalizedWebsite = tried;
-          logger.info('Normalized website by prepending https://', { userId, original: website, normalized: normalizedWebsite });
-        } else {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'INVALID_WEBSITE',
-              message: 'Please provide a valid website URL',
-              timestamp: new Date().toISOString(),
-              requestId: req.headers['x-request-id'] || 'unknown',
-            },
-          });
-        }
+      // Trim whitespace
+      normalizedWebsite = normalizedWebsite.trim();
+
+      // Decode common HTML-encoded forward slashes and ampersands that may come from form encoding
+      normalizedWebsite = normalizedWebsite.replace(/(&#x2F;|&#47;|&sol;)/gi, '/').replace(/&amp;/gi, '&');
+
+      // If there are multiple protocol prefixes (e.g. "https://https://example.com"), remove all and reapply one
+      const withoutProtocols = normalizedWebsite.replace(/^(?:https?:\/\/)+/i, '');
+
+      // If the original (after decoding) already has a protocol, prefer it; otherwise prepend https://
+      if (/^https?:\/\/.+/.test(normalizedWebsite)) {
+        // already ok
+      } else if (/^https?:\/\/.+/.test(`https://${withoutProtocols}`)) {
+        normalizedWebsite = `https://${withoutProtocols}`;
+        logger.info('Normalized website by prepending https://', { userId, original: website, normalized: normalizedWebsite });
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_WEBSITE',
+            message: 'Please provide a valid website URL',
+            timestamp: new Date().toISOString(),
+            requestId: req.headers['x-request-id'] || 'unknown',
+          },
+        });
       }
     }
 
