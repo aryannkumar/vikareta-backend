@@ -252,8 +252,9 @@ router.post('/from-quote', authenticate, async (req: Request, res: Response) => 
 /**
  * Get order by ID
  * GET /api/orders/:orderId
+ * Note: restrict :orderId to UUID pattern to avoid collisions with literal routes like `/my`.
  */
-router.get('/:orderId', authenticate, async (req: Request, res: Response) => {
+router.get('/:orderId([0-9a-fA-F-]{36})', authenticate, async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const userId = req.authUser?.userId;
