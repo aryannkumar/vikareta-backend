@@ -83,9 +83,6 @@ export { errorTrackingService } from './error-tracking.service';
 export { BidOptimizationService } from './bid-optimization.service';
 export { AudienceTargetingService } from './audience-targeting.service';
 
-// Enhanced Services
-export { enhancedRfqService } from './enhanced-rfq.service';
-
 // Service Types and Interfaces
 export type {
   // Product Service Types
@@ -121,7 +118,7 @@ export type {
   UpdateRfqData,
   RfqFilters,
   RfqWithDetails,
-  SellerMatchCriteria,
+  SellerMatchingCriteria,
 } from './rfq.service';
 
 export type {
