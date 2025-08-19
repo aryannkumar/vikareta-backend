@@ -146,6 +146,35 @@ interface RfqMetadata {
 }
 
 export class RfqService {
+  // Public: get recent RFQs with limited fields only
+  async getPublicRecentRfqs(limit = 5) {
+    try {
+      const rfqs = await prisma.rfq.findMany({
+        where: {
+          status: 'active',
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: new Date() } },
+          ],
+        },
+        select: {
+          id: true,
+          title: true,
+          quantity: true,
+          budgetMin: true,
+          budgetMax: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(Math.max(limit, 1), 50),
+      });
+
+      return rfqs;
+    } catch (error) {
+      logger.error('Error fetching public recent RFQs:', error);
+      throw error;
+    }
+  }
   // Helper function to extract metadata from description
   private extractMetadata(description: string): RfqMetadata {
     const serviceMatch = description.match(/\[SERVICE_METADATA\](.*?)\[\/SERVICE_METADATA\]/s);
