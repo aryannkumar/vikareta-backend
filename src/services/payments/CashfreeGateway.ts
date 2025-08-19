@@ -8,12 +8,13 @@ export class CashfreeGateway extends PaymentGatewayBase {
   private environment: string;
   private baseUrl: string;
 
-  constructor(gateway: any) {
+  constructor(gateway?: any) {
     super(gateway);
     
-    this.clientId = this.gateway.config.clientId;
-    this.clientSecret = this.gateway.config.clientSecret;
-    this.environment = this.gateway.config.environment || 'sandbox';
+    // Use environment variables directly for production readiness
+    this.clientId = process.env.CASHFREE_CLIENT_ID || '';
+    this.clientSecret = process.env.CASHFREE_CLIENT_SECRET || '';
+    this.environment = process.env.CASHFREE_ENVIRONMENT || 'sandbox';
     this.baseUrl = this.environment === 'production' 
       ? 'https://api.cashfree.com' 
       : 'https://sandbox.cashfree.com';
