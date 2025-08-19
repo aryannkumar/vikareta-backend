@@ -751,23 +751,19 @@ router.post('/logout', async (req: Request, res: Response) => {
  * Temporarily made public for debugging - remove in production.
  */
 router.get('/debug-oauth', (req: Request, res: Response) => {
-  const key = String(req.query.key || '');
   // Temporarily allow without key for debugging
-  if (!key && process.env.NODE_ENV === 'production') {
-    // In production, still require key unless debugging
-    return res.status(403).json({ success: false, message: 'Debug key required in production' });
-  }
-  
   return res.json({
     success: true,
     google: {
       hasClientId: !!process.env.GOOGLE_CLIENT_ID,
       clientIdSuffix: (process.env.GOOGLE_CLIENT_ID || '').slice(-12),
+      fullClientId: process.env.GOOGLE_CLIENT_ID || 'NOT_SET',
       hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
       secretLength: process.env.GOOGLE_CLIENT_SECRET ? process.env.GOOGLE_CLIENT_SECRET.length : 0,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL || null,
+      secretSuffix: process.env.GOOGLE_CLIENT_SECRET ? process.env.GOOGLE_CLIENT_SECRET.slice(-4) : 'NOT_SET',
+      callbackURL: process.env.GOOGLE_CALLBACK_URL || 'NOT_SET',
     },
-    frontendUrl: process.env.FRONTEND_URL || null,
+    frontendUrl: process.env.FRONTEND_URL || 'NOT_SET',
     oauthDebug: process.env.OAUTH_DEBUG === 'true',
     nodeEnv: process.env.NODE_ENV,
     ts: new Date().toISOString(),
