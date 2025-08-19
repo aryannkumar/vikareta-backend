@@ -748,19 +748,22 @@ router.post('/logout', async (req: Request, res: Response) => {
 /**
  * GET /auth/debug-oauth
  * Return non-sensitive OAuth runtime config to verify deployment correctness.
- * Temporarily made public for debugging - remove in production.
+ * Temporarily made public for debugging - REMOVE IN PRODUCTION.
  */
 router.get('/debug-oauth', (req: Request, res: Response) => {
-  // Temporarily allow without key for debugging
+  // Only allow in development or with debug key
+  const key = String(req.query.key || '');
+  if (process.env.NODE_ENV === 'production' && !key) {
+    return res.status(403).json({ success: false, message: 'Debug key required in production' });
+  }
+  
   return res.json({
     success: true,
     google: {
       hasClientId: !!process.env.GOOGLE_CLIENT_ID,
       clientIdSuffix: (process.env.GOOGLE_CLIENT_ID || '').slice(-12),
-      fullClientId: process.env.GOOGLE_CLIENT_ID || 'NOT_SET',
       hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
       secretLength: process.env.GOOGLE_CLIENT_SECRET ? process.env.GOOGLE_CLIENT_SECRET.length : 0,
-      secretSuffix: process.env.GOOGLE_CLIENT_SECRET ? process.env.GOOGLE_CLIENT_SECRET.slice(-4) : 'NOT_SET',
       callbackURL: process.env.GOOGLE_CALLBACK_URL || 'NOT_SET',
     },
     frontendUrl: process.env.FRONTEND_URL || 'NOT_SET',
@@ -938,8 +941,9 @@ router.get('/google', (req: Request, res: Response, next: any) => {
 
 // Google callback
 router.get('/google/callback', (req: Request, res: Response, next: any) => {
-  // Always log callback details for debugging
   try {
+    // Always log callback details for debugging
+    try {
     const c = typeof req.query.code === 'string' ? req.query.code : '';
     const s = typeof req.query.state === 'string' ? req.query.state : '';
     const details: any = { 
@@ -959,6 +963,12 @@ router.get('/google/callback', (req: Request, res: Response, next: any) => {
   }
   // If Google sent an error (e.g., access_denied), short-circuit to relay with details
   if (typeof req.query.error === 'string') {
+    logger.error('OAuth(Google): Google sent error in callback', {
+      error: req.query.error,
+      error_description: req.query.error_description,
+      state: req.query.state,
+      timestamp: new Date().toISOString(),
+    });
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
     const err = encodeURIComponent(req.query.error);
@@ -967,7 +977,31 @@ router.get('/google/callback', (req: Request, res: Response, next: any) => {
     return res.redirect(relay);
   }
 
+  // Log the exact code we're about to send to Google for token exchange
+  const authCode = typeof req.query.code === 'string' ? req.query.code : '';
+  logger.info('OAuth(Google): About to authenticate with code', {
+    hasCode: !!authCode,
+    codeLength: authCode.length,
+    codePrefix: authCode.substring(0, 10),
+    codeSuffix: authCode.substring(authCode.length - 10),
+    fullCode: authCode, // Temporarily log full code for debugging
+    allQueryParams: JSON.stringify(req.query),
+    timestamp: new Date().toISOString(),
+  });
+
+  logger.info('OAuth(Google): Starting passport authentication', {
+    timestamp: new Date().toISOString(),
+  });
+
   passport.authenticate('google', { session: false }, (err: any, result: any) => {
+    logger.info('OAuth(Google): Passport authenticate callback invoked', {
+      hasError: !!err,
+      hasResult: !!result,
+      errorType: err ? err.constructor.name : null,
+      resultType: result ? typeof result : null,
+      timestamp: new Date().toISOString(),
+    });
+
     if (err || !result) {
       // Always log errors for debugging with maximum detail
       logger.error('OAuth(Google): Callback error - detailed', {
@@ -1022,6 +1056,15 @@ router.get('/google/callback', (req: Request, res: Response, next: any) => {
       return res.redirect(`${frontendBase}/sso-relay.html?error=1`);
     }
   })(req, res, next);
+  } catch (globalError) {
+    logger.error('OAuth(Google): Global callback error', {
+      error: (globalError as any)?.message || String(globalError),
+      stack: (globalError as any)?.stack?.substring(0, 1000),
+      timestamp: new Date().toISOString(),
+    });
+    const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+    return res.redirect(`${frontendBase}/sso-relay.html?error=global`);
+  }
 });
 
 // Initiate LinkedIn OAuth

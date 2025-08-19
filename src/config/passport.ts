@@ -36,12 +36,15 @@ if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
       },
       async (accessToken: string, refreshToken: string, profile: any, done: any) => {
         try {
-          logger.info('Google OAuth strategy callback invoked', {
+          logger.info('Google OAuth strategy callback invoked successfully', {
             profileId: profile?.id,
+            profileEmail: profile?.emails?.[0]?.value || 'no-email',
             hasAccessToken: !!accessToken,
             accessTokenLength: accessToken ? accessToken.length : 0,
             hasRefreshToken: !!refreshToken,
             profileEmails: profile?.emails?.length || 0,
+            profileName: profile?.displayName || 'no-name',
+            timestamp: new Date().toISOString(),
           });
 
           const primaryEmail = profile?.emails?.[0]?.value
@@ -62,23 +65,31 @@ if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
             return done(new Error('Email not provided by Google'), false);
           }
 
+          logger.info('Google OAuth: About to call SocialAuthService', { 
+            profileId: googleProfile.id,
+            email: googleProfile.email,
+          });
+
           const result = await SocialAuthService.handleGoogleAuth(
             googleProfile,
             accessToken,
             refreshToken
           );
 
-          logger.info('Google OAuth: SocialAuthService completed', { 
+          logger.info('Google OAuth: SocialAuthService completed successfully', { 
             userId: result?.user?.id,
             email: result?.user?.email,
+            resultType: typeof result,
+            hasUser: !!result?.user,
           });
 
           return done(null, result);
         } catch (error) {
-          logger.error('Google OAuth strategy error:', {
+          logger.error('Google OAuth strategy error in callback processing:', {
             error: (error as any)?.message || String(error),
-            stack: (error as any)?.stack,
+            stack: (error as any)?.stack?.substring(0, 1000),
             profileId: profile?.id,
+            timestamp: new Date().toISOString(),
           });
           return done(error, false);
         }
