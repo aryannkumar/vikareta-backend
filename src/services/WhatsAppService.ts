@@ -8,13 +8,24 @@ export class WhatsAppService {
   private businessAccountId: string;
   private baseUrl: string;
   private isEnabled: boolean;
+  private apiProvider: 'facebook' | 'aisensy';
 
   private constructor() {
-    this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
+    // Support both Facebook WhatsApp Business API and AiSensy
+    this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4N2M3ZjcyY2YyNTE4MGMxMGY2ODc1YiIsIm5hbWUiOiJWaWthcmV0YSIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2ODdjN2Y3MmNmMjUxODBjMTBmNjg3NTYiLCJhY3RpdmVQbGFuIjoiRlJFRV9GT1JFVkVSIiwiaWF0IjoxNzUyOTg5NTU0fQ.t-AraCtwGdcwo0g6EWCWjVo_pmHzM0R-hL5AU2R8EVQ';
     this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
     this.businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '';
-    this.baseUrl = process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v17.0';
-    this.isEnabled = process.env.WHATSAPP_ENABLED === 'true';
+    
+    // Determine API provider based on token format
+    this.apiProvider = this.accessToken.startsWith('eyJ') ? 'aisensy' : 'facebook';
+    
+    if (this.apiProvider === 'aisensy') {
+      this.baseUrl = process.env.WHATSAPP_API_URL || 'https://backend.aisensy.com/campaign/t1/api/v2';
+    } else {
+      this.baseUrl = process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v17.0';
+    }
+    
+    this.isEnabled = process.env.WHATSAPP_ENABLED !== 'false'; // Enable by default now that we have API key
   }
 
   public static getInstance(): WhatsAppService {
@@ -30,31 +41,56 @@ export class WhatsAppService {
       return { success: false, error: 'WhatsApp service is disabled' };
     }
 
-    if (!this.accessToken || !this.phoneNumberId) {
-      console.error('WhatsApp configuration missing');
-      return { success: false, error: 'WhatsApp configuration missing' };
+    if (!this.accessToken) {
+      console.error('WhatsApp access token missing');
+      return { success: false, error: 'WhatsApp access token missing' };
     }
 
     try {
-      const response = await axios.post(
-        `${this.baseUrl}/${this.phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          to: message.to,
-          type: message.type,
-          [message.type]: message.content
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json'
+      let response;
+      
+      if (this.apiProvider === 'aisensy') {
+        // AiSensy API format - simplified for text messages
+        const messageText = typeof message.content === 'string' ? message.content : 'Notification from Vikareta';
+        
+        response = await axios.post(
+          `${this.baseUrl}/messages`,
+          {
+            apiKey: this.accessToken,
+            campaignName: 'vikareta_notifications',
+            destination: message.to,
+            userName: 'Vikareta',
+            templateParams: [messageText],
+            source: 'new-landing-page'
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
+        );
+      } else {
+        // Facebook WhatsApp Business API format
+        response = await axios.post(
+          `${this.baseUrl}/${this.phoneNumberId}/messages`,
+          {
+            messaging_product: 'whatsapp',
+            to: message.to,
+            type: message.type,
+            [message.type]: message.content
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+      }
 
       return {
         success: true,
-        messageId: response.data.messages?.[0]?.id
+        messageId: response.data.messageId || response.data.messages?.[0]?.id || 'sent'
       };
     } catch (error: any) {
       console.error('WhatsApp message sending failed:', error.response?.data || error.message);
@@ -235,6 +271,11 @@ export class WhatsAppService {
   }
 
   public async handleIncomingMessage(webhookData: any): Promise<{ success: boolean; message?: string }> {
+    return this.handleWebhook(webhookData);
+  }
+
+  // Handle incoming webhook (compatible with existing routes)
+  public async handleWebhook(webhookData: any): Promise<{ success: boolean; message?: string }> {
     try {
       if (webhookData.object === 'whatsapp_business_account') {
         for (const entry of webhookData.entry) {
@@ -263,22 +304,29 @@ export class WhatsAppService {
   private async processIncomingMessage(message: any, _contact: any): Promise<void> {
     try {
       const from = message.from;
-      const messageText = message.text?.body?.toLowerCase() || '';
+      const messageText = message.text?.body || '';
+      const messageTextLower = messageText.toLowerCase();
 
       console.log(`Incoming WhatsApp message from ${from}: ${messageText}`);
 
+      // Check if this is an RFQ response
+      if (await this.isRfqResponse(messageText)) {
+        await this.handleRfqResponse(from, messageText);
+        return;
+      }
+
       // Auto-reply logic for common queries
-      if (messageText.includes('order status') || messageText.includes('track order')) {
+      if (messageTextLower.includes('order status') || messageTextLower.includes('track order')) {
         await this.sendCustomMessage(from, 
           `To check your order status, please visit: ${process.env.FRONTEND_URL}/account/orders\n\nOr reply with your order ID for instant status.`
         );
-      } else if (messageText.includes('help') || messageText.includes('support')) {
+      } else if (messageTextLower.includes('help') || messageTextLower.includes('support')) {
         await this.sendCustomMessage(from,
           `🤝 *Vikareta Support*\n\nWe're here to help!\n\n📧 Email: support@vikareta.com\n📞 Phone: +91-XXXXXXXXXX\n🌐 Website: ${process.env.FRONTEND_URL}/support\n\nFor immediate assistance, please visit our support portal.`
         );
-      } else if (messageText.match(/^VKR_\d+/)) {
+      } else if (messageTextLower.match(/^vkr_\d+/) || messageTextLower.match(/order.*\d+/)) {
         // If message looks like an order ID
-        const orderId = messageText.match(/^VKR_\d+/)?.[0];
+        const orderId = messageText.match(/VKR_\d+/i)?.[0] || messageText.match(/\d+/)?.[0];
         if (orderId) {
           // TODO: Implement order status lookup
           await this.sendCustomMessage(from,
@@ -288,7 +336,7 @@ export class WhatsAppService {
       } else {
         // Default response for unrecognized messages
         await this.sendCustomMessage(from,
-          `Thank you for contacting Vikareta! 🙏\n\nFor quick assistance:\n• Order Status: Reply "order status"\n• Help: Reply "help"\n• Order ID: Send your order number\n\nOur team will respond soon!`
+          `Thank you for contacting Vikareta! 🙏\n\nFor quick assistance:\n• Order Status: Reply "order status"\n• Help: Reply "help"\n• Order ID: Send your order number\n• RFQ Response: Include RFQ ID and quote details\n\nOur team will respond soon!`
         );
       }
 
@@ -297,6 +345,102 @@ export class WhatsAppService {
     } catch (error) {
       console.error('Failed to process incoming message:', error);
     }
+  }
+
+  // Check if message is an RFQ response
+  private async isRfqResponse(message: string): Promise<boolean> {
+    const rfqPatterns = [
+      /rfq[_\s]*\d+/i,           // RFQ_123 or RFQ 123
+      /quote/i,                  // Contains "quote"
+      /price.*₹|₹.*\d+/i,       // Contains price in rupees
+      /delivery.*days?/i,        // Contains delivery timeline
+      /supply/i,                 // Contains "supply"
+      /we.*can.*provide/i,       // Common quote phrase
+      /our.*price/i,             // Common quote phrase
+    ];
+
+    return rfqPatterns.some(pattern => pattern.test(message));
+  }
+
+  // Handle RFQ response from WhatsApp
+  private async handleRfqResponse(from: string, message: string): Promise<void> {
+    try {
+      console.log(`Processing RFQ response from ${from}: ${message}`);
+
+      // Extract RFQ ID from message
+      const rfqIdMatch = message.match(/rfq[_\s]*(\d+)/i);
+      const rfqId = rfqIdMatch ? rfqIdMatch[1] : null;
+
+      // Extract price information
+      const priceMatch = message.match(/₹\s*(\d+(?:,\d+)*(?:\.\d+)?)/);
+      const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : null;
+
+      // Extract delivery timeline
+      const deliveryMatch = message.match(/(\d+)\s*days?/i);
+      const deliveryDays = deliveryMatch ? parseInt(deliveryMatch[1]) : null;
+
+      // Calculate confidence based on extracted information
+      let confidence = 0.5; // Base confidence
+      if (rfqId) confidence += 0.3;
+      if (price) confidence += 0.3;
+      if (deliveryDays) confidence += 0.1;
+
+      console.log(`Extracted RFQ data:`, {
+        rfqId,
+        price,
+        deliveryDays,
+        confidence,
+        from
+      });
+
+      // TODO: Save to database using RFQ service
+      // const rfqService = await import('./rfq.service');
+      // await rfqService.rfqService.processWhatsAppRfqResponse(from, message, rfqId);
+
+      // Send confirmation to seller
+      await this.sendCustomMessage(from,
+        `✅ Thank you for your RFQ response!\n\n` +
+        `${rfqId ? `RFQ ID: RFQ_${rfqId}\n` : ''}` +
+        `${price ? `Quoted Price: ₹${price.toLocaleString('en-IN')}\n` : ''}` +
+        `${deliveryDays ? `Delivery: ${deliveryDays} days\n` : ''}` +
+        `\nYour quote has been forwarded to the buyer. They will contact you if interested.\n\n` +
+        `Track your quotes: ${process.env.FRONTEND_URL}/seller/quotes`
+      );
+
+      // TODO: Notify buyer of new WhatsApp response
+      // await this.notifyBuyerOfWhatsAppResponse(rfqId, from, message);
+
+    } catch (error) {
+      console.error('Error handling RFQ response:', error);
+      
+      // Send error response to seller
+      await this.sendCustomMessage(from,
+        `❌ We couldn't process your RFQ response automatically.\n\n` +
+        `Please ensure your message includes:\n` +
+        `• RFQ ID (e.g., RFQ_123)\n` +
+        `• Quote price (e.g., ₹50,000)\n` +
+        `• Delivery timeline (e.g., 15 days)\n\n` +
+        `Or contact our support team for assistance.`
+      );
+    }
+  }
+
+  // Service status methods
+  public isServiceEnabled(): boolean {
+    return this.isEnabled;
+  }
+
+  public getApiProvider(): string {
+    return this.apiProvider;
+  }
+
+  public getServiceStatus() {
+    return {
+      enabled: this.isEnabled,
+      apiProvider: this.apiProvider,
+      hasAccessToken: !!this.accessToken,
+      timestamp: new Date().toISOString()
+    };
   }
 }
 

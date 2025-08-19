@@ -1,7 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { WhatsAppService } from '../services/whatsapp.service';
-
-const whatsappService = new WhatsAppService();
+import { whatsAppService } from '../services/WhatsAppService';
 import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 import { authenticate } from '../middleware/auth';
@@ -17,7 +15,7 @@ router.get('/webhook', (req: Request, res: Response) => {
 
     logger.info('WhatsApp webhook verification request:', { mode, token });
 
-    const verificationResult = whatsappService.verifyWebhook(mode, token, challenge);
+    const verificationResult = whatsAppService.verifyWebhook(token, challenge);
     
     if (verificationResult) {
       return res.status(200).send(verificationResult);
@@ -43,9 +41,13 @@ router.post('/webhook', async (req: Request, res: Response) => {
     // }
 
     // Process webhook data
-    await whatsappService.handleWebhook(body);
+    const result = await whatsAppService.handleWebhook(body);
 
-    return res.status(200).json({ status: 'ok' });
+    if (result.success) {
+      return res.status(200).json({ status: 'ok' });
+    } else {
+      return res.status(400).json({ error: result.message || 'Failed to process webhook' });
+    }
   } catch (error) {
     logger.error('WhatsApp webhook processing error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -61,12 +63,12 @@ router.post('/send-test', authenticate, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Phone and message are required' });
     }
 
-    const success = await whatsappService.sendMessage(phone, message);
+    const result = await whatsAppService.sendCustomMessage(phone, message);
     
-    if (success) {
+    if (result.success) {
       return res.json({ success: true, message: 'WhatsApp message sent successfully' });
     } else {
-      return res.status(500).json({ error: 'Failed to send WhatsApp message' });
+      return res.status(500).json({ error: result.error || 'Failed to send WhatsApp message' });
     }
   } catch (error) {
     logger.error('Send test WhatsApp message error:', error);
@@ -185,8 +187,7 @@ router.post('/send-payment-link', authenticate, async (req: Request, res: Respon
 // Get WhatsApp service status
 router.get('/status', authenticate, (req: Request, res: Response) => {
   try {
-    const status = whatsappService.getStatus();
-    return res.json(status);
+    return res.json(whatsAppService.getServiceStatus());
   } catch (error) {
     logger.error('Get WhatsApp status error:', error);
     return res.status(500).json({ error: 'Internal server error' });
