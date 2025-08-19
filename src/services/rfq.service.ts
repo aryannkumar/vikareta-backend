@@ -1398,8 +1398,13 @@ export class RfqService {
           responseSource: 'platform', // All quotes in DB are from platform
         }));
 
-        // Sort quotes by status (pending first, then by creation date)
-        quotes.sort((a, b) => {
+        // TODO: Implement WhatsApp response fetching when WhatsApp webhook is ready
+        // const whatsappResponses = await this.getWhatsAppResponses(rfq.id);
+        // const allResponses = [...quotes, ...whatsappResponses];
+        const allResponses = quotes;
+
+        // Sort responses by status (pending first, then by creation date)
+        allResponses.sort((a, b) => {
           if (a.status === 'pending' && b.status !== 'pending') return -1;
           if (a.status !== 'pending' && b.status === 'pending') return 1;
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -1418,25 +1423,27 @@ export class RfqService {
           requirements: metadata.requirements || [],
           specifications: metadata.specifications || [],
           attachments: metadata.attachments || [],
-          averageQuotePrice: quotes.length > 0 
-            ? quotes.reduce((sum, quote) => sum + quote.totalPrice, 0) / quotes.length
+          averageQuotePrice: allResponses.length > 0 
+            ? allResponses.reduce((sum, quote) => sum + quote.totalPrice, 0) / allResponses.length
             : null,
-          lowestQuotePrice: quotes.length > 0 
-            ? Math.min(...quotes.map(q => q.totalPrice))
+          lowestQuotePrice: allResponses.length > 0 
+            ? Math.min(...allResponses.map(q => q.totalPrice))
             : null,
-          highestQuotePrice: quotes.length > 0 
-            ? Math.max(...quotes.map(q => q.totalPrice))
+          highestQuotePrice: allResponses.length > 0 
+            ? Math.max(...allResponses.map(q => q.totalPrice))
             : null,
-          responses: quotes,
+          responses: allResponses,
           responseSummary: {
-            total: quotes.length,
-            pending: quotes.filter(q => q.status === 'pending').length,
-            accepted: quotes.filter(q => q.status === 'accepted').length,
-            rejected: quotes.filter(q => q.status === 'rejected').length,
-            negotiating: quotes.filter(q => q.status === 'negotiating').length,
+            total: allResponses.length,
+            pending: allResponses.filter(q => q.status === 'pending').length,
+            accepted: allResponses.filter(q => q.status === 'accepted').length,
+            rejected: allResponses.filter(q => q.status === 'rejected').length,
+            negotiating: allResponses.filter(q => q.status === 'negotiating').length,
+            platform: allResponses.filter(q => q.responseSource === 'platform').length,
+            whatsapp: allResponses.filter(q => q.responseSource === 'whatsapp').length,
           },
-          hasResponses: quotes.length > 0,
-          lastResponseAt: quotes.length > 0 ? quotes[0].createdAt : null,
+          hasResponses: allResponses.length > 0,
+          lastResponseAt: allResponses.length > 0 ? allResponses[0].createdAt : null,
         };
       });
 
@@ -1502,6 +1509,112 @@ export class RfqService {
         expiresAt: data.expiresAt,
       };
       return this.createServiceRfq(buyerId, serviceData);
+    }
+  }
+
+  // WhatsApp Response handling methods (to be implemented when WhatsApp webhook is ready)
+  private async getWhatsAppResponses(_rfqId: string) {
+    try {
+      // TODO: Implement WhatsApp response fetching from database
+      // This would fetch WhatsApp messages that mention the RFQ ID
+      // and extract pricing/quote information using AI/NLP
+      
+      // For now, return empty array
+      return [];
+      
+      /* Future implementation:
+      const whatsappMessages = await prisma.whatsappMessage.findMany({
+        where: {
+          rfqId,
+          messageType: 'quote_response'
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              businessName: true,
+              phone: true,
+              whatsappNumber: true,
+              verificationTier: true,
+              isVerified: true,
+              location: true,
+            }
+          }
+        }
+      });
+
+      return whatsappMessages.map(msg => ({
+        id: msg.id,
+        sellerId: msg.senderId,
+        sellerName: msg.sender.businessName || `${msg.sender.firstName} ${msg.sender.lastName}`,
+        sellerContact: {
+          phone: msg.sender.phone,
+          whatsappNumber: msg.sender.whatsappNumber,
+          location: msg.sender.location,
+        },
+        messageContent: msg.content,
+        extractedPrice: msg.extractedPrice,
+        extractedCurrency: msg.extractedCurrency || 'INR',
+        confidence: msg.priceConfidence,
+        totalPrice: msg.extractedPrice || 0,
+        status: 'pending',
+        responseSource: 'whatsapp',
+        createdAt: msg.createdAt,
+        receivedAt: msg.createdAt,
+        deliveryTimeline: msg.extractedDeliveryTime,
+        termsConditions: null,
+        validUntil: null,
+        items: [],
+      }));
+      */
+    } catch (error) {
+      logger.error('Error fetching WhatsApp responses:', error);
+      return [];
+    }
+  }
+
+  // Process incoming WhatsApp message for RFQ response
+  async processWhatsAppRfqResponse(senderId: string, message: string, rfqId?: string) {
+    try {
+      // TODO: Implement WhatsApp message processing
+      // 1. Extract RFQ ID from message if not provided
+      // 2. Extract pricing information using AI/NLP
+      // 3. Store in database
+      // 4. Notify buyer of new response
+      
+      logger.info('Processing WhatsApp RFQ response:', { senderId, rfqId, message });
+      
+      /* Future implementation:
+      const extractedData = await this.extractQuoteFromMessage(message);
+      
+      if (extractedData.rfqId || rfqId) {
+        const whatsappResponse = await prisma.whatsappMessage.create({
+          data: {
+            senderId,
+            rfqId: rfqId || extractedData.rfqId,
+            content: message,
+            messageType: 'quote_response',
+            extractedPrice: extractedData.price,
+            extractedCurrency: extractedData.currency,
+            priceConfidence: extractedData.confidence,
+            extractedDeliveryTime: extractedData.deliveryTime,
+            processedAt: new Date(),
+          }
+        });
+
+        // Notify buyer
+        await this.notifyBuyerOfNewResponse(rfqId || extractedData.rfqId, 'whatsapp');
+        
+        return { success: true, responseId: whatsappResponse.id };
+      }
+      */
+      
+      return { success: false, reason: 'No RFQ ID found in message' };
+    } catch (error) {
+      logger.error('Error processing WhatsApp RFQ response:', error);
+      return { success: false, error: error.message };
     }
   }
 }
