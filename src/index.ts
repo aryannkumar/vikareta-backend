@@ -45,6 +45,7 @@ import mediaRoutes from '@/routes/media';
 import { minioService } from '@/services/minio.service';
 import { searchRoutes } from '@/routes/search';
 import { rfqRoutes } from '@/routes/rfq';
+import { rfqPublicRoutes } from '@/routes/rfq-public';
 import { quoteRoutes } from '@/routes/quote';
 import { negotiationRoutes } from '@/routes/negotiation';
 import cartRoutes from '@/routes/cart';
@@ -73,6 +74,7 @@ import { adminRoutes } from '@/routes/admin';
 import { dashboardRoutes } from '@/routes/dashboard';
 import featuredRoutes from '@/routes/featured';
 import featuredServicesRoutes from '@/routes/featuredServices';
+import statsRoutes from '@/routes/stats';
 import { subcategoryRoutes } from '@/routes/subcategory';
 import providerRoutes from '@/routes/provider';
 import wishlistRoutes from '@/routes/wishlist';
@@ -403,6 +405,7 @@ app.use('/api/media', apiLimiter, mediaRoutes);
 app.use('/api/attachments', apiLimiter, mediaRoutes);
 app.use('/api/search', apiLimiter, searchRoutes);
 app.use('/api/rfqs', apiLimiter, rfqRoutes);
+app.use('/api/public/rfqs', apiLimiter, rfqPublicRoutes);
 app.use('/api/quotes', apiLimiter, quoteRoutes);
 app.use('/api/negotiations', apiLimiter, negotiationRoutes);
 app.use('/api/cart', apiLimiter, cartRoutes);
@@ -423,6 +426,7 @@ app.use('/api/advertisements', apiLimiter, adsRoutes); // Alternative route for 
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
 app.use('/api/services', apiLimiter, serviceRoutes);
 app.use('/api/marketplace', apiLimiter, marketplaceRoutes);
+app.use('/api/stats', apiLimiter, statsRoutes);
 // User routes with explicit CORS handling
 app.use('/api/users', (req, res, next) => {
   // Ensure CORS headers for user routes
