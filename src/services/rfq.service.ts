@@ -70,6 +70,8 @@ export interface RfqFilters {
   sellerId?: string;
   categoryId?: string;
   subcategoryId?: string;
+  categoryIds?: string[];
+  subcategoryIds?: string[];
   status?: string;
   rfqType?: 'product' | 'service';
   minBudget?: number;
@@ -446,8 +448,16 @@ export class RfqService {
       };
 
       if (buyerId) where.buyerId = buyerId;
-      if (categoryId) where.categoryId = categoryId;
-      if (subcategoryId) where.subcategoryId = subcategoryId;
+      if (filters.categoryIds && filters.categoryIds.length > 0) {
+        where.categoryId = { in: filters.categoryIds };
+      } else if (categoryId) {
+        where.categoryId = categoryId;
+      }
+      if (filters.subcategoryIds && filters.subcategoryIds.length > 0) {
+        where.subcategoryId = { in: filters.subcategoryIds };
+      } else if (subcategoryId) {
+        where.subcategoryId = subcategoryId;
+      }
 
       // RFQ Type filtering (service vs product based on quantity)
       if (rfqType === 'service') {
@@ -1088,10 +1098,33 @@ export class RfqService {
   // Get RFQs relevant for a specific seller
   async getRelevantRfqsForSeller(sellerId: string, filters: RfqFilters) {
     try {
+      // Fetch seller's active product categories/subcategories for relevance
+      const sellerProducts = await prisma.product.findMany({
+        where: {
+          sellerId,
+          status: 'active',
+        },
+        select: { categoryId: true, subcategoryId: true },
+        distinct: ['categoryId', 'subcategoryId'],
+      });
+
+      const categoryIds = Array.from(new Set(sellerProducts.map(p => p.categoryId).filter(Boolean))) as string[];
+      const subcategoryIds = Array.from(new Set(sellerProducts.map(p => p.subcategoryId).filter(Boolean))) as string[];
+
+      // If seller has no products, return empty result quickly
+      if (categoryIds.length === 0 && subcategoryIds.length === 0) {
+        return {
+          rfqs: [],
+          pagination: { page: filters.page || 1, limit: filters.limit || 10, total: 0, pages: 0 },
+        };
+      }
+
       // Add seller-specific filtering
-      const sellerFilters = {
+      const sellerFilters: RfqFilters = {
         ...filters,
         sellerId,
+        categoryIds,
+        subcategoryIds,
       };
 
       return this.getRfqs(sellerFilters);
@@ -1512,67 +1545,9 @@ export class RfqService {
     }
   }
 
-  // WhatsApp Response handling methods (to be implemented when WhatsApp webhook is ready)
-  private async getWhatsAppResponses(_rfqId: string) {
-    try {
-      // TODO: Implement WhatsApp response fetching from database
-      // This would fetch WhatsApp messages that mention the RFQ ID
-      // and extract pricing/quote information using AI/NLP
-      
-      // For now, return empty array
-      return [];
-      
-      /* Future implementation:
-      const whatsappMessages = await prisma.whatsappMessage.findMany({
-        where: {
-          rfqId,
-          messageType: 'quote_response'
-        },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-              phone: true,
-              whatsappNumber: true,
-              verificationTier: true,
-              isVerified: true,
-              location: true,
-            }
-          }
-        }
-      });
-
-      return whatsappMessages.map(msg => ({
-        id: msg.id,
-        sellerId: msg.senderId,
-        sellerName: msg.sender.businessName || `${msg.sender.firstName} ${msg.sender.lastName}`,
-        sellerContact: {
-          phone: msg.sender.phone,
-          whatsappNumber: msg.sender.whatsappNumber,
-          location: msg.sender.location,
-        },
-        messageContent: msg.content,
-        extractedPrice: msg.extractedPrice,
-        extractedCurrency: msg.extractedCurrency || 'INR',
-        confidence: msg.priceConfidence,
-        totalPrice: msg.extractedPrice || 0,
-        status: 'pending',
-        responseSource: 'whatsapp',
-        createdAt: msg.createdAt,
-        receivedAt: msg.createdAt,
-        deliveryTimeline: msg.extractedDeliveryTime,
-        termsConditions: null,
-        validUntil: null,
-        items: [],
-      }));
-      */
-    } catch (error) {
-      logger.error('Error fetching WhatsApp responses:', error);
-      return [];
-    }
+  // WhatsApp Response handling methods (placeholder until webhook integration)
+  private async getWhatsAppResponses(): Promise<any[]> {
+    return [];
   }
 
   // Process incoming WhatsApp message for RFQ response
