@@ -14,15 +14,21 @@ if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
         clientSecret: config.oauth.google.clientSecret,
         callbackURL: config.oauth.google.callbackUrl,
         scope: ['profile', 'email'],
+        userProfileURL: 'https://www.googleapis.com/oauth2/v3/userinfo',
       },
       async (accessToken: string, refreshToken: string, profile: any, done: any) => {
         try {
+          const primaryEmail = profile?.emails?.[0]?.value
+            || profile?._json?.email
+            || profile?.email
+            || '';
+
           const googleProfile: GoogleProfile = {
             id: profile.id,
-            email: profile.emails?.[0]?.value || '',
-            firstName: profile.name?.givenName || undefined,
-            lastName: profile.name?.familyName || undefined,
-            picture: profile.photos?.[0]?.value || undefined,
+            email: primaryEmail,
+            firstName: profile.name?.givenName || profile?._json?.given_name || undefined,
+            lastName: profile.name?.familyName || profile?._json?.family_name || undefined,
+            picture: profile.photos?.[0]?.value || profile?._json?.picture || undefined,
           };
 
           if (!googleProfile.email) {

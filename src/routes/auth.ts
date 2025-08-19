@@ -877,12 +877,23 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 
 // Google callback
 router.get('/google/callback', (req: Request, res: Response, next: any) => {
+  // If Google sent an error (e.g., access_denied), short-circuit to relay with details
+  if (typeof req.query.error === 'string') {
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+    const err = encodeURIComponent(req.query.error);
+    const errDesc = encodeURIComponent(String(req.query.error_description || ''));
+    const relay = `${frontendBase}/sso-relay.html?error=${err}${errDesc ? '&error_description=' + errDesc : ''}${state ? '&state=' + encodeURIComponent(state) : ''}`;
+    return res.redirect(relay);
+  }
+
   passport.authenticate('google', { session: false }, (err: any, result: any) => {
     if (err || !result) {
   logger.error('Google OAuth callback error', err);
-  const state = typeof req.query.state === 'string' ? req.query.state : '';
+      const state = typeof req.query.state === 'string' ? req.query.state : '';
   const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
-  const relay = `${frontendBase}/sso-relay.html?error=1${state ? '&state=' + encodeURIComponent(state) : ''}`;
+      const errMsg = err && err.message ? encodeURIComponent(err.message) : '1';
+      const relay = `${frontendBase}/sso-relay.html?error=${errMsg}${state ? '&state=' + encodeURIComponent(state) : ''}`;
   return res.redirect(relay);
     }
 
