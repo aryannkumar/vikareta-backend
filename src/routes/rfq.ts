@@ -337,6 +337,64 @@ router.get(
 );
 
 /**
+ * @route GET /api/rfqs/my-with-responses
+ * @desc Get current user's RFQs with detailed responses/quotes
+ * @access Private (Authenticated buyers)
+ */
+router.get(
+  '/my-with-responses',
+  authenticate,
+  getRfqsValidation,
+  validateRequest,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.authUser?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'User not authenticated',
+          },
+        });
+      }
+
+      const filters: Omit<RfqFilters, 'buyerId'> = {
+        categoryId: req.query.categoryId as string,
+        subcategoryId: req.query.subcategoryId as string,
+        status: req.query.status as string,
+        rfqType: req.query.rfqType as 'product' | 'service',
+        minBudget: req.query.minBudget ? parseFloat(req.query.minBudget as string) : undefined,
+        maxBudget: req.query.maxBudget ? parseFloat(req.query.maxBudget as string) : undefined,
+        location: req.query.location as string,
+        search: req.query.search as string,
+        page: req.query.page ? parseInt(req.query.page as string) : undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+        sortBy: req.query.sortBy as any,
+        sortOrder: req.query.sortOrder as any,
+      };
+
+      const result = await rfqService.getMyRfqsWithResponses(userId, filters);
+
+      return res.json({
+        success: true,
+        data: result,
+        message: `Found ${result.rfqs.length} RFQs with ${result.summary.totalResponses} total responses`,
+      });
+    } catch (error: any) {
+      logger.error('Error fetching user RFQs with responses:', error);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'RFQ_FETCH_FAILED',
+          message: error.message || 'Failed to fetch RFQs with responses',
+        },
+      });
+    }
+  }
+);
+
+/**
  * @route GET /api/rfqs/relevant
  * @desc Get RFQs relevant to the current seller
  * @access Private (Authenticated sellers)

@@ -1194,6 +1194,275 @@ export class RfqService {
     }
   }
 
+  // Get buyer's RFQs with detailed responses/quotes
+  async getMyRfqsWithResponses(buyerId: string, filters?: Omit<RfqFilters, 'buyerId'>) {
+    try {
+      const {
+        categoryId,
+        subcategoryId,
+        status,
+        rfqType,
+        minBudget,
+        maxBudget,
+        location,
+        search,
+        page = 1,
+        limit = 10,
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+      } = filters || {};
+
+      const skip = (page - 1) * limit;
+
+      // Build where clause for user's RFQs
+      const where: any = {
+        buyerId,
+        status: status || { not: 'deleted' }, // Don't show deleted RFQs by default
+      };
+
+      if (categoryId) where.categoryId = categoryId;
+      if (subcategoryId) where.subcategoryId = subcategoryId;
+
+      // RFQ Type filtering (service vs product based on quantity)
+      if (rfqType === 'service') {
+        where.quantity = null;
+      } else if (rfqType === 'product') {
+        where.quantity = { not: null };
+      }
+
+      // Budget filtering
+      if (minBudget !== undefined || maxBudget !== undefined) {
+        where.AND = where.AND || [];
+        if (minBudget !== undefined) {
+          where.AND.push({
+            OR: [
+              { budgetMin: { gte: minBudget } },
+              { budgetMax: { gte: minBudget } },
+            ],
+          });
+        }
+        if (maxBudget !== undefined) {
+          where.AND.push({
+            OR: [
+              { budgetMin: { lte: maxBudget } },
+              { budgetMax: { lte: maxBudget } },
+            ],
+          });
+        }
+      }
+
+      // Location filtering
+      if (location) {
+        where.deliveryLocation = { contains: location, mode: 'insensitive' };
+      }
+
+      // Search filtering
+      if (search) {
+        where.OR = [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      // Build orderBy clause
+      let orderBy: any = {};
+      switch (sortBy) {
+        case 'quoteCount':
+          orderBy = [
+            { quotes: { _count: sortOrder } },
+            { createdAt: 'desc' },
+          ];
+          break;
+        default:
+          orderBy[sortBy] = sortOrder;
+      }
+
+      const [rfqs, total] = await Promise.all([
+        prisma.rfq.findMany({
+          where,
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                businessName: true,
+                verificationTier: true,
+                isVerified: true,
+                location: true,
+              },
+            },
+            category: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+            subcategory: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+            quotes: {
+              include: {
+                seller: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    businessName: true,
+                    verificationTier: true,
+                    isVerified: true,
+                    location: true,
+                    phone: true,
+                    email: true,
+                  },
+                },
+                items: {
+                  include: {
+                    product: {
+                      select: {
+                        id: true,
+                        title: true,
+                        description: true,
+                        price: true,
+                        isService: true,
+                        media: {
+                          select: {
+                            url: true,
+                            altText: true,
+                          },
+                          take: 1,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              orderBy: { createdAt: 'desc' },
+            },
+            _count: {
+              select: {
+                quotes: true,
+              },
+            },
+          },
+          orderBy,
+          skip,
+          take: limit,
+        }),
+        prisma.rfq.count({ where }),
+      ]);
+
+      // Transform RFQs with enhanced metadata and response summary
+      const transformedRfqs = rfqs.map(rfq => {
+        const metadata = this.extractMetadata(rfq.description || '');
+        const isExpired = rfq.expiresAt ? new Date() > rfq.expiresAt : false;
+        const daysRemaining = rfq.expiresAt 
+          ? Math.max(0, Math.ceil((rfq.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+          : null;
+
+        // Process quotes/responses
+        const quotes = rfq.quotes.map(quote => ({
+          id: quote.id,
+          sellerId: quote.sellerId,
+          sellerName: quote.seller.businessName || `${quote.seller.firstName} ${quote.seller.lastName}`,
+          sellerVerification: {
+            tier: quote.seller.verificationTier,
+            isVerified: quote.seller.isVerified,
+          },
+          sellerContact: {
+            location: quote.seller.location,
+            phone: quote.seller.phone,
+            email: quote.seller.email,
+          },
+          totalPrice: Number(quote.totalPrice),
+          deliveryTimeline: quote.deliveryTimeline,
+          termsConditions: quote.termsConditions,
+          status: quote.status,
+          validUntil: quote.validUntil,
+          createdAt: quote.createdAt,
+          items: quote.items.map(item => ({
+            id: item.id,
+            productId: item.productId,
+            productName: item.product?.title || 'Unknown Product',
+            productImage: item.product?.media?.[0]?.url || null,
+            quantity: item.quantity,
+            unitPrice: Number(item.unitPrice),
+            totalPrice: Number(item.totalPrice),
+            isService: item.product?.isService || false,
+          })),
+          responseSource: 'platform', // All quotes in DB are from platform
+        }));
+
+        // Sort quotes by status (pending first, then by creation date)
+        quotes.sort((a, b) => {
+          if (a.status === 'pending' && b.status !== 'pending') return -1;
+          if (a.status !== 'pending' && b.status === 'pending') return 1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+
+        return {
+          ...rfq,
+          description: this.cleanDescription(rfq.description || ''),
+          rfqType: rfq.quantity ? 'product' : 'service',
+          quoteCount: rfq._count.quotes,
+          isExpired,
+          daysRemaining,
+          urgency: metadata.urgency || 'medium',
+          serviceType: metadata.serviceType,
+          preferredLocation: metadata.preferredLocation,
+          requirements: metadata.requirements || [],
+          specifications: metadata.specifications || [],
+          attachments: metadata.attachments || [],
+          averageQuotePrice: quotes.length > 0 
+            ? quotes.reduce((sum, quote) => sum + quote.totalPrice, 0) / quotes.length
+            : null,
+          lowestQuotePrice: quotes.length > 0 
+            ? Math.min(...quotes.map(q => q.totalPrice))
+            : null,
+          highestQuotePrice: quotes.length > 0 
+            ? Math.max(...quotes.map(q => q.totalPrice))
+            : null,
+          responses: quotes,
+          responseSummary: {
+            total: quotes.length,
+            pending: quotes.filter(q => q.status === 'pending').length,
+            accepted: quotes.filter(q => q.status === 'accepted').length,
+            rejected: quotes.filter(q => q.status === 'rejected').length,
+            negotiating: quotes.filter(q => q.status === 'negotiating').length,
+          },
+          hasResponses: quotes.length > 0,
+          lastResponseAt: quotes.length > 0 ? quotes[0].createdAt : null,
+        };
+      });
+
+      return {
+        rfqs: transformedRfqs,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+        summary: {
+          totalRfqs: total,
+          activeRfqs: transformedRfqs.filter(rfq => rfq.status === 'active' && !rfq.isExpired).length,
+          expiredRfqs: transformedRfqs.filter(rfq => rfq.isExpired).length,
+          completedRfqs: transformedRfqs.filter(rfq => rfq.status === 'completed').length,
+          totalResponses: transformedRfqs.reduce((sum, rfq) => sum + rfq.quoteCount, 0),
+          rfqsWithResponses: transformedRfqs.filter(rfq => rfq.hasResponses).length,
+        },
+      };
+    } catch (error) {
+      logger.error('Error fetching user RFQs with responses:', error);
+      throw error;
+    }
+  }
+
   // Legacy method for backward compatibility
   async createRfq(buyerId: string, data: CreateRfqData) {
     // Determine if it's a service or product RFQ based on quantity
