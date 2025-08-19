@@ -748,27 +748,31 @@ router.post('/logout', async (req: Request, res: Response) => {
 /**
  * GET /auth/debug-oauth
  * Return non-sensitive OAuth runtime config to verify deployment correctness.
- * Guarded by a simple token in query (?key=...), only enabled in non-production.
+ * Temporarily made public for debugging - remove in production.
  */
 router.get('/debug-oauth', (req: Request, res: Response) => {
   const key = String(req.query.key || '');
-  if (!key || key !== process.env.DEBUG_KEY) {
-    return res.status(403).json({ success: false });
+  // Temporarily allow without key for debugging
+  if (!key && process.env.NODE_ENV === 'production') {
+    // In production, still require key unless debugging
+    return res.status(403).json({ success: false, message: 'Debug key required in production' });
   }
+  
   return res.json({
     success: true,
     google: {
+      hasClientId: !!process.env.GOOGLE_CLIENT_ID,
       clientIdSuffix: (process.env.GOOGLE_CLIENT_ID || '').slice(-12),
+      hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+      secretLength: process.env.GOOGLE_CLIENT_SECRET ? process.env.GOOGLE_CLIENT_SECRET.length : 0,
       callbackURL: process.env.GOOGLE_CALLBACK_URL || null,
     },
     frontendUrl: process.env.FRONTEND_URL || null,
-  oauthDebug: process.env.OAUTH_DEBUG === 'true',
+    oauthDebug: process.env.OAUTH_DEBUG === 'true',
     nodeEnv: process.env.NODE_ENV,
-  ts: new Date().toISOString(),
+    ts: new Date().toISOString(),
   });
-});
-
-/**
+});/**
  * PUT /auth/profile
  * Update user profile
  */

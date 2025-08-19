@@ -504,7 +504,14 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
   }
 
   // Skip CSRF protection for authentication routes that don't require existing session
-  const authExemptPaths = ['/api/auth/login', '/api/auth/register', '/auth/login', '/auth/register', '/api/wallet/add-money'];
+  const authExemptPaths = [
+    '/api/auth/login', 
+    '/api/auth/register', 
+    '/auth/login', 
+    '/auth/register', 
+    '/api/wallet/add-money',
+    '/api/auth/refresh'  // Temporarily exempt refresh from CSRF - uses HttpOnly cookies
+  ];
   if (authExemptPaths.some(path => req.path === path)) {
     return next();
   }
