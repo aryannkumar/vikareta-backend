@@ -404,21 +404,37 @@ router.post('/refresh', async (req: Request, res: Response) => {
     // Log an info-level message with limited context to aid debugging in staging.
     logger.info('SSO: Refresh token request - sources', { ip: req.ip, path: req.path, origin: req.headers.origin, tokenSources });
 
-    // Check if refresh token exists and is valid
+    // Check if refresh token exists in memory; if missing or expired, fall back to JWT verification
     const tokenData = refreshTokens.get(refreshToken);
-    if (!tokenData || tokenData.expiresAt < new Date()) {
-      refreshTokens.delete(refreshToken);
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'INVALID_REFRESH_TOKEN',
-          message: 'Invalid or expired refresh token',
-        },
-      });
+    let decoded: any;
+    if (tokenData && tokenData.expiresAt >= new Date()) {
+      try {
+        decoded = jwt.verify(refreshToken, REFRESH_SECRET) as any;
+      } catch {
+        // Invalid signature/expired despite map; treat as invalid
+        refreshTokens.delete(refreshToken);
+        return res.status(401).json({
+          success: false,
+          error: { code: 'INVALID_REFRESH_TOKEN', message: 'Invalid or expired refresh token' },
+        });
+      }
+    } else {
+      // Not in memory (e.g., another instance or restart). Verify JWT directly.
+      try {
+        decoded = jwt.verify(refreshToken, REFRESH_SECRET) as any;
+        // Optionally re-add to in-memory store with remaining lifetime (best-effort)
+        refreshTokens.set(refreshToken, {
+          userId: decoded.id || decoded.userId,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        });
+      } catch {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'INVALID_REFRESH_TOKEN', message: 'Invalid or expired refresh token' },
+        });
+      }
     }
-
-    // Verify refresh token
-    const decoded = jwt.verify(refreshToken, REFRESH_SECRET) as any;
 
     // Get user
     const user = await prisma.user.findUnique({
@@ -863,8 +879,11 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 router.get('/google/callback', (req: Request, res: Response, next: any) => {
   passport.authenticate('google', { session: false }, (err: any, result: any) => {
     if (err || !result) {
-      logger.error('Google OAuth callback error', err);
-      return res.redirect(`${process.env.FRONTEND_URL || '/'}?auth=failed`);
+  logger.error('Google OAuth callback error', err);
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+  const relay = `${frontendBase}/sso-relay.html?error=1${state ? '&state=' + encodeURIComponent(state) : ''}`;
+  return res.redirect(relay);
     }
 
     try {
@@ -890,8 +909,11 @@ router.get('/linkedin', passport.authenticate('linkedin', { scope: ['r_emailaddr
 router.get('/linkedin/callback', (req: Request, res: Response, next: any) => {
   passport.authenticate('linkedin', { session: false }, (err: any, result: any) => {
     if (err || !result) {
-      logger.error('LinkedIn OAuth callback error', err);
-      return res.redirect(`${process.env.FRONTEND_URL || '/'}?auth=failed`);
+  logger.error('LinkedIn OAuth callback error', err);
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+  const relay = `${frontendBase}/sso-relay.html?error=1${state ? '&state=' + encodeURIComponent(state) : ''}`;
+  return res.redirect(relay);
     }
 
     try {
