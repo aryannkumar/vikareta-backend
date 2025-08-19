@@ -18,6 +18,7 @@ import cartRoutes from './cart';
 import orderRoutes from './order';
 import ordersRoutes from './orders';
 import { rfqRoutes } from './rfq';
+import { rfqPublicRoutes } from './rfq-public';
 import { quoteRoutes } from './quote';
 import walletRoutes from './wallet';
 import paymentRoutes from './payment';
@@ -164,6 +165,14 @@ export class RouteRegistry {
     });
 
     // RFQ and Quote system
+    this.addRoute({
+      path: '/public/rfqs',
+      router: rfqPublicRoutes,
+      description: 'Public RFQ access (limited fields)',
+      version: 'v1',
+      public: true,
+    });
+
     this.addRoute({
       path: '/rfqs',
       router: rfqRoutes,
