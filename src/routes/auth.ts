@@ -894,14 +894,31 @@ router.post('/verify-otp', [
 // --- OAuth Routes ---
 
 // Initiate Google OAuth
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false }));
+router.get('/google', (req: Request, res: Response, next: any) => {
+  if (process.env.OAUTH_DEBUG === 'true') {
+    logger.info('OAuth(Google): Initiating', {
+      origin: req.headers.origin,
+      state: typeof req.query.state === 'string' ? req.query.state : '',
+      host: req.headers.host,
+      callbackURL: process.env.GOOGLE_CALLBACK_URL || null,
+    });
+  }
+  return passport.authenticate('google', { scope: ['profile', 'email'], session: false })(req, res, next);
+});
 
 // Google callback
 router.get('/google/callback', (req: Request, res: Response, next: any) => {
   try {
     const c = typeof req.query.code === 'string' ? req.query.code : '';
     const s = typeof req.query.state === 'string' ? req.query.state : '';
-    logger.info('Google callback received', { hasCode: !!c, codeLen: c ? c.length : 0, state: s });
+    const details: any = { hasCode: !!c, codeLen: c ? c.length : 0, state: s };
+    if (process.env.OAUTH_DEBUG === 'true') {
+      details.host = req.headers.host;
+      details.xForwardedHost = req.headers['x-forwarded-host'];
+      details.xForwardedProto = req.headers['x-forwarded-proto'];
+      details.xForwardedFor = req.headers['x-forwarded-for'];
+    }
+    logger.info('OAuth(Google): Callback received', details);
   } catch (e) {
     logger.warn('Failed to log Google callback query', { error: (e as any)?.message || String(e) });
   }
@@ -917,12 +934,23 @@ router.get('/google/callback', (req: Request, res: Response, next: any) => {
 
   passport.authenticate('google', { session: false }, (err: any, result: any) => {
     if (err || !result) {
-  logger.error('Google OAuth callback error', err);
+      if (process.env.OAUTH_DEBUG === 'true') {
+        const status = err && (err.status || err.statusCode);
+        const body = err && (err.oauthError || err.oauthResponse || err.data);
+        logger.error('OAuth(Google): Callback error', {
+          message: err && err.message,
+          status,
+          body: body && (typeof body === 'string' ? body.substring(0, 500) : JSON.stringify(body).substring(0, 500)),
+          hasCode: typeof req.query.code === 'string',
+        });
+      } else {
+        logger.error('OAuth(Google): Callback error', err);
+      }
       const state = typeof req.query.state === 'string' ? req.query.state : '';
-  const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
       const errMsg = err && err.message ? encodeURIComponent(err.message) : '1';
       const relay = `${frontendBase}/sso-relay.html?error=${errMsg}${state ? '&state=' + encodeURIComponent(state) : ''}`;
-  return res.redirect(relay);
+      return res.redirect(relay);
     }
 
     try {
