@@ -5,6 +5,16 @@ import { config } from './environment';
 import { SocialAuthService, GoogleProfile, LinkedInProfile } from '@/services/social-auth.service';
 import { logger } from '@/utils/logger';
 
+// Log essential Google OAuth configuration at startup (non-sensitive)
+try {
+  const clientId = config.oauth.google.clientId || '';
+  const clientIdSuffix = clientId ? clientId.slice(-12) : 'unset';
+  const cb = config.oauth.google.callbackUrl || 'unset';
+  logger.info('OAuth(Google) config loaded', { clientIdSuffix, callbackURL: cb });
+} catch (e) {
+  logger.warn('Failed to log Google OAuth config summary', { error: (e as any)?.message || String(e) });
+}
+
 // Configure Google OAuth Strategy
 if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
   passport.use(

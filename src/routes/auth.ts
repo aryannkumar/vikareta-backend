@@ -719,6 +719,27 @@ router.post('/logout', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /auth/debug-oauth
+ * Return non-sensitive OAuth runtime config to verify deployment correctness.
+ * Guarded by a simple token in query (?key=...), only enabled in non-production.
+ */
+router.get('/debug-oauth', (req: Request, res: Response) => {
+  const key = String(req.query.key || '');
+  if (!key || key !== process.env.DEBUG_KEY) {
+    return res.status(403).json({ success: false });
+  }
+  return res.json({
+    success: true,
+    google: {
+      clientIdSuffix: (process.env.GOOGLE_CLIENT_ID || '').slice(-12),
+      callbackURL: process.env.GOOGLE_CALLBACK_URL || null,
+    },
+    frontendUrl: process.env.FRONTEND_URL || null,
+    nodeEnv: process.env.NODE_ENV,
+  });
+});
+
+/**
  * PUT /auth/profile
  * Update user profile
  */
@@ -877,6 +898,13 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 
 // Google callback
 router.get('/google/callback', (req: Request, res: Response, next: any) => {
+  try {
+    const c = typeof req.query.code === 'string' ? req.query.code : '';
+    const s = typeof req.query.state === 'string' ? req.query.state : '';
+    logger.info('Google callback received', { hasCode: !!c, codeLen: c ? c.length : 0, state: s });
+  } catch (e) {
+    logger.warn('Failed to log Google callback query', { error: (e as any)?.message || String(e) });
+  }
   // If Google sent an error (e.g., access_denied), short-circuit to relay with details
   if (typeof req.query.error === 'string') {
     const state = typeof req.query.state === 'string' ? req.query.state : '';
