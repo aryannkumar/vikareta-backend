@@ -969,16 +969,27 @@ router.get('/google/callback', (req: Request, res: Response, next: any) => {
 
   passport.authenticate('google', { session: false }, (err: any, result: any) => {
     if (err || !result) {
-      // Always log errors for debugging
-      const status = err && (err.status || err.statusCode);
-      const body = err && (err.oauthError || err.oauthResponse || err.data);
-      logger.error('OAuth(Google): Callback error', {
+      // Always log errors for debugging with maximum detail
+      logger.error('OAuth(Google): Callback error - detailed', {
         message: err && err.message,
-        status,
-        body: body && (typeof body === 'string' ? body.substring(0, 500) : JSON.stringify(body).substring(0, 500)),
+        name: err && err.name,
+        status: err && (err.status || err.statusCode),
+        statusCode: err && err.statusCode,
+        code: err && err.code,
+        oauthError: err && err.oauthError,
+        oauthResponse: err && err.oauthResponse,
+        data: err && err.data,
+        stack: err && err.stack ? err.stack.substring(0, 1000) : undefined,
         hasCode: typeof req.query.code === 'string',
-        errorType: err && err.name,
+        codeLength: typeof req.query.code === 'string' ? req.query.code.length : 0,
+        hasResult: !!result,
+        errorType: err && err.constructor ? err.constructor.name : typeof err,
         timestamp: new Date().toISOString(),
+        // Google specific error fields
+        error_description: err && err.error_description,
+        error_uri: err && err.error_uri,
+        // Raw error for inspection
+        rawError: err ? JSON.stringify(err, null, 2).substring(0, 2000) : undefined,
       });
       
       const state = typeof req.query.state === 'string' ? req.query.state : '';

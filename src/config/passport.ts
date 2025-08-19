@@ -17,6 +17,14 @@ try {
 
 // Configure Google OAuth Strategy
 if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
+  // Log the exact configuration being used
+  logger.info('Google OAuth Strategy configured', {
+    clientIdSuffix: config.oauth.google.clientId.slice(-12),
+    callbackURL: config.oauth.google.callbackUrl,
+    hasClientSecret: !!config.oauth.google.clientSecret,
+    secretLength: config.oauth.google.clientSecret.length,
+  });
+
   passport.use(
     new GoogleStrategy(
       {
@@ -28,6 +36,14 @@ if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
       },
       async (accessToken: string, refreshToken: string, profile: any, done: any) => {
         try {
+          logger.info('Google OAuth strategy callback invoked', {
+            profileId: profile?.id,
+            hasAccessToken: !!accessToken,
+            accessTokenLength: accessToken ? accessToken.length : 0,
+            hasRefreshToken: !!refreshToken,
+            profileEmails: profile?.emails?.length || 0,
+          });
+
           const primaryEmail = profile?.emails?.[0]?.value
             || profile?._json?.email
             || profile?.email
@@ -42,6 +58,7 @@ if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
           };
 
           if (!googleProfile.email) {
+            logger.error('Google OAuth: No email provided by Google', { profileId: profile?.id });
             return done(new Error('Email not provided by Google'), false);
           }
 
@@ -51,14 +68,25 @@ if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
             refreshToken
           );
 
+          logger.info('Google OAuth: SocialAuthService completed', { 
+            userId: result?.user?.id,
+            email: result?.user?.email,
+          });
+
           return done(null, result);
         } catch (error) {
-          logger.error('Google OAuth strategy error:', error);
+          logger.error('Google OAuth strategy error:', {
+            error: (error as any)?.message || String(error),
+            stack: (error as any)?.stack,
+            profileId: profile?.id,
+          });
           return done(error, false);
         }
       }
     )
   );
+} else {
+  logger.warn('Google OAuth Strategy not configured - missing clientId or clientSecret');
 }
 
 // Configure LinkedIn OAuth Strategy
