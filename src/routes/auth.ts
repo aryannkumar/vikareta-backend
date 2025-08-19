@@ -33,6 +33,33 @@ const COOKIE_CONFIG = {
   sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const
 };
 
+// Log auth routes initialization and key env flags (non-sensitive)
+try {
+  logger.info('Auth routes initialized', {
+    oauthDebug: process.env.OAUTH_DEBUG === 'true',
+    frontendUrl: process.env.FRONTEND_URL || null,
+    googleCallbackURL: process.env.GOOGLE_CALLBACK_URL || null,
+  });
+} catch {
+  // ignore
+}
+
+// Lightweight request logger for auth routes when debugging is enabled
+router.use((req, _res, next) => {
+  if (process.env.OAUTH_DEBUG === 'true') {
+    logger.info('Auth route hit', {
+      method: req.method,
+      url: req.originalUrl,
+      path: req.path,
+      query: req.query,
+      origin: req.headers.origin,
+      host: req.headers.host,
+      ua: req.headers['user-agent']
+    });
+  }
+  next();
+});
+
 
 
 // In-memory refresh token storage (replace with Redis in production)
@@ -735,7 +762,9 @@ router.get('/debug-oauth', (req: Request, res: Response) => {
       callbackURL: process.env.GOOGLE_CALLBACK_URL || null,
     },
     frontendUrl: process.env.FRONTEND_URL || null,
+  oauthDebug: process.env.OAUTH_DEBUG === 'true',
     nodeEnv: process.env.NODE_ENV,
+  ts: new Date().toISOString(),
   });
 });
 
@@ -895,29 +924,35 @@ router.post('/verify-otp', [
 
 // Initiate Google OAuth
 router.get('/google', (req: Request, res: Response, next: any) => {
-  if (process.env.OAUTH_DEBUG === 'true') {
-    logger.info('OAuth(Google): Initiating', {
-      origin: req.headers.origin,
-      state: typeof req.query.state === 'string' ? req.query.state : '',
-      host: req.headers.host,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL || null,
-    });
-  }
+  // Always log Google OAuth initiation for debugging
+  logger.info('OAuth(Google): Initiating', {
+    origin: req.headers.origin,
+    state: typeof req.query.state === 'string' ? req.query.state : '',
+    host: req.headers.host,
+    userAgent: req.headers['user-agent'],
+    callbackURL: process.env.GOOGLE_CALLBACK_URL || null,
+    timestamp: new Date().toISOString(),
+  });
   return passport.authenticate('google', { scope: ['profile', 'email'], session: false })(req, res, next);
 });
 
 // Google callback
 router.get('/google/callback', (req: Request, res: Response, next: any) => {
+  // Always log callback details for debugging
   try {
     const c = typeof req.query.code === 'string' ? req.query.code : '';
     const s = typeof req.query.state === 'string' ? req.query.state : '';
-    const details: any = { hasCode: !!c, codeLen: c ? c.length : 0, state: s };
-    if (process.env.OAUTH_DEBUG === 'true') {
-      details.host = req.headers.host;
-      details.xForwardedHost = req.headers['x-forwarded-host'];
-      details.xForwardedProto = req.headers['x-forwarded-proto'];
-      details.xForwardedFor = req.headers['x-forwarded-for'];
-    }
+    const details: any = { 
+      hasCode: !!c, 
+      codeLen: c ? c.length : 0, 
+      state: s,
+      host: req.headers.host,
+      xForwardedHost: req.headers['x-forwarded-host'],
+      xForwardedProto: req.headers['x-forwarded-proto'],
+      xForwardedFor: req.headers['x-forwarded-for'],
+      userAgent: req.headers['user-agent'],
+      timestamp: new Date().toISOString(),
+    };
     logger.info('OAuth(Google): Callback received', details);
   } catch (e) {
     logger.warn('Failed to log Google callback query', { error: (e as any)?.message || String(e) });
@@ -934,18 +969,18 @@ router.get('/google/callback', (req: Request, res: Response, next: any) => {
 
   passport.authenticate('google', { session: false }, (err: any, result: any) => {
     if (err || !result) {
-      if (process.env.OAUTH_DEBUG === 'true') {
-        const status = err && (err.status || err.statusCode);
-        const body = err && (err.oauthError || err.oauthResponse || err.data);
-        logger.error('OAuth(Google): Callback error', {
-          message: err && err.message,
-          status,
-          body: body && (typeof body === 'string' ? body.substring(0, 500) : JSON.stringify(body).substring(0, 500)),
-          hasCode: typeof req.query.code === 'string',
-        });
-      } else {
-        logger.error('OAuth(Google): Callback error', err);
-      }
+      // Always log errors for debugging
+      const status = err && (err.status || err.statusCode);
+      const body = err && (err.oauthError || err.oauthResponse || err.data);
+      logger.error('OAuth(Google): Callback error', {
+        message: err && err.message,
+        status,
+        body: body && (typeof body === 'string' ? body.substring(0, 500) : JSON.stringify(body).substring(0, 500)),
+        hasCode: typeof req.query.code === 'string',
+        errorType: err && err.name,
+        timestamp: new Date().toISOString(),
+      });
+      
       const state = typeof req.query.state === 'string' ? req.query.state : '';
       const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
       const errMsg = err && err.message ? encodeURIComponent(err.message) : '1';
@@ -957,12 +992,21 @@ router.get('/google/callback', (req: Request, res: Response, next: any) => {
       // Set cookies and redirect to frontend relay page for popup flows
       setAuthCookies(res, result.user);
 
+      logger.info('OAuth(Google): Success - cookies set', {
+        userId: result.user?.id,
+        email: result.user?.email,
+        timestamp: new Date().toISOString(),
+      });
+
       const state = typeof req.query.state === 'string' ? req.query.state : '';
       const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
       const relay = `${frontendBase}/sso-relay.html${state ? '?state=' + encodeURIComponent(state) : ''}`;
       return res.redirect(relay);
     } catch (e) {
-      logger.error('Google OAuth post-processing failed', e);
+      logger.error('OAuth(Google): Post-processing failed', {
+        error: (e as any)?.message || String(e),
+        timestamp: new Date().toISOString(),
+      });
       const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
       return res.redirect(`${frontendBase}/sso-relay.html?error=1`);
     }
