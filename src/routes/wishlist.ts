@@ -67,30 +67,53 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
         const transformedItems = wishlistItems.map((item) => {
             try {
                 const isProduct = item.productId !== null;
-                const itemData = isProduct ? item.product : item.service;
+                const isBusiness = item.businessId !== null;
+                
+                if (isBusiness) {
+                    // For now, handle business items separately since we need to fetch business data
+                    // TODO: Add business include once schema is updated
+                    return {
+                        id: item.id,
+                        type: 'business',
+                        itemId: item.businessId,
+                        name: 'Business Profile',
+                        price: 0,
+                        originalPrice: null,
+                        image: '/api/placeholder/300/200',
+                        provider: 'Business',
+                        providerId: item.businessId || '',
+                        category: 'Business',
+                        rating: 4.5,
+                        reviewCount: 0,
+                        available: true,
+                        addedAt: item.createdAt ? item.createdAt.toISOString() : new Date().toISOString(),
+                    };
+                } else {
+                    const itemData = isProduct ? item.product : item.service;
 
-                if (!itemData) return null;
+                    if (!itemData) return null;
 
-                return {
-                    id: item.id,
-                    type: isProduct ? 'product' : 'service',
-                    itemId: isProduct ? item.productId : item.serviceId,
-                    name: (itemData as any).title || (itemData as any).name || 'Unnamed Item',
-                    price: (itemData as any).price ? parseFloat((itemData as any).price.toString()) : 0,
-                    originalPrice: (itemData as any).originalPrice ? parseFloat((itemData as any).originalPrice.toString()) : null,
-                    image: (itemData as any).images?.[0] || '/api/placeholder/300/200',
-                    provider: isProduct
-                        ? (itemData as any).seller?.businessName || 'Unknown Provider'
-                        : (itemData as any).provider?.businessName || 'Unknown Provider',
-                    providerId: isProduct
-                        ? (itemData as any).seller?.id || ''
-                        : (itemData as any).provider?.id || '',
-                    category: (itemData as any).category?.name || 'Uncategorized',
-                    rating: (itemData as any).rating || 0,
-                    reviewCount: (itemData as any).reviewCount || 0,
-                    available: (itemData as any).status === 'active' && ((itemData as any).stockQuantity || 0) > 0,
-                    addedAt: item.createdAt ? item.createdAt.toISOString() : new Date().toISOString(),
-                };
+                    return {
+                        id: item.id,
+                        type: isProduct ? 'product' : 'service',
+                        itemId: isProduct ? item.productId : item.serviceId,
+                        name: (itemData as any).title || (itemData as any).name || 'Unnamed Item',
+                        price: (itemData as any).price ? parseFloat((itemData as any).price.toString()) : 0,
+                        originalPrice: (itemData as any).originalPrice ? parseFloat((itemData as any).originalPrice.toString()) : null,
+                        image: (itemData as any).images?.[0] || '/api/placeholder/300/200',
+                        provider: isProduct
+                            ? (itemData as any).seller?.businessName || 'Unknown Provider'
+                            : (itemData as any).provider?.businessName || 'Unknown Provider',
+                        providerId: isProduct
+                            ? (itemData as any).seller?.id || ''
+                            : (itemData as any).provider?.id || '',
+                        category: (itemData as any).category?.name || 'Uncategorized',
+                        rating: (itemData as any).rating || 0,
+                        reviewCount: (itemData as any).reviewCount || 0,
+                        available: (itemData as any).status === 'active' && ((itemData as any).stockQuantity || 0) > 0,
+                        addedAt: item.createdAt ? item.createdAt.toISOString() : new Date().toISOString(),
+                    };
+                }
             } catch (transformError) {
                 logger.error('Error transforming wishlist item:', transformError, item);
                 return null;
@@ -123,7 +146,7 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
 
         const { itemId, type } = req.body;
 
-        if (!itemId || !type || !['product', 'service'].includes(type)) {
+        if (!itemId || !type || !['product', 'service', 'business'].includes(type)) {
             return res.status(400).json({
                 success: false,
                 error: 'Invalid item ID or type',
@@ -134,7 +157,9 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
         const existingItem = await prisma.wishlist.findFirst({
             where: {
                 userId,
-                ...(type === 'product' ? { productId: itemId } : { serviceId: itemId }),
+                ...(type === 'product' ? { productId: itemId } : 
+                   type === 'service' ? { serviceId: itemId } : 
+                   { businessId: itemId }),
             },
         });
 
@@ -156,7 +181,7 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
                     error: 'Product not found',
                 });
             }
-        } else {
+        } else if (type === 'service') {
             const service = await prisma.service.findUnique({
                 where: { id: itemId },
             });
@@ -166,13 +191,25 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
                     error: 'Service not found',
                 });
             }
+        } else {
+            const business = await prisma.user.findUnique({
+                where: { id: itemId },
+            });
+            if (!business) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Business not found',
+                });
+            }
         }
 
         // Add to wishlist
         const wishlistItem = await prisma.wishlist.create({
             data: {
                 userId,
-                ...(type === 'product' ? { productId: itemId } : { serviceId: itemId }),
+                ...(type === 'product' ? { productId: itemId } : 
+                   type === 'service' ? { serviceId: itemId } : 
+                   { businessId: itemId }),
             },
         });
 
@@ -249,7 +286,7 @@ router.delete('/item/:type/:itemId', authenticate, async (req: Request, res: Res
 
         const { type, itemId } = req.params;
 
-        if (!['product', 'service'].includes(type)) {
+        if (!['product', 'service', 'business'].includes(type)) {
             return res.status(400).json({
                 success: false,
                 error: 'Invalid type',
@@ -260,7 +297,9 @@ router.delete('/item/:type/:itemId', authenticate, async (req: Request, res: Res
         const wishlistItem = await prisma.wishlist.findFirst({
             where: {
                 userId,
-                ...(type === 'product' ? { productId: itemId } : { serviceId: itemId }),
+                ...(type === 'product' ? { productId: itemId } : 
+                   type === 'service' ? { serviceId: itemId } : 
+                   { businessId: itemId }),
             },
         });
 
@@ -301,7 +340,7 @@ router.get('/check/:type/:itemId', authenticate, async (req: Request, res: Respo
 
         const { type, itemId } = req.params;
 
-        if (!['product', 'service'].includes(type)) {
+        if (!['product', 'service', 'business'].includes(type)) {
             return res.status(400).json({
                 success: false,
                 error: 'Invalid type',
@@ -311,7 +350,9 @@ router.get('/check/:type/:itemId', authenticate, async (req: Request, res: Respo
         const wishlistItem = await prisma.wishlist.findFirst({
             where: {
                 userId,
-                ...(type === 'product' ? { productId: itemId } : { serviceId: itemId }),
+                ...(type === 'product' ? { productId: itemId } : 
+                   type === 'service' ? { serviceId: itemId } : 
+                   { businessId: itemId }),
             },
         });
 
