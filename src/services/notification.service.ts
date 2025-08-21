@@ -238,8 +238,19 @@ export class NotificationService {
         throw new Error(`${data.channel} notifications disabled for user`);
       }
 
-      // Get template
-      const template = await this.getTemplate(data.templateName);
+      // Get template, or lazily create a sensible default if missing
+      let template = await this.getTemplate(data.templateName);
+      if (!template) {
+        const fallback = this.getDefaultTemplate(data.templateName, data.channel);
+        if (fallback) {
+          try {
+            template = await this.createTemplate(fallback);
+            logger.warn(`Template '${data.templateName}' was missing. Created a default template for channel '${data.channel}'.`);
+          } catch (e) {
+            logger.error('Failed to auto-create default template:', e);
+          }
+        }
+      }
       if (!template) {
         throw new Error(`Template ${data.templateName} not found`);
       }
@@ -277,6 +288,67 @@ export class NotificationService {
       logger.error('Failed to send notification:', error);
       throw error;
     }
+  }
+
+  // Provide default templates for critical flows when DB templates are missing
+  private getDefaultTemplate(
+    name: string,
+    channel: 'email' | 'sms' | 'push' | 'whatsapp'
+  ): { name: string; type: 'email' | 'sms' | 'push' | 'whatsapp'; subject?: string; content: string; variables?: Record<string, any> } | null {
+    if (name === 'verification_otp') {
+      if (channel === 'email') {
+        return {
+          name,
+          type: 'email',
+          subject: 'Your {{appName}} verification code: {{otp}}',
+          content:
+            '<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f5f7fb;padding:24px 0">' +
+            '  <tr>' +
+            '    <td align="center" style="font-family:Arial,Helvetica,sans-serif">' +
+            '      <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;background:#ffffff;border-radius:12px;box-shadow:0 2px 8px rgba(16,24,40,0.06);overflow:hidden">' +
+            '        <tr>' +
+            '          <td style="padding:20px 24px;background:#0d5efd;color:#ffffff;font-size:18px;font-weight:700">{{appName}}</td>' +
+            '        </tr>' +
+            '        <tr>' +
+            '          <td style="padding:24px">' +
+            '            <p style="margin:0 0 12px 0;color:#101828;font-size:18px;font-weight:700">Verify your email</p>' +
+            '            <p style="margin:0 0 20px 0;color:#475467;font-size:14px">Hi {{userName}}, use the code below to complete your sign in.</p>' +
+            '            <div style="display:inline-block;padding:14px 18px;border:1px solid #e4e7ec;border-radius:10px;background:#f8fafc">' +
+            '              <span style="font-size:28px;letter-spacing:6px;font-weight:800;color:#101828;font-family:SFMono-Regular,Consolas,Menlo,Monaco,monospace">{{otp}}</span>' +
+            '            </div>' +
+            '            <p style="margin:16px 0 0 0;color:#475467;font-size:13px">This code expires in <strong>{{expiryMinutes}}</strong> minutes.</p>' +
+            '            <p style="margin:8px 0 0 0;color:#667085;font-size:12px">Didn\'t request this code? It\'s safe to ignore this email.</p>' +
+            '            <hr style="border:none;border-top:1px solid #f2f4f7;margin:24px 0" />' +
+            '            <p style="margin:0;color:#667085;font-size:12px">For help, contact us at <a href="mailto:{{supportEmail}}" style="color:#0d5efd;text-decoration:none">{{supportEmail}}</a>.</p>' +
+            '          </td>' +
+            '        </tr>' +
+            '        <tr>' +
+            '          <td style="padding:14px 24px;background:#f9fafb;color:#98a2b3;font-size:12px;text-align:center">© {{year}} {{appName}}. All rights reserved.</td>' +
+            '        </tr>' +
+            '      </table>' +
+            '    </td>' +
+            '  </tr>' +
+            '</table>',
+          variables: {
+            userName: 'there',
+            otp: '',
+            expiryMinutes: '10',
+            appName: 'Vikareta',
+            supportEmail: process.env['SUPPORT_EMAIL'] || 'support@vikareta.com',
+            year: new Date().getFullYear().toString()
+          }
+        };
+      }
+      if (channel === 'sms' || channel === 'whatsapp') {
+        return {
+          name,
+          type: channel,
+          content: '{{appName}} code: {{otp}} (expires in {{expiryMinutes}}m). If this wasn\'t you, ignore this message.',
+          variables: { appName: 'Vikareta', otp: '', expiryMinutes: '10' }
+        } as any;
+      }
+    }
+    return null;
   }
 
   // Process template with variables
