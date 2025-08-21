@@ -219,6 +219,20 @@ router.post('/', authenticate, [
   handleValidationErrors,
 ], async (req: Request, res: Response) => {
   try {
+    // ✅ Enhanced authentication validation
+    if (!req.authUser?.userId) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'User authentication is required to create products',
+        },
+      });
+    }
+
+    const sellerId = req.authUser.userId;
+    logger.info('Creating product for seller:', { sellerId });
+
     const {
       title,
       description,
@@ -231,6 +245,38 @@ router.post('/', authenticate, [
       isService = false,
     } = req.body;
 
+    // ✅ Enhanced category validation
+    const category = await prisma.category.findUnique({
+      where: { id: categoryId },
+    });
+
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CATEGORY',
+          message: 'Selected category does not exist',
+        },
+      });
+    }
+
+    // ✅ Enhanced subcategory validation
+    if (subcategoryId) {
+      const subcategory = await prisma.subcategory.findUnique({
+        where: { id: subcategoryId },
+      });
+
+      if (!subcategory || subcategory.categoryId !== categoryId) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_SUBCATEGORY',
+            message: 'Selected subcategory does not exist or does not belong to the selected category',
+          },
+        });
+      }
+    }
+
     const product = await prisma.product.create({
       data: {
         title,
@@ -242,7 +288,7 @@ router.post('/', authenticate, [
         stockQuantity,
         minOrderQuantity,
         isService,
-        sellerId: req.authUser!.userId,
+        sellerId, // ✅ Now properly validated
         status: 'active',
       },
       include: {
@@ -263,7 +309,7 @@ router.post('/', authenticate, [
       },
     });
 
-    logger.info('Product created successfully:', { productId: product.id, sellerId: req.authUser!.userId });
+    logger.info('Product created successfully:', { productId: product.id, sellerId });
 
     return res.status(201).json({
       success: true,

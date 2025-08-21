@@ -227,12 +227,26 @@ router.post('/', [
   handleValidationErrors,
 ], async (req: Request, res: Response) => {
   try {
-    const providerId = req.authUser!.userId;
+    // ✅ Enhanced authentication validation
+    if (!req.authUser?.userId) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'User authentication is required to create services',
+        },
+      });
+    }
+
+    const providerId = req.authUser.userId;
+    logger.info('Creating service for provider:', { providerId });
+
     const service = await serviceService.createService(providerId, req.body);
 
     return res.status(201).json({
       success: true,
       data: service,
+      message: 'Service created successfully',
     });
   } catch (error) {
     logger.error('Error creating service:', error);

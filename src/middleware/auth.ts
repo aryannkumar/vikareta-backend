@@ -40,8 +40,8 @@ declare global {
  */
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Try cookie-based authentication first (SSO)
-    let token = req.cookies.access_token;
+    // Try cookie-based authentication first (SSO) with consistent naming
+    let token = req.cookies.vikareta_access_token || req.cookies.access_token;
     let isSSO = true;
 
     // Fallback to Authorization header for backward compatibility
