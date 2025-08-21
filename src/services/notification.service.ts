@@ -259,10 +259,13 @@ export class NotificationService {
       const processedContent = this.processTemplate(template.content, data.variables || {});
       const processedSubject = template.subject ? this.processTemplate(template.subject, data.variables || {}) : undefined;
 
-      // Create notification record
-      const notification = await prisma.notification.create({
+    // Resolve a valid userId for notification record (map 'system' or invalid IDs to system user)
+    const notificationUserId = await this.resolveNotificationUserId(data.userId);
+
+    // Create notification record
+    const notification = await prisma.notification.create({
         data: {
-          userId: data.userId,
+      userId: notificationUserId,
           templateId: template.id,
           title: template.subject || 'Notification',
           message: processedContent,
@@ -968,9 +971,10 @@ export class NotificationService {
     status: string;
   }): Promise<void> {
     try {
+    const notificationUserId = await this.resolveNotificationUserId(data.userId);
       await prisma.notification.create({
         data: {
-          userId: data.userId,
+      userId: notificationUserId,
           templateId: null, // Make optional
           title: 'Notification',
           message: data.content,
@@ -985,6 +989,65 @@ export class NotificationService {
       });
     } catch (error) {
       logger.error('Failed to create notification record:', error);
+    }
+  }
+
+  // Ensure we always store a valid UUID in notifications.userId
+  private async resolveNotificationUserId(userId: string): Promise<string> {
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+    try {
+      if (userId && uuidRegex.test(userId)) {
+        const existing = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+        if (existing) return existing.id;
+      }
+    } catch {
+      // ignore and fallback to system user
+    }
+    return await this.getOrCreateSystemUserId();
+  }
+
+  private async getOrCreateSystemUserId(): Promise<string> {
+    const SYSTEM_EMAIL = 'system@vikareta.com';
+    const SYSTEM_ID = '00000000-0000-0000-0000-000000000001';
+    try {
+      const system = await prisma.user.upsert({
+        where: { email: SYSTEM_EMAIL },
+        update: {},
+        create: {
+          id: SYSTEM_ID,
+          email: SYSTEM_EMAIL,
+          firstName: 'System',
+          lastName: 'Notifications',
+          userType: 'admin',
+          verificationTier: 'basic',
+          isVerified: true,
+          isActive: true
+        }
+      });
+      return system.id;
+    } catch (e) {
+      logger.warn('Failed to upsert system user, attempting to find by ID', { error: (e as any)?.message });
+      try {
+        const fallback = await prisma.user.findUnique({ where: { id: SYSTEM_ID }, select: { id: true } });
+        if (fallback) return fallback.id;
+      } catch {}
+      // As a last resort, pick any existing admin user
+      const admin = await prisma.user.findFirst({ where: { userType: 'admin' }, select: { id: true } });
+      if (admin) return admin.id;
+      // Create minimal user without fixed ID
+      const created = await prisma.user.create({
+        data: {
+          email: SYSTEM_EMAIL,
+          firstName: 'System',
+          lastName: 'Notifications',
+          userType: 'admin',
+          verificationTier: 'basic',
+          isVerified: true,
+          isActive: true
+        },
+        select: { id: true }
+      });
+      return created.id;
     }
   }
 

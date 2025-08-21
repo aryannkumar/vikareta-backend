@@ -882,7 +882,7 @@ router.post('/send-otp', [
           templateName: 'verification_otp',
           channel: channel as any,
           recipient: identifier,
-          variables: { otp, identifier }
+          variables: { otp, identifier, expiryMinutes: process.env.OTP_EXPIRY_MINUTES || '10', appName: 'Vikareta', supportEmail: process.env.SUPPORT_EMAIL || 'support@vikareta.com', userName: 'there', year: new Date().getFullYear().toString() }
         });
         logger.info('Sent OTP notification (best-effort) to', { identifier, type });
       } catch (sendErr) {
