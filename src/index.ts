@@ -35,6 +35,7 @@ import {
 } from '@/middleware/security';
 import { createHttpsServer, httpsRedirect, httpsSecurityHeaders } from '@/config/https';
 import { performanceMiddleware } from '@/middleware/performance-monitoring';
+import { traceHeaders } from '@/middleware/traceHeaders';
 import { cacheService } from '@/services/cache.service';
 import monitoringRoutes from '@/routes/monitoring';
 import authRoutes from '@/routes/auth';
@@ -267,6 +268,7 @@ app.use(ddosProtection);
 app.use(ipFilter);
 app.use(speedLimiter);
 app.use(securityLogger);
+app.use(traceHeaders);
 
 // Performance monitoring middleware
 app.use(performanceMiddleware);
