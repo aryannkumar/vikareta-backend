@@ -137,13 +137,15 @@ router.get('/businesses', [
   handleValidationErrors,
 ], async (req: Request, res: Response) => {
   try {
+    // Only set isVerified when explicitly provided; otherwise leave undefined
+    const hasIsVerifiedParam = typeof req.query.isVerified === 'string';
     const filters = {
       latitude: req.query.latitude ? parseFloat(req.query.latitude as string) : undefined,
       longitude: req.query.longitude ? parseFloat(req.query.longitude as string) : undefined,
       radius: req.query.radius ? parseFloat(req.query.radius as string) : 10,
       categoryId: req.query.categoryId as string,
       verificationTier: req.query.verificationTier as string,
-      isVerified: req.query.isVerified === 'true',
+      isVerified: hasIsVerifiedParam ? (req.query.isVerified === 'true') : undefined,
       search: req.query.search as string,
       page: req.query.page ? parseInt(req.query.page as string) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
