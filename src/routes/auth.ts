@@ -507,6 +507,12 @@ router.post('/refresh', async (req: Request, res: Response) => {
     const newAccessToken = generateAccessToken(user);
 
     // Set new access token cookie
+    // Set both legacy and new cookie names for compatibility across apps
+    res.cookie('vikareta_access_token', newAccessToken, {
+      ...COOKIE_CONFIG,
+      maxAge: 60 * 60 * 1000 // 1 hour (matches ACCESS_TOKEN_EXPIRY)
+    });
+
     res.cookie('access_token', newAccessToken, {
       ...COOKIE_CONFIG,
       maxAge: 60 * 60 * 1000 // 1 hour (matches ACCESS_TOKEN_EXPIRY)
@@ -557,7 +563,9 @@ router.post('/refresh', async (req: Request, res: Response) => {
 router.post('/sso-token', async (req: Request, res: Response) => {
   try {
     // Require authenticated access via cookie or Authorization header
-  const accessToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization!.substring(7) : req.cookies.access_token;
+  const accessToken = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization!.substring(7)
+      : (req.cookies.vikareta_access_token || req.cookies.access_token);
     if (!accessToken) {
       return res.status(401).json({ success: false, error: { code: 'NO_TOKEN', message: 'Access token required' } });
     }
@@ -645,10 +653,55 @@ router.post('/validate-sso', async (req: Request, res: Response) => {
       // Additional checks can be added here
     }
 
-    return res.json({ success: true, user: { id: user.id, email: user.email } });
+  // Issue fresh tokens for the subdomain to use
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
+
+  return res.json({ success: true, user: { id: user.id, email: user.email }, accessToken, refreshToken });
   } catch (error) {
     logger.error('SSO validation failed:', error);
     return res.status(500).json({ success: false, error: { code: 'SSO_VALIDATION_FAILED', message: 'Failed to validate SSO token' } });
+  }
+});
+
+/**
+ * POST /auth/exchange-sso
+ * Validate SSO token and set HttpOnly cookies in the response so the calling
+ * subdomain can complete SSO without managing tokens in JS.
+ * Body: { token: string }
+ */
+router.post('/exchange-sso', async (req: Request, res: Response) => {
+  try {
+    const token = req.body?.token as string | undefined;
+    if (!token) return res.status(400).json({ success: false, error: { code: 'MISSING_TOKEN', message: 'Token required' } });
+
+    const SSO_SECRET = process.env.SSO_SECRET || process.env.JWT_SECRET || 'sso-secret';
+    let payload: any;
+    try {
+      payload = jwt.verify(token, SSO_SECRET) as any;
+    } catch {
+      return res.status(401).json({ success: false, error: { code: 'INVALID_SSO', message: 'Invalid or expired SSO token' } });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) return res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+
+    // Enforce audience-based role constraints
+    const aud = payload.aud && typeof payload.aud === 'string' ? payload.aud.toLowerCase() : '';
+    if (aud.includes('dashboard') && !['seller', 'both'].includes(user.userType)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for dashboard SSO' } });
+    }
+    if (aud.includes('admin') && user.userType !== 'admin') {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for admin SSO' } });
+    }
+
+    // Set cookies directly to mirror standard login
+    setAuthCookies(res, user);
+
+    return res.json({ success: true });
+  } catch (error) {
+    logger.error('SSO exchange failed:', error);
+    return res.status(500).json({ success: false, error: { code: 'SSO_EXCHANGE_FAILED', message: 'Failed to exchange SSO token' } });
   }
 });
 

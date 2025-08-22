@@ -505,12 +505,20 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
 
   // Skip CSRF protection for authentication routes that don't require existing session
   const authExemptPaths = [
-    '/api/auth/login', 
-    '/api/auth/register', 
-    '/auth/login', 
-    '/auth/register', 
+    '/api/auth/login',
+    '/api/auth/register',
+    '/auth/login',
+    '/auth/register',
     '/api/wallet/add-money',
-    '/api/auth/refresh'  // Temporarily exempt refresh from CSRF - uses HttpOnly cookies
+    '/api/auth/refresh', // Uses HttpOnly cookies
+    // SSO and auth utility endpoints must work from beacons/server-to-server without headers
+    '/api/auth/sso-token',
+    '/api/auth/validate-sso',
+    '/api/auth/exchange-sso',
+    '/api/auth/logout',
+    // OTP endpoints are user-initiated and validated server-side; allow without CSRF for cross-origin clients
+    '/api/auth/send-otp',
+    '/api/auth/verify-otp',
   ];
   if (authExemptPaths.some(path => req.path === path)) {
     return next();
