@@ -592,8 +592,8 @@ router.post('/sso-token', async (req: Request, res: Response) => {
     const isDashboardTarget = targetStr.includes('dashboard');
     const isAdminTarget = targetStr.includes('admin');
 
-    // Dashboard SSO should only be issued to sellers or users marked as both
-    if (isDashboardTarget && !['seller', 'both'].includes(requestingUser.userType)) {
+    // Dashboard SSO should be available to sellers, buyers with both access, and admins
+    if (isDashboardTarget && !['seller', 'both', 'buyer', 'admin', 'super_admin'].includes(requestingUser.userType)) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Insufficient role to request SSO for dashboard' } });
     } 
 
@@ -636,14 +636,14 @@ router.post('/validate-sso', async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) return res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
 
-    // Enforce audience-based role constraints: dashboard -> sellers/both, admin -> admin
+    // Enforce audience-based role constraints: dashboard -> sellers/both/buyers/admin, admin -> admin
     const aud = payload.aud && typeof payload.aud === 'string' ? payload.aud.toLowerCase() : '';
     const audIsDashboard = aud.includes('dashboard');
     const audIsAdmin = aud.includes('admin');
-    if (audIsDashboard && !['seller', 'both'].includes(user.userType)) {
+    if (audIsDashboard && !['seller', 'both', 'buyer', 'admin', 'super_admin'].includes(user.userType)) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for dashboard SSO' } });
     }
-    if (audIsAdmin && user.userType !== 'admin') {
+    if (audIsAdmin && !['admin', 'super_admin'].includes(user.userType)) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for admin SSO' } });
     }
 
@@ -688,10 +688,10 @@ router.post('/exchange-sso', async (req: Request, res: Response) => {
 
     // Enforce audience-based role constraints
     const aud = payload.aud && typeof payload.aud === 'string' ? payload.aud.toLowerCase() : '';
-    if (aud.includes('dashboard') && !['seller', 'both'].includes(user.userType)) {
+    if (aud.includes('dashboard') && !['seller', 'both', 'buyer', 'admin', 'super_admin'].includes(user.userType)) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for dashboard SSO' } });
     }
-    if (aud.includes('admin') && user.userType !== 'admin') {
+    if (aud.includes('admin') && !['admin', 'super_admin'].includes(user.userType)) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'User not authorized for admin SSO' } });
     }
 
