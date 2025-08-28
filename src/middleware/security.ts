@@ -509,7 +509,8 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     '/auth/login',
     '/auth/register',
     '/api/wallet/add-money',
-    '/api/auth/refresh', // Uses HttpOnly cookies
+      '/api/auth/refresh', // Uses HttpOnly cookies
+      '/api/auth/oauth/token', // OAuth token exchange is server-to-server and should be exempt from CSRF checks
     // SSO and auth utility endpoints must work from beacons/server-to-server without headers
     '/api/auth/sso-token',
     '/api/auth/validate-sso',
