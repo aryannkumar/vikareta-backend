@@ -27,8 +27,18 @@ const handleValidationErrors = (req: Request, res: Response, next: any) => {
 router.get('/', [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-  query('categoryId').optional().isUUID().withMessage('Category ID must be a valid UUID'),
-  query('subcategoryId').optional().isUUID().withMessage('Subcategory ID must be a valid UUID'),
+  query('categoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Category ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
+  query('subcategoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
   query('sellerId').optional().isUUID().withMessage('Seller ID must be a valid UUID'),
   query('minPrice').optional().isFloat({ min: 0 }).withMessage('Min price must be non-negative'),
   query('maxPrice').optional().isFloat({ min: 0 }).withMessage('Max price must be non-negative'),
@@ -209,8 +219,18 @@ router.get('/:id', [
 router.post('/', authenticate, [
   body('title').trim().isLength({ min: 3, max: 255 }).withMessage('Title must be between 3 and 255 characters'),
   body('description').optional().trim().isLength({ max: 5000 }).withMessage('Description must not exceed 5000 characters'),
-  body('categoryId').isUUID().withMessage('Category ID must be a valid UUID'),
-  body('subcategoryId').optional().isUUID().withMessage('Subcategory ID must be a valid UUID'),
+  body('categoryId').custom((value) => {
+    if (!require('../utils/validation').isValidId(value)) {
+      throw new Error('Category ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
+  body('subcategoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
   body('price').isFloat({ min: 0 }).withMessage('Price must be a positive number'),
   body('currency').optional().isLength({ min: 3, max: 3 }).withMessage('Currency must be 3 characters'),
   body('stockQuantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be non-negative'),
@@ -333,8 +353,18 @@ router.put('/:id', authenticate, [
   param('id').isUUID().withMessage('Product ID must be a valid UUID'),
   body('title').optional().trim().isLength({ min: 3, max: 255 }).withMessage('Title must be between 3 and 255 characters'),
   body('description').optional().trim().isLength({ max: 5000 }).withMessage('Description must not exceed 5000 characters'),
-  body('categoryId').optional().isUUID().withMessage('Category ID must be a valid UUID'),
-  body('subcategoryId').optional().isUUID().withMessage('Subcategory ID must be a valid UUID'),
+  body('categoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Category ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
+  body('subcategoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
   body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
   body('stockQuantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be non-negative'),
   body('minOrderQuantity').optional().isInt({ min: 1 }).withMessage('Min order quantity must be positive'),

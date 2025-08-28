@@ -32,13 +32,18 @@ const createServiceValidation = [
     .trim()
     .isLength({ min: 10, max: 5000 })
     .withMessage('Description must be between 10 and 5000 characters'),
-  body('categoryId')
-    .isUUID()
-    .withMessage('Category ID must be a valid UUID'),
-  body('subcategoryId')
-    .optional()
-    .isUUID()
-    .withMessage('Subcategory ID must be a valid UUID'),
+  body('categoryId').custom((value) => {
+    if (!require('../utils/validation').isValidId(value)) {
+      throw new Error('Category ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
+  body('subcategoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
   body('price')
     .isFloat({ min: 0 })
     .withMessage('Price must be a positive number'),
@@ -70,8 +75,18 @@ const createServiceValidation = [
 router.get('/', [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-  query('categoryId').optional().isUUID().withMessage('Category ID must be a valid UUID'),
-  query('subcategoryId').optional().isUUID().withMessage('Subcategory ID must be a valid UUID'),
+  query('categoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Category ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
+  query('subcategoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
   query('providerId').optional().isUUID().withMessage('Provider ID must be a valid UUID'),
   query('minPrice').optional().isFloat({ min: 0 }).withMessage('Min price must be non-negative'),
   query('maxPrice').optional().isFloat({ min: 0 }).withMessage('Max price must be non-negative'),
@@ -128,7 +143,12 @@ router.get('/', [
 // GET /api/services/featured - Get featured services
 router.get('/featured', [
   query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
-  query('categoryId').optional().isUUID().withMessage('Category ID must be a valid UUID'),
+  query('categoryId').optional().custom((value) => {
+    if (value && !require('../utils/validation').isValidId(value)) {
+      throw new Error('Category ID must be a valid UUID or CUID');
+    }
+    return true;
+  }),
   handleValidationErrors,
 ], async (req: Request, res: Response) => {
   try {

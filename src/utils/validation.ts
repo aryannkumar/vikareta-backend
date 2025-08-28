@@ -3,6 +3,26 @@ import { z } from 'zod';
 // Common validation patterns
 const phoneRegex = /^[+]?[1-9][\d\s\-\(\)]{7,15}$/;
 const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const cuidRegex = /^c[a-z0-9]{24}$/i;
+
+// Custom ID validator that accepts both UUID and CUID
+export const isValidId = (value: string): boolean => {
+  return uuidRegex.test(value) || cuidRegex.test(value);
+};
+
+// Zod schema for ID validation
+export const idSchema = z.string().refine(isValidId, {
+  message: 'ID must be a valid UUID or CUID',
+});
+
+// Express-validator custom validator for IDs
+export const isValidIdValidator = (value: string) => {
+  if (!isValidId(value)) {
+    throw new Error('ID must be a valid UUID or CUID');
+  }
+  return true;
+};
 
 // User registration validation schema
 export const registerSchema = z.object({
@@ -132,8 +152,8 @@ const xssSafeString = (fieldName: string, minLength = 1, maxLength = 255) =>
 export const createProductSchema = z.object({
   title: xssSafeString('Title', 3, 255),
   description: xssSafeString('Description', 0, 5000).optional(),
-  categoryId: z.string().uuid('Category ID must be a valid UUID'),
-  subcategoryId: z.string().uuid('Subcategory ID must be a valid UUID').optional(),
+  categoryId: idSchema,
+  subcategoryId: idSchema.optional(),
   price: z.number().min(0, 'Price must be non-negative'),
   currency: z.enum(['INR', 'USD', 'EUR']).default('INR'),
   stockQuantity: z.number().int().min(0, 'Stock quantity must be non-negative').optional(),
@@ -150,8 +170,8 @@ export const createProductSchema = z.object({
 export const updateProductSchema = z.object({
   title: xssSafeString('Title', 3, 255).optional(),
   description: xssSafeString('Description', 0, 5000).optional(),
-  categoryId: z.string().uuid('Category ID must be a valid UUID').optional(),
-  subcategoryId: z.string().uuid('Subcategory ID must be a valid UUID').optional(),
+  categoryId: idSchema.optional(),
+  subcategoryId: idSchema.optional(),
   price: z.number().min(0, 'Price must be non-negative').optional(),
   stockQuantity: z.number().int().min(0, 'Stock quantity must be non-negative').optional(),
   status: z.enum(['active', 'inactive', 'draft']).optional(),
