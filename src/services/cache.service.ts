@@ -68,7 +68,9 @@ class CacheService {
         search: { ttl: 1800, prefix: 'search:' }, // 30 minutes
 
         // Session and temporary data
-        session: { ttl: 86400, prefix: 'session:' }, // 24 hours
+    session: { ttl: 86400, prefix: 'session:' }, // 24 hours
+    // Persistent refresh tokens for SSO (shorter than sessions but long-lived)
+    refreshToken: { ttl: 7 * 24 * 60 * 60, prefix: 'refresh:' }, // 7 days
         otp: { ttl: 300, prefix: 'otp:' }, // 5 minutes
 
         // API rate limiting
