@@ -1188,7 +1188,8 @@ router.get('/oauth/authorize', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString()
     };
 
-    await cacheService.set('authCode', code, entry, 120);
+  const setOk = await cacheService.set('authCode', code, entry, 120);
+  logger.info('cacheService.set for authCode', { codePrefix: code.substring(0, 8), codeLen: code.length, ok: setOk });
 
     const separator = redirectUri.includes('?') ? '&' : '?';
     const forwarded = `${redirectUri}${separator}code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
@@ -1220,7 +1221,15 @@ router.post('/oauth/token', async (req: Request, res: Response) => {
     }
 
     const entry: any = await cacheService.get('authCode', code) as any;
+    logger.info('cacheService.get for authCode', { codePrefix: code ? code.substring(0, 8) : null, found: !!entry });
     if (!entry) {
+      // Log cache stats to assist debugging
+      try {
+        const stats = cacheService.getStats();
+        logger.warn('OAuth token exchange failed - authCode missing', { codePrefix: code ? code.substring(0, 8) : null, cacheStats: stats });
+      } catch (e) {
+        logger.warn('Failed to get cache stats while handling missing authCode', { error: (e as any)?.message || String(e) });
+      }
       return res.status(400).json({ success: false, error: { code: 'INVALID_CODE', message: 'Invalid or expired code' } });
     }
 
@@ -1243,7 +1252,8 @@ router.post('/oauth/token', async (req: Request, res: Response) => {
     // Set cookies for the caller (useful for subdomain token exchange)
     await setAuthCookies(res, user);
 
-    await cacheService.delete('authCode', code);
+  const delOk = await cacheService.delete('authCode', code);
+  logger.info('cacheService.delete for authCode', { codePrefix: code.substring(0, 8), deleted: delOk });
 
     return res.json({ success: true, user: { id: user.id, email: user.email } });
   } catch (err) {
@@ -1274,3 +1284,42 @@ router.get('/digilocker/callback', async (req: Request, res: Response) => {
 });
 
 export default router;
+
+// DEBUG: Temporary cache test endpoints - remove in production
+router.post('/debug/cache/authcode', async (req: Request, res: Response) => {
+  try {
+    const { code, sub, clientId, redirectUri } = req.body;
+    if (!code || !sub || !clientId || !redirectUri) return res.status(400).json({ success: false, message: 'missing' });
+    const entry = { sub, clientId, redirectUri, createdAt: new Date().toISOString() };
+    const ok = await cacheService.set('authCode', code, entry, 120);
+    logger.info('DEBUG set authCode', { codePrefix: code.substring(0, 8), ok });
+    return res.json({ success: ok });
+  } catch (e) {
+    logger.error('DEBUG set authCode failed', e);
+    return res.status(500).json({ success: false });
+  }
+});
+
+router.get('/debug/cache/authcode/:code', async (req: Request, res: Response) => {
+  try {
+    const code = req.params.code;
+    const entry = await cacheService.get('authCode', code);
+    logger.info('DEBUG get authCode', { codePrefix: code.substring(0, 8), found: !!entry });
+    return res.json({ success: true, entry: entry || null });
+  } catch (e) {
+    logger.error('DEBUG get authCode failed', e);
+    return res.status(500).json({ success: false });
+  }
+});
+
+router.delete('/debug/cache/authcode/:code', async (req: Request, res: Response) => {
+  try {
+    const code = req.params.code;
+    const ok = await cacheService.delete('authCode', code);
+    logger.info('DEBUG delete authCode', { codePrefix: code.substring(0, 8), deleted: ok });
+    return res.json({ success: ok });
+  } catch (e) {
+    logger.error('DEBUG delete authCode failed', e);
+    return res.status(500).json({ success: false });
+  }
+});

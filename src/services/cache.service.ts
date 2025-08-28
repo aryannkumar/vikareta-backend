@@ -168,6 +168,10 @@ class CacheService {
             const fullKey = `${config.prefix}${key}`;
             const cached = await this.redis?.get(fullKey);
 
+            if (type === 'authCode') {
+                logger.info('cache.get authCode', { type, key, fullKey, found: !!cached });
+            }
+
             if (cached) {
                 this.stats.hits++;
                 this.updateHitRate();
@@ -177,9 +181,9 @@ class CacheService {
                 this.updateHitRate();
                 return null;
             }
-        } catch (error) {
+        } catch (_error) {
             this.stats.errors++;
-            logger.error(`Cache get error for ${type}:${key}`, error);
+            logger.error(`Cache get error for ${type}:${key}`, _error);
             return null;
         }
     }
@@ -204,11 +208,14 @@ class CacheService {
             const serialized = JSON.stringify(value);
 
             await this.redis?.setex(fullKey, ttl, serialized);
+            if (type === 'authCode') {
+                logger.info('cache.set authCode', { type, key, fullKey, ttl });
+            }
             this.stats.sets++;
             return true;
-        } catch (error) {
+        } catch (_error) {
             this.stats.errors++;
-            logger.error(`Cache set error for ${type}:${key}`, error);
+            logger.error(`Cache set error for ${type}:${key}`, _error);
             return false;
         }
     }
@@ -225,11 +232,14 @@ class CacheService {
 
             const fullKey = `${config.prefix}${key}`;
             const result = await this.redis?.del(fullKey);
+            if (type === 'authCode') {
+                logger.info('cache.delete authCode', { type, key, fullKey, deleted: (result || 0) > 0 });
+            }
             this.stats.deletes++;
             return (result || 0) > 0;
-        } catch (error) {
+        } catch (_error) {
             this.stats.errors++;
-            logger.error(`Cache delete error for ${type}:${key}`, error);
+            logger.error(`Cache delete error for ${type}:${key}`, _error);
             return false;
         }
     }
