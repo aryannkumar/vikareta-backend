@@ -273,13 +273,12 @@ export const sanitizeInput = (req: Request, _res: Response, next: NextFunction) 
       .replace(/<(iframe|object|embed|form|input|textarea|select|button|link|meta|base)[^>]*>/gi, '')
       // Remove HTML comments that might contain malicious code
       .replace(/<!--[\s\S]*?-->/g, '')
-      // Encode HTML entities
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;')
-      .replace(/\//g, '&#x2F;')
+  // Encode HTML entities (do NOT encode slashes - they can appear in URLs)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#x27;')
       // Remove null bytes and other control characters
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
   };
