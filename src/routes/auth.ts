@@ -64,6 +64,8 @@ router.use((req, _res, next) => {
 
 
 import { refreshTokenStore } from '@/services/refreshTokenStore';
+import { cacheService } from '@/services/cache.service';
+import crypto from 'crypto';
 
 // Validation middleware
 const handleValidationErrors = (req: Request, res: Response, next: any) => {
@@ -1140,6 +1142,114 @@ router.get('/digilocker', (req: Request, res: Response) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const url = DigiLockerService.getAuthorizationUrl(state);
   return res.redirect(url);
+});
+
+// --- OAuth2 Authorization Code Flow (simple implementation) ---
+
+/**
+ * GET /auth/oauth/authorize
+ * Query: client_id, redirect_uri, state, code_challenge (optional), code_challenge_method
+ * Requires authenticated user via cookie or Authorization header. Issues a short-lived code and redirects to redirect_uri.
+ */
+router.get('/oauth/authorize', async (req: Request, res: Response) => {
+  try {
+    const accessToken = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization!.substring(7)
+      : (req.cookies.vikareta_access_token || req.cookies.access_token);
+
+    if (!accessToken) {
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      const returnTo = encodeURIComponent(req.originalUrl || '/');
+      return res.redirect(`${frontendBase}/login?return_to=${returnTo}`);
+    }
+
+    let decoded: any;
+    try { decoded = jwt.verify(accessToken, JWT_SECRET) as any; } catch { 
+      const frontendBase = (process.env.FRONTEND_URL || '/').replace(/\/$/, '');
+      const returnTo = encodeURIComponent(req.originalUrl || '/');
+      return res.redirect(`${frontendBase}/login?return_to=${returnTo}`);
+    }
+
+    const clientId = typeof req.query.client_id === 'string' ? req.query.client_id : undefined;
+    const redirectUri = typeof req.query.redirect_uri === 'string' ? req.query.redirect_uri : undefined;
+    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const codeChallenge = typeof req.query.code_challenge === 'string' ? req.query.code_challenge : undefined;
+
+    if (!clientId || !redirectUri) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'Missing client_id or redirect_uri' } });
+    }
+
+    const code = crypto.randomBytes(24).toString('hex');
+    const entry = {
+      sub: decoded.id,
+      clientId,
+      redirectUri,
+      codeChallenge: codeChallenge || null,
+      createdAt: new Date().toISOString()
+    };
+
+    await cacheService.set('authCode', code, entry, 120);
+
+    const separator = redirectUri.includes('?') ? '&' : '?';
+    const forwarded = `${redirectUri}${separator}code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+    return res.redirect(forwarded);
+  } catch (err) {
+    logger.error('OAuth authorize error', err);
+    return res.status(500).json({ success: false, error: { code: 'OAUTH_AUTHORIZE_FAILED', message: 'Failed to authorize' } });
+  }
+});
+
+/**
+ * POST /auth/oauth/token
+ * Body: grant_type=authorization_code, code, redirect_uri, client_id, code_verifier (if PKCE)
+ */
+router.post('/oauth/token', async (req: Request, res: Response) => {
+  try {
+    const grantType = req.body?.grant_type;
+    if (grantType !== 'authorization_code') {
+      return res.status(400).json({ success: false, error: { code: 'UNSUPPORTED_GRANT', message: 'Only authorization_code grant supported' } });
+    }
+
+    const code = typeof req.body.code === 'string' ? req.body.code : undefined;
+    const redirectUri = typeof req.body.redirect_uri === 'string' ? req.body.redirect_uri : undefined;
+    const clientId = typeof req.body.client_id === 'string' ? req.body.client_id : undefined;
+    const codeVerifier = typeof req.body.code_verifier === 'string' ? req.body.code_verifier : undefined;
+
+    if (!code || !redirectUri || !clientId) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'Missing parameters' } });
+    }
+
+    const entry: any = await cacheService.get('authCode', code) as any;
+    if (!entry) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_CODE', message: 'Invalid or expired code' } });
+    }
+
+    if (entry.clientId !== clientId || entry.redirectUri !== redirectUri) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'Redirect URI or client mismatch' } });
+    }
+
+    if (entry.codeChallenge) {
+      if (!codeVerifier) return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'code_verifier required' } });
+      const hashed = crypto.createHash('sha256').update(codeVerifier).digest();
+      const base64 = hashed.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      if (base64 !== entry.codeChallenge) {
+        return res.status(400).json({ success: false, error: { code: 'INVALID_GRANT', message: 'PKCE verification failed' } });
+      }
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: entry.sub } });
+    if (!user) return res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+
+    // Set cookies for the caller (useful for subdomain token exchange)
+    await setAuthCookies(res, user);
+
+    await cacheService.delete('authCode', code);
+
+    return res.json({ success: true, user: { id: user.id, email: user.email } });
+  } catch (err) {
+    logger.error('OAuth token exchange error', err);
+    return res.status(500).json({ success: false, error: { code: 'OAUTH_TOKEN_FAILED', message: 'Token exchange failed' } });
+  }
 });
 
 // DigiLocker callback

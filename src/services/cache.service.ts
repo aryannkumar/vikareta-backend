@@ -69,6 +69,8 @@ class CacheService {
 
         // Session and temporary data
     session: { ttl: 86400, prefix: 'session:' }, // 24 hours
+    // Authorization codes for OAuth2 Authorization Code flow (short-lived)
+    authCode: { ttl: 120, prefix: 'authcode:' }, // 2 minutes
     // Persistent refresh tokens for SSO (shorter than sessions but long-lived)
     refreshToken: { ttl: 7 * 24 * 60 * 60, prefix: 'refresh:' }, // 7 days
         otp: { ttl: 300, prefix: 'otp:' }, // 5 minutes
