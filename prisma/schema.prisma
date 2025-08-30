@@ -82,6 +82,7 @@ model User {
   businessName      String?   @map("business_name") @db.VarChar(255)
   gstin             String?   @db.VarChar(15)
   userType          String    @default("user") @map("user_type") @db.VarChar(20)
+  role              String?   @db.VarChar(20)
   verificationTier  String    @default("basic") @map("verification_tier") @db.VarChar(20)
   isVerified        Boolean   @default(false) @map("is_verified")
   isActive          Boolean   @default(true) @map("is_active")
@@ -155,6 +156,7 @@ model User {
   assignedTickets           SupportTicket[]           @relation("AssignedTickets")
   supportMessages           SupportMessage[]          @relation("SupportMessages")
   deliveryPreferences       SellerDeliveryPreference[] @relation("SellerDeliveryPreferences")
+  adminActions              AdminAction[]             @relation("AdminActions")
 
   @@map("users")
 }
@@ -219,6 +221,11 @@ model Product {
   currency         String    @default("INR") @db.VarChar(3)
   stockQuantity    Int       @default(0) @map("stock_quantity")
   minOrderQuantity Int       @default(1) @map("min_order_quantity")
+  sku              String?   @db.VarChar(100)
+  stock            Int?      @default(0)
+  isActive         Boolean   @default(true) @map("is_active")
+  images           String[]  @default([])
+  weight           Float?
   isService        Boolean   @default(false) @map("is_service")
   status           String    @default("active") @db.VarChar(20)
   createdAt        DateTime  @default(now()) @map("created_at")
@@ -301,6 +308,8 @@ model Service {
   currency      String    @default("INR") @db.VarChar(3)
   duration      String?   @db.VarChar(100)
   serviceType   String    @default("one-time") @map("service_type") @db.VarChar(50) // "one-time", "recurring", "subscription"
+  isActive      Boolean   @default(true) @map("is_active")
+  images        String[]  @default([])
   availability  Json?     // Available time slots, days, etc.
   location      Json?     // Service location preferences
   status        String    @default("active") @db.VarChar(20)
@@ -313,6 +322,7 @@ model Service {
   media            ServiceMedia[]
   featuredServices FeaturedService[]
   serviceOrders    ServiceOrder[]
+  orderItems       OrderItem[]
   reviews          Review[]
   appointments     ServiceAppointment[]
   wishlist         Wishlist[]
@@ -457,6 +467,8 @@ model Order {
   quoteId          String?   @map("quote_id") @db.Uuid
   orderNumber      String    @unique @map("order_number") @db.VarChar(50)
   orderType        String    @default("product") @map("order_type") @db.VarChar(20) // "product" or "service"
+  type             String?   @db.VarChar(20) // Additional type field
+  deliveryDate     DateTime? @map("delivery_date")
   subtotal         Decimal   @db.Decimal(10, 2)
   taxAmount        Decimal   @map("tax_amount") @db.Decimal(10, 2)
   shippingAmount   Decimal   @map("shipping_amount") @db.Decimal(10, 2)
@@ -500,7 +512,8 @@ model Order {
 model OrderItem {
   id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId    String  @map("order_id") @db.Uuid
-  productId  String  @map("product_id") @db.Uuid
+  productId  String? @map("product_id") @db.Uuid
+  serviceId  String? @map("service_id") @db.Uuid
   variantId  String? @map("variant_id") @db.Uuid
   quantity   Int
   unitPrice  Decimal @map("unit_price") @db.Decimal(10, 2)
@@ -509,7 +522,8 @@ model OrderItem {
   notes      String? @db.Text
 
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product         @relation(fields: [productId], references: [id])
+  product Product?        @relation(fields: [productId], references: [id])
+  service Service?        @relation(fields: [serviceId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
 
   @@index([orderId, status])
@@ -564,6 +578,18 @@ model OrderStatusHistory {
   @@map("order_status_history")
 }
 
+model OrderHistory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  action    String   @db.VarChar(100)
+  details   String?  @db.Text
+  userId    String?  @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([orderId, createdAt])
+  @@map("order_history")
+}
+
 // ================================
 // PAYMENTS
 // ================================
@@ -572,6 +598,7 @@ model Payment {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId           String    @map("order_id") @db.Uuid
   paymentMethod     String    @map("payment_method") @db.VarChar(50)
+  method            String?   @db.VarChar(50)
   paymentGateway    String    @map("payment_gateway") @db.VarChar(50)
   gatewayTransactionId String? @map("gateway_transaction_id") @db.VarChar(255)
   amount            Decimal   @db.Decimal(10, 2)
@@ -810,6 +837,8 @@ model Message {
   senderId    String   @map("sender_id") @db.Uuid
   recipientId String   @map("recipient_id") @db.Uuid
   status      String   @default("unread") @db.VarChar(20) // unread, read, replied, archived
+  isRead      Boolean  @default(false) @map("is_read")
+  messageType String?  @map("message_type") @db.VarChar(50)
   priority    String   @default("normal") @db.VarChar(20) // low, normal, high, urgent
   type        String   @default("email") @db.VarChar(20) // email, sms, notification, system
   relatedType String?  @map("related_type") @db.VarChar(50) // order, rfq, quote, customer, supplier
@@ -1093,6 +1122,8 @@ model Shipment {
   packageDetails  Json?     @map("package_details")
   shippingCost    Decimal?  @map("shipping_cost") @db.Decimal(10, 2)
   labelUrl        String?   @map("label_url") @db.VarChar(500)
+  awbNumber       String?   @map("awb_number") @db.VarChar(100)
+  service         String?   @db.VarChar(100)
   provider        String?   @db.VarChar(100) // Shipping provider name
   returnRequested Boolean   @default(false) @map("return_requested")
   returnReason    String?   @map("return_reason") @db.Text
@@ -1100,8 +1131,8 @@ model Shipment {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   order           Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  logisticsProvider LogisticsProvider? @relation(fields: [providerId], references: [id])
-  deliveryPartner DeliveryPartner?   @relation("DeliveryPartnerShipments", fields: [providerId], references: [id])
+  logisticsProvider LogisticsProvider? @relation(fields: [providerId], references: [id], map: "shipments_logistics_provider_fkey")
+  deliveryPartner DeliveryPartner?   @relation("DeliveryPartnerShipments", fields: [providerId], references: [id], map: "shipments_delivery_partner_fkey")
 
   @@index([trackingNumber])
   @@index([status])
@@ -1583,6 +1614,7 @@ model Inventory {
   available             Int                 @default(0)
   reserved              Int                 @default(0)
   reorderLevel          Int                 @default(0)
+  reorderQuantity       Int?                @default(50)
   maxStock              Int                 @default(1000)
   costPrice             Float?
   sellingPrice          Float?
@@ -1644,8 +1676,8 @@ model LoginSession {
 }
 
 // End of schema - duplicate models removed
-/
-/ ================================
+
+// ================================
 // SUPPORT SYSTEM
 // ================================
 
@@ -1686,8 +1718,9 @@ model SupportMessage {
 
   @@index([ticketId, createdAt])
   @@map("support_messages")
-}/
-/ ================================
+}
+
+// ================================
 // DELIVERY PARTNER MANAGEMENT
 // ================================
 
@@ -1729,4 +1762,26 @@ model SellerDeliveryPreference {
   @@unique([sellerId, deliveryPartnerId])
   @@index([sellerId, priority])
   @@map("seller_delivery_preferences")
+}
+// ================================
+// ADMIN ACTION LOGGING
+// ================================
+
+model AdminAction {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminId    String   @map("admin_id") @db.Uuid
+  action     String   @db.VarChar(100) // USER_CREATE, USER_DELETE, ORDER_UPDATE, etc.
+  targetType String   @map("target_type") @db.VarChar(50) // USER, ORDER, PRODUCT, SERVICE, etc.
+  targetId   String   @map("target_id") @db.Uuid
+  details    Json?    // Additional action details
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  admin User @relation("AdminActions", fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@map("admin_actions")
 }

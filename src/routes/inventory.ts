@@ -702,7 +702,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
         unitCost: Number(inventory?.costPrice || product.price),
         totalValue: currentStock * Number(inventory?.costPrice || product.price),
         lastUpdated: product.updatedAt.toISOString(),
-        location: inventory?.warehouse?.name || 'Main Warehouse',
+        location: 'Main Warehouse', // inventory.warehouse?.name || 'Main Warehouse',
         supplier: 'Default Supplier',
         status
       };

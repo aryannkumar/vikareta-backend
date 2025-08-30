@@ -100,8 +100,8 @@ router.get('/analytics/overview', authenticateAdmin, requirePermission('analytic
       // Product/Service metrics
       prisma.product.count(),
       prisma.service.count(),
-      prisma.product.count({ where: { isActive: true } }) + 
-      await prisma.service.count({ where: { isActive: true } }),
+      (await prisma.product.count({ where: { isActive: true } })) + 
+      (await prisma.service.count({ where: { isActive: true } })),
       
       // Platform metrics
       prisma.category.count(),

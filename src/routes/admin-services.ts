@@ -200,7 +200,7 @@ router.get('/:id', authenticateAdmin, requirePermission('services.read'), async 
               }
             }
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { id: 'desc' },
           take: 10
         },
         reviews: {
@@ -213,7 +213,7 @@ router.get('/:id', authenticateAdmin, requirePermission('services.read'), async 
               }
             }
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { id: 'desc' },
           take: 10
         }
       }
@@ -315,8 +315,7 @@ router.delete('/:id', authenticateAdmin, requirePermission('services.delete'), a
       await prisma.service.update({
         where: { id },
         data: {
-          isActive: false,
-          deletedAt: new Date()
+          isActive: false
         }
       });
     } else {

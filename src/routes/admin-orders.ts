@@ -115,7 +115,7 @@ router.get('/', authenticateAdmin, requirePermission('orders.read'), async (req:
               email: true
             }
           },
-          orderItems: {
+          items: {
             include: {
               product: {
                 select: {
@@ -170,7 +170,7 @@ router.get('/', authenticateAdmin, requirePermission('orders.read'), async (req:
             name: order.seller.businessName || `${order.seller.firstName} ${order.seller.lastName}`,
             email: order.seller.email
           },
-          itemsCount: order.orderItems.length,
+          itemsCount: order.items.length,
           createdAt: order.createdAt,
           updatedAt: order.updatedAt,
           deliveryDate: order.deliveryDate,
@@ -226,7 +226,7 @@ router.get('/:id', authenticateAdmin, requirePermission('orders.read'), async (r
             address: true
           }
         },
-        orderItems: {
+        items: {
           include: {
             product: {
               select: {
@@ -255,8 +255,8 @@ router.get('/:id', authenticateAdmin, requirePermission('orders.read'), async (r
         payments: {
           orderBy: { createdAt: 'desc' }
         },
-        deliveryInfo: true,
-        orderHistory: {
+        // deliveryInfo: true,
+        statusHistory: {
           orderBy: { createdAt: 'desc' }
         }
       }
@@ -339,9 +339,9 @@ router.put('/:id/status', authenticateAdmin, requirePermission('orders.write'), 
     await prisma.orderHistory.create({
       data: {
         orderId: id,
-        status,
-        notes: reason || `Status updated by admin: ${(req as any).adminUser.email}`,
-        createdBy: (req as any).adminUser.id
+        action: `Status updated to ${status}`,
+        details: reason || `Status updated by admin: ${(req as any).adminUser.email}`,
+        userId: (req as any).adminUser.id
       }
     });
     

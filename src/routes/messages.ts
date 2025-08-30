@@ -4,13 +4,6 @@ import { messageService } from '../services/message.service';
 import { logger } from '../utils/logger';
 import { authenticate } from '../middleware/auth';
 import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
 
 const router = Router();
 
@@ -377,8 +370,7 @@ router.post('/:id/read', authenticate, async (req: Request, res: Response) => {
         recipientId: userId
       },
       data: {
-        isRead: true,
-        readAt: new Date()
+        isRead: true
       }
     });
     

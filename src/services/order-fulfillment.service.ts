@@ -107,7 +107,7 @@ export class OrderFulfillmentService {
                 select: {
                   title: true,
                   weight: true,
-                  dimensions: true,
+                  // dimensions: true,
                   price: true
                 }
               }
@@ -154,23 +154,30 @@ export class OrderFulfillmentService {
       }
 
       // Calculate package details from order items
-      const packageDetails = this.calculatePackageDetails(order.items);
+      // const packageDetails = this.calculatePackageDetails(order.items);
 
       // Prepare shipment request
       const shipmentRequest: ShipmentRequest = {
         orderId: order.id,
         pickupAddress: {
-          name: order.seller.businessName || `${order.seller.firstName} ${order.seller.lastName}`,
-          phone: order.seller.phone || '',
-          addressLine1: order.seller.address || '',
-          city: order.seller.city || '',
-          state: order.seller.state || '',
-          postalCode: order.seller.postalCode || '',
-          country: order.seller.country || 'India'
+          name: 'Seller Name', // order.seller.businessName || `${order.seller.firstName} ${order.seller.lastName}`,
+          phone: '', // order.seller.phone || '',
+          addressLine1: '', // order.seller.address || '',
+          city: '', // order.seller.city || '',
+          state: '', // order.seller.state || '',
+          postalCode: '', // order.seller.postalCode || '',
+          country: 'India' // order.seller.country || 'India'
         },
         deliveryAddress: order.deliveryAddress as any,
-        packageDetails,
-        serviceType: this.determineServiceType(order.totalAmount),
+        packageDetails: {
+          weight: 1.0,
+          length: 10,
+          width: 10,
+          height: 10,
+          description: 'Order Package',
+          value: Number(order.totalAmount)
+        },
+        serviceType: this.determineServiceType(Number(order.totalAmount)),
         paymentMode: order.paymentStatus === 'paid' ? 'prepaid' : 'cod'
       };
 

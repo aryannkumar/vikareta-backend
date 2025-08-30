@@ -2406,6 +2406,7 @@ router.get('/system/ab-tests', authenticate, requireAdmin, asyncHandler(async (r
 }));
 
 export { router as adminRoutes };
+export default router;
 
 /**
  * GET /api/admin/dashboard/wallets

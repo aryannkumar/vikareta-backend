@@ -202,7 +202,7 @@ router.get('/:id', authenticateAdmin, requirePermission('products.read'), async 
               }
             }
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { id: 'desc' },
           take: 10
         },
         reviews: {
@@ -215,7 +215,7 @@ router.get('/:id', authenticateAdmin, requirePermission('products.read'), async 
               }
             }
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { id: 'desc' },
           take: 10
         }
       }
@@ -317,8 +317,7 @@ router.delete('/:id', authenticateAdmin, requirePermission('products.delete'), a
       await prisma.product.update({
         where: { id },
         data: {
-          isActive: false,
-          deletedAt: new Date()
+          isActive: false
         }
       });
     } else {
