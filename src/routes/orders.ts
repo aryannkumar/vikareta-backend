@@ -15,7 +15,8 @@ import {
   ServiceBookingRequest,
   OrderError,
   ServiceBookingError,
-  OrderStatus
+  OrderStatus,
+  OrderType
 } from '../types/orders';
 
 const router = Router();
@@ -161,9 +162,26 @@ router.get('/', authenticate, async (req, res) => {
       parseInt(limit as string)
     );
 
+    // Ensure all numeric fields in orders are properly formatted
+    const formattedOrders = result.orders.map(order => ({
+      ...order,
+      totalAmount: Number(order.totalAmount || 0),
+      shippingAmount: Number(order.shippingAmount || 0),
+      taxAmount: Number(order.taxAmount || 0),
+      discountAmount: Number(order.discountAmount || 0),
+      subtotal: Number(order.subtotal || 0),
+      // Ensure any other numeric fields are properly formatted
+      items: order.items?.map(item => ({
+        ...item,
+        unitPrice: Number(item.unitPrice || 0),
+        quantity: Number(item.quantity || 0),
+        totalPrice: Number(item.totalPrice || 0)
+      })) || []
+    }));
+
     res.json({
       success: true,
-      data: result.orders,
+      data: formattedOrders,
       pagination: result.pagination,
       filters: result.filters
     });
@@ -369,6 +387,67 @@ router.post('/book-service', authenticate, async (req, res) => {
 /**
  * Get order statistics
  * GET /api/orders/stats
+ */
+router.get('/stats', authenticate, async (req, res) => {
+  try {
+    const userId = req.authUser?.userId;
+    const { role = 'seller', dateFrom, dateTo } = req.query;
+
+    const sellerId = role === 'seller' ? userId : undefined;
+    const stats = await orderService.getOrderStats(
+      sellerId,
+      dateFrom ? new Date(dateFrom as string) : undefined,
+      dateTo ? new Date(dateTo as string) : undefined
+    );
+
+    // Ensure all numeric values are properly formatted and not null/undefined
+    const formattedStats = {
+      totalRevenue: Number(stats.totalRevenue || 0),
+      totalOrders: Number(stats.totalOrders || 0),
+      averageOrderValue: Number(stats.averageOrderValue || 0),
+      // Extract status counts from ordersByStatus using enum values
+      pendingOrders: Number(stats.ordersByStatus?.[OrderStatus.PENDING] || 0),
+      completedOrders: Number(stats.ordersByStatus?.[OrderStatus.DELIVERED] || 0),
+      cancelledOrders: Number(stats.ordersByStatus?.[OrderStatus.CANCELLED] || 0),
+      // Include order type counts using enum values
+      productOrders: Number(stats.ordersByType?.[OrderType.PRODUCT] || 0),
+      serviceOrders: Number(stats.ordersByType?.[OrderType.SERVICE] || 0),
+      // Format top products and services with proper numeric values
+      topProducts: (stats.topProducts || []).map(product => ({
+        ...product,
+        orderCount: Number(product.orderCount || 0),
+        revenue: Number(product.revenue || 0)
+      })),
+      topServices: (stats.topServices || []).map(service => ({
+        ...service,
+        orderCount: Number(service.orderCount || 0),
+        revenue: Number(service.revenue || 0)
+      })),
+      // Include the original ordersByStatus and ordersByType for completeness
+      ordersByStatus: stats.ordersByStatus || {},
+      ordersByType: stats.ordersByType || {}
+    };
+
+    res.json({
+      success: true,
+      data: formattedStats
+    });
+  } catch (error) {
+    console.error('Get order stats error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to retrieve order statistics'
+      }
+    });
+  }
+});
+
+/**
+ * Get order statistics overview (detailed)
+ * GET /api/orders/stats/overview
  */
 router.get('/stats/overview', authenticate, async (req, res) => {
   try {

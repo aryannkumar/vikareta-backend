@@ -28,14 +28,16 @@ router.get('/', [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
   query('categoryId').optional().custom((value) => {
-    if (value && !require('../utils/validation').isValidId(value)) {
-      throw new Error('Category ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (value && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Category ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),
   query('subcategoryId').optional().custom((value) => {
-    if (value && !require('../utils/validation').isValidId(value)) {
-      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (value && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Subcategory ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),
@@ -63,8 +65,67 @@ router.get('/', [
     // Build where clause
     const where: any = { status };
 
-    if (categoryId) where.categoryId = categoryId;
-    if (subcategoryId) where.subcategoryId = subcategoryId;
+    // Resolve category ID (could be UUID/CUID or slug)
+    if (categoryId) {
+      const { isValidId } = require('../utils/validation');
+      if (isValidId(categoryId)) {
+        where.categoryId = categoryId;
+      } else {
+        // It's a slug, resolve to ID
+        const category = await prisma.category.findUnique({
+          where: { slug: categoryId },
+          select: { id: true }
+        });
+        if (category) {
+          where.categoryId = category.id;
+        } else {
+          // Category not found, return empty result
+          return res.json({
+            success: true,
+            data: {
+              products: [],
+              pagination: {
+                page,
+                limit,
+                total: 0,
+                totalPages: 0,
+              },
+            },
+          });
+        }
+      }
+    }
+
+    // Resolve subcategory ID (could be UUID/CUID or slug)
+    if (subcategoryId) {
+      const { isValidId } = require('../utils/validation');
+      if (isValidId(subcategoryId)) {
+        where.subcategoryId = subcategoryId;
+      } else {
+        // It's a slug, resolve to ID
+        const subcategory = await prisma.subcategory.findUnique({
+          where: { slug: subcategoryId },
+          select: { id: true }
+        });
+        if (subcategory) {
+          where.subcategoryId = subcategory.id;
+        } else {
+          // Subcategory not found, return empty result
+          return res.json({
+            success: true,
+            data: {
+              products: [],
+              pagination: {
+                page,
+                limit,
+                total: 0,
+                totalPages: 0,
+              },
+            },
+          });
+        }
+      }
+    }
     if (sellerId) where.sellerId = sellerId;
     if (inStock) where.stockQuantity = { gt: 0 };
 
@@ -220,14 +281,16 @@ router.post('/', authenticate, [
   body('title').trim().isLength({ min: 3, max: 255 }).withMessage('Title must be between 3 and 255 characters'),
   body('description').optional().trim().isLength({ max: 5000 }).withMessage('Description must not exceed 5000 characters'),
   body('categoryId').custom((value) => {
-    if (!require('../utils/validation').isValidId(value)) {
-      throw new Error('Category ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (!require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Category ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),
   body('subcategoryId').optional().custom((value) => {
-    if (value && !require('../utils/validation').isValidId(value)) {
-      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (value && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Subcategory ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),
@@ -256,14 +319,55 @@ router.post('/', authenticate, [
     const {
       title,
       description,
-      categoryId,
-      subcategoryId,
+      categoryId: rawCategoryId,
+      subcategoryId: rawSubcategoryId,
       price,
       currency = 'INR',
       stockQuantity = 0,
       minOrderQuantity = 1,
       isService = false,
     } = req.body;
+
+    // Resolve category ID (could be UUID/CUID or slug)
+    let categoryId = rawCategoryId;
+    const { isValidId } = require('../utils/validation');
+    if (!isValidId(rawCategoryId)) {
+      // It's a slug, resolve to ID
+      const categoryBySlug = await prisma.category.findUnique({
+        where: { slug: rawCategoryId },
+        select: { id: true }
+      });
+      if (!categoryBySlug) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_CATEGORY',
+            message: 'Category not found',
+          },
+        });
+      }
+      categoryId = categoryBySlug.id;
+    }
+
+    // Resolve subcategory ID (could be UUID/CUID or slug)
+    let subcategoryId = rawSubcategoryId;
+    if (rawSubcategoryId && !isValidId(rawSubcategoryId)) {
+      // It's a slug, resolve to ID
+      const subcategoryBySlug = await prisma.subcategory.findUnique({
+        where: { slug: rawSubcategoryId },
+        select: { id: true }
+      });
+      if (!subcategoryBySlug) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_SUBCATEGORY',
+            message: 'Subcategory not found',
+          },
+        });
+      }
+      subcategoryId = subcategoryBySlug.id;
+    }
 
     // ✅ Enhanced category validation
     const category = await prisma.category.findUnique({

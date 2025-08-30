@@ -721,4 +721,95 @@ router.post('/reports/:id/generate', authenticate, async (req: Request, res: Res
   }
 });
 
+// GET /api/analytics/audience-insights - Get audience insights
+router.get('/audience-insights', authenticate, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { dateRange = '30d' } = req.query;
+
+    // Calculate date range
+    const days = parseInt(dateRange.toString().replace('d', '')) || 30;
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // Get audience insights from orders and user data
+    const [
+      ageGroups,
+      genderDistribution,
+      locationData,
+      deviceTypes,
+      trafficSources
+    ] = await Promise.all([
+      // Age groups (mock data since we don't have age in user model)
+      Promise.resolve([
+        { ageGroup: '18-24', count: 45, percentage: 22.5 },
+        { ageGroup: '25-34', count: 78, percentage: 39.0 },
+        { ageGroup: '35-44', count: 52, percentage: 26.0 },
+        { ageGroup: '45-54', count: 18, percentage: 9.0 },
+        { ageGroup: '55+', count: 7, percentage: 3.5 }
+      ]),
+
+      // Gender distribution (mock data)
+      Promise.resolve([
+        { gender: 'Male', count: 120, percentage: 60.0 },
+        { gender: 'Female', count: 75, percentage: 37.5 },
+        { gender: 'Other', count: 5, percentage: 2.5 }
+      ]),
+
+      // Location data from orders
+      prisma.order.groupBy({
+        by: ['deliveryAddress'],
+        where: {
+          sellerId: userId,
+          createdAt: { gte: startDate }
+        },
+        _count: { id: true }
+      }).then(results => 
+        results.slice(0, 10).map((item, index) => ({
+          location: `City ${index + 1}`,
+          count: item._count.id,
+          percentage: (item._count.id / results.length) * 100
+        }))
+      ),
+
+      // Device types (mock data)
+      Promise.resolve([
+        { device: 'Mobile', count: 140, percentage: 70.0 },
+        { device: 'Desktop', count: 50, percentage: 25.0 },
+        { device: 'Tablet', count: 10, percentage: 5.0 }
+      ]),
+
+      // Traffic sources (mock data)
+      Promise.resolve([
+        { source: 'Direct', count: 80, percentage: 40.0 },
+        { source: 'Search', count: 60, percentage: 30.0 },
+        { source: 'Social', count: 40, percentage: 20.0 },
+        { source: 'Referral', count: 20, percentage: 10.0 }
+      ])
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        ageGroups,
+        genderDistribution,
+        locationData,
+        deviceTypes,
+        trafficSources,
+        totalAudience: 200,
+        dateRange: `${days}d`,
+        generatedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching audience insights:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: 'Failed to fetch audience insights'
+      }
+    });
+  }
+});
+
 export default router;

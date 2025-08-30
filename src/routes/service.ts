@@ -33,14 +33,16 @@ const createServiceValidation = [
     .isLength({ min: 10, max: 5000 })
     .withMessage('Description must be between 10 and 5000 characters'),
   body('categoryId').custom((value) => {
-    if (!require('../utils/validation').isValidId(value)) {
-      throw new Error('Category ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (!require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Category ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),
   body('subcategoryId').optional().custom((value) => {
-    if (value && !require('../utils/validation').isValidId(value)) {
-      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (value && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Subcategory ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),
@@ -76,14 +78,16 @@ router.get('/', [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
   query('categoryId').optional().custom((value) => {
-    if (value && !require('../utils/validation').isValidId(value)) {
-      throw new Error('Category ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (value && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Category ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),
   query('subcategoryId').optional().custom((value) => {
-    if (value && !require('../utils/validation').isValidId(value)) {
-      throw new Error('Subcategory ID must be a valid UUID or CUID');
+    // Accept both UUID/CUID and slug formats
+    if (value && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error('Subcategory ID must be a valid UUID, CUID, or slug');
     }
     return true;
   }),

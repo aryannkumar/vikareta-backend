@@ -82,6 +82,8 @@ import wishlistRoutes from '@/routes/wishlist';
 import customersRoutes from '@/routes/customers';
 import shipmentsRoutes from '@/routes/shipments';
 import analyticsBackendRoutes from '@/routes/analytics';
+import messagesRoutes from '@/routes/messages';
+import { setupWebSocket } from '@/routes/websocket';
 
 const app = express();
 
@@ -455,6 +457,7 @@ app.use('/api/wishlist', apiLimiter, wishlistRoutes);
 app.use('/api/customers', apiLimiter, customersRoutes);
 app.use('/api/shipments', apiLimiter, shipmentsRoutes);
 app.use('/api/analytics-backend', apiLimiter, analyticsBackendRoutes);
+app.use('/api/messages', apiLimiter, messagesRoutes);
 
 // Admin routes (with /api prefix) - with explicit CORS handling
 app.use('/api/admin', (req, res, next) => {
@@ -574,6 +577,9 @@ if (config.env === 'production') {
     logger.info(`📊 Environment: ${config.env}`);
     logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
     logger.info(`🔒 SSL termination handled by NGINX ingress with Cloudflare Origin certificates`);
+    
+    // Setup WebSocket server
+    setupWebSocket(server);
   });
 } else {
   // Development mode - try HTTPS if configured, otherwise HTTP
@@ -583,6 +589,9 @@ if (config.env === 'production') {
       logger.info(`🔒 Vikareta HTTPS Server running on port ${HTTPS_PORT}`);
       logger.info(`📊 Environment: ${config.env}`);
       logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
+      
+      // Setup WebSocket server on HTTPS
+      setupWebSocket(httpsServerInstance);
     });
 
     // Also start HTTP server for redirects
@@ -596,6 +605,9 @@ if (config.env === 'production') {
       logger.info(`📊 Environment: ${config.env}`);
       logger.info(`🔗 Database: ${config.database.url ? 'Connected' : 'Not configured'}`);
       logger.info(`⚠️  Running in HTTP mode - SSL handled by reverse proxy`);
+      
+      // Setup WebSocket server
+      setupWebSocket(server);
     });
   }
 }

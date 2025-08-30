@@ -367,19 +367,48 @@ class ServiceService {
   }
 
   async createService(providerId: string, data: CreateServiceData) {
+    // Resolve category ID (could be UUID/CUID or slug)
+    let categoryId = data.categoryId;
+    const { isValidId } = require('../utils/validation');
+    if (!isValidId(data.categoryId)) {
+      // It's a slug, resolve to ID
+      const categoryBySlug = await prisma.category.findUnique({
+        where: { slug: data.categoryId },
+        select: { id: true }
+      });
+      if (!categoryBySlug) {
+        throw new Error('Category not found');
+      }
+      categoryId = categoryBySlug.id;
+    }
+
     // Verify category exists
     const category = await prisma.category.findUnique({
-      where: { id: data.categoryId },
+      where: { id: categoryId },
     });
 
     if (!category) {
       throw new Error('Category not found');
     }
 
+    // Resolve subcategory ID (could be UUID/CUID or slug)
+    let subcategoryId = data.subcategoryId;
+    if (data.subcategoryId && !isValidId(data.subcategoryId)) {
+      // It's a slug, resolve to ID
+      const subcategoryBySlug = await prisma.subcategory.findUnique({
+        where: { slug: data.subcategoryId },
+        select: { id: true }
+      });
+      if (!subcategoryBySlug) {
+        throw new Error('Subcategory not found');
+      }
+      subcategoryId = subcategoryBySlug.id;
+    }
+
     // Verify subcategory if provided
-    if (data.subcategoryId) {
-      const subcategory = await prisma.category.findUnique({
-        where: { id: data.subcategoryId },
+    if (subcategoryId) {
+      const subcategory = await prisma.subcategory.findUnique({
+        where: { id: subcategoryId },
       });
 
       if (!subcategory) {
@@ -392,8 +421,8 @@ class ServiceService {
         sellerId: providerId,
         title: data.title,
         description: data.description,
-        categoryId: data.categoryId,
-        subcategoryId: data.subcategoryId,
+        categoryId: categoryId,
+        subcategoryId: subcategoryId,
         price: data.price,
         currency: data.currency || 'INR',
         stockQuantity: 0, // Services don't have stock

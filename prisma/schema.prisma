@@ -133,6 +133,8 @@ model User {
   dealsBuyer                Deal[] @relation("DealBuyer")
   dealsSeller               Deal[] @relation("DealSeller")
   dealMessages              DealMessage[] @relation("DealMessageSender")
+  sentMessages              Message[] @relation("MessageSender")
+  receivedMessages          Message[] @relation("MessageRecipient")
   adApprovalReviews         AdApproval[] @relation("AdApprovalReviewer")
   wishlist                  Wishlist[]
   businessWishlist          Wishlist[] @relation("BusinessWishlist")
@@ -795,6 +797,29 @@ model Deal {
   @@index([sellerId, status])
   @@index([rfqId])
   @@map("deals")
+}
+
+model Message {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subject     String   @db.VarChar(255)
+  content     String   @db.Text
+  senderId    String   @map("sender_id") @db.Uuid
+  recipientId String   @map("recipient_id") @db.Uuid
+  status      String   @default("unread") @db.VarChar(20) // unread, read, replied, archived
+  priority    String   @default("normal") @db.VarChar(20) // low, normal, high, urgent
+  type        String   @default("email") @db.VarChar(20) // email, sms, notification, system
+  relatedType String?  @map("related_type") @db.VarChar(50) // order, rfq, quote, customer, supplier
+  relatedId   String?  @map("related_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  sender    User @relation("MessageSender", fields: [senderId], references: [id])
+  recipient User @relation("MessageRecipient", fields: [recipientId], references: [id])
+
+  @@index([senderId, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([status, createdAt])
+  @@map("messages")
 }
 
 model DealMessage {

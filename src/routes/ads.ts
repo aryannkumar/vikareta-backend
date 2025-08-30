@@ -40,12 +40,11 @@ router.get('/', [
     // Build where clause
     const where: any = { 
       status: 'active',
-      startDate: { lte: new Date() },
-      endDate: { gte: new Date() },
+      isActive: true,
     };
 
-    if (type) where.type = type;
-    if (placement) where.placement = placement;
+    if (type) where.adType = type;
+    // Note: placement filtering would need to be done through AdPlacementAssignment relation
 
     // Get ads with pagination
     const ads = await prisma.advertisement.findMany({
@@ -456,6 +455,97 @@ router.get('/analytics', [
       error: {
         code: 'ANALYTICS_ERROR',
         message: 'Failed to fetch advertisement analytics',
+      },
+    });
+  }
+});
+
+// GET /api/ads/campaigns - Get ad campaigns
+router.get('/campaigns', authenticate, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { page = '1', limit = '10', status } = req.query;
+
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * limitNum;
+
+    // Build where clause
+    const where: any = { businessId: userId };
+    if (status && status !== 'all') {
+      where.status = status;
+    }
+
+    // Get campaigns with pagination
+    const [campaigns, total] = await Promise.all([
+      prisma.adCampaign.findMany({
+        where,
+        include: {
+          advertisements: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              impressions: true,
+              clicks: true,
+              conversions: true,
+            },
+          },
+          _count: {
+            select: {
+              advertisements: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limitNum,
+      }),
+      prisma.adCampaign.count({ where }),
+    ]);
+
+    // Transform data for frontend
+    const transformedCampaigns = campaigns.map(campaign => ({
+      id: campaign.id,
+      name: campaign.name,
+      description: campaign.description,
+      status: campaign.status,
+      campaignType: campaign.campaignType,
+      budget: campaign.budget,
+      dailyBudget: campaign.dailyBudget,
+      spentAmount: campaign.spentAmount,
+      startDate: campaign.startDate,
+      endDate: campaign.endDate,
+      impressions: campaign.impressions,
+      clicks: campaign.clicks,
+      conversions: campaign.conversions,
+      ctr: campaign.ctr,
+      cpc: campaign.cpc,
+      conversionRate: campaign.conversionRate,
+      adCount: campaign._count.advertisements,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        campaigns: transformedCampaigns,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum),
+        },
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching campaigns:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: 'Failed to fetch campaigns',
       },
     });
   }
