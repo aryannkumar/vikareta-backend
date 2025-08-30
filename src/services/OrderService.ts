@@ -26,7 +26,7 @@ import {
 } from '../types/orders';
 
 export class OrderService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: PrismaClient) { }
 
   /**
    * Create a new order (product or service)
@@ -525,8 +525,8 @@ export class OrderService {
       this.getTopServices(where),
     ]);
 
-    const averageOrderValue = totalOrders > 0 
-      ? (totalRevenue._sum.totalAmount?.toNumber() || 0) / totalOrders 
+    const averageOrderValue = totalOrders > 0
+      ? (totalRevenue._sum.totalAmount?.toNumber() || 0) / totalOrders
       : 0;
 
     return {
@@ -626,11 +626,11 @@ export class OrderService {
       orderType: order.orderType,
       buyerId: order.buyerId,
       sellerId: order.sellerId,
-      subtotal: order.subtotal.toNumber(),
-      taxAmount: order.taxAmount.toNumber(),
-      shippingAmount: order.shippingAmount.toNumber(),
-      discountAmount: order.discountAmount.toNumber(),
-      totalAmount: order.totalAmount.toNumber(),
+      subtotal: order.subtotal?.toNumber() || 0,
+      taxAmount: order.taxAmount?.toNumber() || 0,
+      shippingAmount: order.shippingAmount?.toNumber() || 0,
+      discountAmount: order.discountAmount?.toNumber() || 0,
+      totalAmount: order.totalAmount?.toNumber() || 0,
       status: order.status,
       paymentStatus: order.paymentStatus,
       deliveryAddress: order.deliveryAddress,
@@ -642,29 +642,29 @@ export class OrderService {
       updatedAt: order.updatedAt,
       buyer: order.buyer,
       seller: order.seller,
-      items: order.items.map((item: any) => ({
+      items: (order.items || []).map((item: any) => ({
         id: item.id,
         productId: item.productId,
         variantId: item.variantId,
         quantity: item.quantity,
-        unitPrice: item.unitPrice.toNumber(),
-        totalPrice: item.totalPrice.toNumber(),
+        unitPrice: item.unitPrice?.toNumber() || 0,
+        totalPrice: item.totalPrice?.toNumber() || 0,
         status: item.status,
         notes: item.notes,
-        product: {
+        product: item.product ? {
           id: item.product.id,
           title: item.product.title,
           description: item.product.description,
-          media: item.product.media,
-        },
+          media: item.product.media || [],
+        } : null,
         variant: item.variant,
       })),
-      serviceOrders: order.serviceOrders.map((serviceOrder: any) => ({
+      serviceOrders: (order.serviceOrders || []).map((serviceOrder: any) => ({
         id: serviceOrder.id,
         serviceId: serviceOrder.serviceId,
         quantity: serviceOrder.quantity,
-        unitPrice: serviceOrder.unitPrice.toNumber(),
-        totalPrice: serviceOrder.totalPrice.toNumber(),
+        unitPrice: serviceOrder.unitPrice?.toNumber() || 0,
+        totalPrice: serviceOrder.totalPrice?.toNumber() || 0,
         scheduledDate: serviceOrder.scheduledDate,
         completedDate: serviceOrder.completedDate,
         duration: serviceOrder.duration,
@@ -675,27 +675,27 @@ export class OrderService {
         customerNotes: serviceOrder.customerNotes,
         createdAt: serviceOrder.createdAt,
         updatedAt: serviceOrder.updatedAt,
-        service: {
+        service: serviceOrder.service ? {
           id: serviceOrder.service.id,
           title: serviceOrder.service.title,
           description: serviceOrder.service.description,
           duration: serviceOrder.service.duration,
           serviceType: serviceOrder.service.serviceType,
-          media: serviceOrder.service.media,
-          provider: {
+          media: serviceOrder.service.media || [],
+          provider: serviceOrder.service.provider ? {
             id: serviceOrder.service.provider.id,
             businessName: serviceOrder.service.provider.businessName || undefined,
             phone: serviceOrder.service.provider.phone || undefined,
             email: serviceOrder.service.provider.email || undefined,
-          },
-        },
+          } : null,
+        } : null,
       })),
-      payments: order.payments.map((payment: any) => ({
+      payments: (order.payments || []).map((payment: any) => ({
         id: payment.id,
         paymentMethod: payment.paymentMethod,
         paymentGateway: payment.paymentGateway,
         gatewayTransactionId: payment.gatewayTransactionId,
-        amount: payment.amount.toNumber(),
+        amount: payment.amount?.toNumber() || 0,
         currency: payment.currency,
         status: payment.status,
         failureReason: payment.failureReason,
