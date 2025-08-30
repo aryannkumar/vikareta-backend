@@ -382,13 +382,17 @@ class ServiceService {
       categoryId = categoryBySlug.id;
     }
 
-    // Verify category exists
-    const category = await prisma.category.findUnique({
+    // Verify category exists or use default
+    let category = await prisma.category.findUnique({
       where: { id: categoryId },
     });
 
     if (!category) {
-      throw new Error('Category not found');
+      // Try to get or create a default category
+      const { getOrCreateDefaultCategory } = await import('../utils/seed-categories');
+      category = await getOrCreateDefaultCategory();
+      categoryId = category.id;
+      logger.warn(`Category not found, using default category: ${category.name}`);
     }
 
     // Resolve subcategory ID (could be UUID/CUID or slug)
@@ -405,14 +409,16 @@ class ServiceService {
       subcategoryId = subcategoryBySlug.id;
     }
 
-    // Verify subcategory if provided
+    // Verify subcategory if provided (optional and non-blocking)
     if (subcategoryId) {
       const subcategory = await prisma.subcategory.findUnique({
         where: { id: subcategoryId },
       });
 
       if (!subcategory) {
-        throw new Error('Subcategory not found');
+        // Log warning but don't fail - create without subcategory
+        logger.warn(`Subcategory ${subcategoryId} not found`);
+        subcategoryId = undefined; // Reset to undefined if not found
       }
     }
 

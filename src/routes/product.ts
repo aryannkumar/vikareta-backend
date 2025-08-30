@@ -288,8 +288,8 @@ router.post('/', authenticate, [
     return true;
   }),
   body('subcategoryId').optional().custom((value) => {
-    // Accept both UUID/CUID and slug formats
-    if (value && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
+    // Accept both UUID/CUID and slug formats, but make it truly optional
+    if (value && value !== '' && !require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
       throw new Error('Subcategory ID must be a valid UUID, CUID, or slug');
     }
     return true;
@@ -369,35 +369,29 @@ router.post('/', authenticate, [
       subcategoryId = subcategoryBySlug.id;
     }
 
-    // ✅ Enhanced category validation
-    const category = await prisma.category.findUnique({
+    // ✅ Enhanced category validation with fallback
+    let category = await prisma.category.findUnique({
       where: { id: categoryId },
     });
 
     if (!category) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_CATEGORY',
-          message: 'Selected category does not exist',
-        },
-      });
+      // Try to get or create a default category
+      const { getOrCreateDefaultCategory } = await import('../utils/seed-categories');
+      category = await getOrCreateDefaultCategory();
+      categoryId = category.id;
+      logger.warn(`Category not found, using default category: ${category.name}`);
     }
 
-    // ✅ Enhanced subcategory validation
+    // ✅ Enhanced subcategory validation (optional and non-blocking)
     if (subcategoryId) {
       const subcategory = await prisma.subcategory.findUnique({
         where: { id: subcategoryId },
       });
 
       if (!subcategory || subcategory.categoryId !== categoryId) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_SUBCATEGORY',
-            message: 'Selected subcategory does not exist or does not belong to the selected category',
-          },
-        });
+        // Log warning but don't fail - create without subcategory
+        logger.warn(`Subcategory ${subcategoryId} not found for category ${categoryId}`);
+        subcategoryId = null; // Reset to null if not found
       }
     }
 

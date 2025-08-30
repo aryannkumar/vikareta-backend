@@ -617,4 +617,119 @@ router.get('/export', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/inventory - Get inventory items (alias for /products)
+router.get('/', authenticate, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const {
+      search,
+      warehouse,
+      status,
+      category,
+      sortBy = 'name',
+      sortOrder = 'asc',
+      page = '1',
+      limit = '20'
+    } = req.query;
+
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * limitNum;
+
+    // Build where clause for products
+    const where: any = {
+      userId // Only show user's products
+    };
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search as string, mode: 'insensitive' } },
+        { sku: { contains: search as string, mode: 'insensitive' } }
+      ];
+    }
+
+    if (category && category !== 'all') {
+      where.categoryId = category;
+    }
+
+    // Get products with inventory data
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          category: {
+            select: { name: true }
+          },
+          inventory: true
+        },
+        orderBy: {
+          ...(sortBy === 'name' ? { title: sortOrder === 'asc' ? 'asc' : 'desc' } : 
+              sortBy === 'stock' ? { stockQuantity: sortOrder === 'asc' ? 'asc' : 'desc' } :
+              { createdAt: sortOrder === 'asc' ? 'asc' : 'desc' })
+        },
+        skip: offset,
+        take: limitNum
+      }),
+      prisma.product.count({ where })
+    ]);
+
+    // Transform data to match inventory interface
+    const items = products.map(product => {
+      const inventory = product.inventory[0]; // Assuming one inventory record per product
+      const currentStock = product.stockQuantity || 0;
+      const reorderLevel = inventory?.reorderLevel || 10;
+      
+      let status = 'in_stock';
+      if (currentStock === 0) {
+        status = 'out_of_stock';
+      } else if (currentStock <= reorderLevel) {
+        status = 'low_stock';
+      } else if (currentStock <= reorderLevel) {
+        status = 'reorder_needed';
+      }
+
+      return {
+        id: product.id,
+        productId: product.id,
+        sku: product.id,
+        name: product.title,
+        category: product.category?.name || 'Uncategorized',
+        currentStock,
+        reservedStock: inventory?.reserved || 0,
+        availableStock: currentStock - (inventory?.reserved || 0),
+        reorderLevel,
+        reorderQuantity: inventory?.reorderQuantity || 50,
+        unitCost: Number(inventory?.costPrice || product.price),
+        totalValue: currentStock * Number(inventory?.costPrice || product.price),
+        lastUpdated: product.updatedAt.toISOString(),
+        location: inventory?.warehouse?.name || 'Main Warehouse',
+        supplier: 'Default Supplier',
+        status
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching inventory:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: 'Failed to fetch inventory data'
+      }
+    });
+  }
+});
+
 export default router;

@@ -1239,4 +1239,164 @@ router.post('/webhook', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/wallet/analytics - Get wallet analytics
+router.get('/analytics', authenticate, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    
+    // Get current date boundaries
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    
+    const [
+      totalInflow,
+      totalOutflow,
+      monthlyInflow,
+      monthlyOutflow,
+      lastMonthInflow,
+      lastMonthOutflow,
+      transactionCount,
+      recentTransactions
+    ] = await Promise.all([
+      // Total inflow (credit transactions)
+      prisma.walletTransaction.aggregate({
+        where: {
+          walletId: userId,
+          transactionType: 'credit'
+        },
+        _sum: { amount: true }
+      }),
+      
+      // Total outflow (debit transactions)
+      prisma.walletTransaction.aggregate({
+        where: {
+          walletId: userId,
+          transactionType: 'debit'
+        },
+        _sum: { amount: true }
+      }),
+      
+      // This month inflow
+      prisma.walletTransaction.aggregate({
+        where: {
+          walletId: userId,
+          transactionType: 'credit',
+          createdAt: { gte: startOfMonth }
+        },
+        _sum: { amount: true }
+      }),
+      
+      // This month outflow
+      prisma.walletTransaction.aggregate({
+        where: {
+          walletId: userId,
+          transactionType: 'debit',
+          createdAt: { gte: startOfMonth }
+        },
+        _sum: { amount: true }
+      }),
+      
+      // Last month inflow
+      prisma.walletTransaction.aggregate({
+        where: {
+          walletId: userId,
+          transactionType: 'credit',
+          createdAt: { 
+            gte: startOfLastMonth,
+            lte: endOfLastMonth
+          }
+        },
+        _sum: { amount: true }
+      }),
+      
+      // Last month outflow
+      prisma.walletTransaction.aggregate({
+        where: {
+          walletId: userId,
+          transactionType: 'debit',
+          createdAt: { 
+            gte: startOfLastMonth,
+            lte: endOfLastMonth
+          }
+        },
+        _sum: { amount: true }
+      }),
+      
+      // Transaction count
+      prisma.walletTransaction.count({
+        where: { walletId: userId }
+      }),
+      
+      // Recent transactions
+      prisma.walletTransaction.findMany({
+        where: { walletId: userId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          amount: true,
+          transactionType: true,
+          description: true,
+          createdAt: true,
+          balanceAfter: true
+        }
+      })
+    ]);
+    
+    const totalInflowAmount = Number(totalInflow._sum.amount || 0);
+    const totalOutflowAmount = Number(totalOutflow._sum.amount || 0);
+    const monthlyInflowAmount = Number(monthlyInflow._sum.amount || 0);
+    const monthlyOutflowAmount = Number(monthlyOutflow._sum.amount || 0);
+    const lastMonthInflowAmount = Number(lastMonthInflow._sum.amount || 0);
+    const lastMonthOutflowAmount = Number(lastMonthOutflow._sum.amount || 0);
+    
+    // Calculate percentage changes
+    const inflowChange = lastMonthInflowAmount > 0 
+      ? ((monthlyInflowAmount - lastMonthInflowAmount) / lastMonthInflowAmount) * 100 
+      : 0;
+    const outflowChange = lastMonthOutflowAmount > 0 
+      ? ((monthlyOutflowAmount - lastMonthOutflowAmount) / lastMonthOutflowAmount) * 100 
+      : 0;
+    
+    const averageTransactionAmount = transactionCount > 0 
+      ? (totalInflowAmount + totalOutflowAmount) / transactionCount 
+      : 0;
+    
+    const analytics = {
+      totalInflow: totalInflowAmount,
+      totalOutflow: totalOutflowAmount,
+      monthlyInflow: monthlyInflowAmount,
+      monthlyOutflow: monthlyOutflowAmount,
+      inflowChange: Math.round(inflowChange * 100) / 100,
+      outflowChange: Math.round(outflowChange * 100) / 100,
+      transactionCount,
+      averageTransactionAmount: Math.round(averageTransactionAmount * 100) / 100,
+      recentTransactions: recentTransactions.map(tx => ({
+        id: tx.id,
+        amount: Number(tx.amount),
+        type: tx.transactionType,
+        description: tx.description,
+        date: tx.createdAt,
+        balanceAfter: Number(tx.balanceAfter || 0)
+      }))
+    };
+    
+    res.json({
+      success: true,
+      data: analytics
+    });
+  } catch (error) {
+    console.error('Error fetching wallet analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: 'Failed to fetch wallet analytics'
+      }
+    });
+  }
+});
+
 export default router;

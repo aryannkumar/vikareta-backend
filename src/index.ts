@@ -83,6 +83,14 @@ import customersRoutes from '@/routes/customers';
 import shipmentsRoutes from '@/routes/shipments';
 import analyticsBackendRoutes from '@/routes/analytics';
 import messagesRoutes from '@/routes/messages';
+import supportRoutes from '@/routes/support';
+import deliveryPartnersRoutes from '@/routes/delivery-partners';
+import categoriesRoutes from '@/routes/categories';
+import adminMainRoutes from '@/routes/admin';
+import adminOrdersRoutes from '@/routes/admin-orders';
+import adminProductsRoutes from '@/routes/admin-products';
+import adminServicesRoutes from '@/routes/admin-services';
+import adminSystemRoutes from '@/routes/admin-system';
 import { setupWebSocket } from '@/routes/websocket';
 
 const app = express();
@@ -458,6 +466,9 @@ app.use('/api/customers', apiLimiter, customersRoutes);
 app.use('/api/shipments', apiLimiter, shipmentsRoutes);
 app.use('/api/analytics-backend', apiLimiter, analyticsBackendRoutes);
 app.use('/api/messages', apiLimiter, messagesRoutes);
+app.use('/api/support', apiLimiter, supportRoutes);
+app.use('/api/delivery-partners', apiLimiter, deliveryPartnersRoutes);
+app.use('/api/categories', apiLimiter, categoriesRoutes);
 
 // Admin routes (with /api prefix) - with explicit CORS handling
 app.use('/api/admin', (req, res, next) => {
@@ -476,8 +487,13 @@ app.use('/api/admin', (req, res, next) => {
   }
 
   next();
-}, apiLimiter, adminRoutes);
+}, apiLimiter, adminMainRoutes);
 
+// Additional admin routes
+app.use('/api/admin/orders', apiLimiter, adminOrdersRoutes);
+app.use('/api/admin/products', apiLimiter, adminProductsRoutes);
+app.use('/api/admin/services', apiLimiter, adminServicesRoutes);
+app.use('/api/admin/system', apiLimiter, adminSystemRoutes);
 app.use('/api/admin/notifications', apiLimiter, adminNotificationRoutes);
 app.use('/api/admin/workers', apiLimiter, workerManagementRoutes);
 app.use('/api/dashboard', apiLimiter, dashboardRoutes);

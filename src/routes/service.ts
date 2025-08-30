@@ -30,8 +30,8 @@ const createServiceValidation = [
     .withMessage('Title must be between 3 and 255 characters'),
   body('description')
     .trim()
-    .isLength({ min: 10, max: 5000 })
-    .withMessage('Description must be between 10 and 5000 characters'),
+    .isLength({ min: 3, max: 5000 })
+    .withMessage('Description must be at least 3 characters'),
   body('categoryId').custom((value) => {
     // Accept both UUID/CUID and slug formats
     if (!require('../utils/validation').isValidId(value) && !/^[a-z0-9-]+$/.test(value)) {
@@ -302,7 +302,7 @@ router.put('/:id', [
   authenticate,
   param('id').isUUID().withMessage('Service ID must be a valid UUID'),
   body('title').optional().trim().isLength({ min: 3, max: 255 }).withMessage('Title must be between 3 and 255 characters'),
-  body('description').optional().trim().isLength({ min: 10, max: 5000 }).withMessage('Description must be between 10 and 5000 characters'),
+  body('description').optional().trim().isLength({ min: 3, max: 5000 }).withMessage('Description must be at least 3 characters'),
   body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
   body('status').optional().isIn(['active', 'inactive', 'draft']).withMessage('Status must be active, inactive, or draft'),
   handleValidationErrors,

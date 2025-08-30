@@ -151,6 +151,10 @@ model User {
   inventoryMovements        InventoryMovement[]
   securityEvents            SecurityEvent[]
   loginSessions             LoginSession[]
+  supportTickets            SupportTicket[]
+  assignedTickets           SupportTicket[]           @relation("AssignedTickets")
+  supportMessages           SupportMessage[]          @relation("SupportMessages")
+  deliveryPreferences       SellerDeliveryPreference[] @relation("SellerDeliveryPreferences")
 
   @@map("users")
 }
@@ -1097,6 +1101,7 @@ model Shipment {
 
   order           Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
   logisticsProvider LogisticsProvider? @relation(fields: [providerId], references: [id])
+  deliveryPartner DeliveryPartner?   @relation("DeliveryPartnerShipments", fields: [providerId], references: [id])
 
   @@index([trackingNumber])
   @@index([status])
@@ -1639,3 +1644,89 @@ model LoginSession {
 }
 
 // End of schema - duplicate models removed
+/
+/ ================================
+// SUPPORT SYSTEM
+// ================================
+
+model SupportTicket {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketNumber String    @unique @map("ticket_number") @db.VarChar(50)
+  subject      String    @db.VarChar(200)
+  description  String    @db.Text
+  category     String    @db.VarChar(50) // technical, billing, account, product, general
+  priority     String    @db.VarChar(20) // low, medium, high, urgent
+  status       String    @default("open") @db.VarChar(20) // open, in_progress, waiting_response, resolved, closed
+  userId       String    @map("user_id") @db.Uuid
+  assignedToId String?   @map("assigned_to_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  resolvedAt   DateTime? @map("resolved_at")
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedTo User?             @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  messages   SupportMessage[]
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([assignedToId, status])
+  @@map("support_tickets")
+}
+
+model SupportMessage {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content       String   @db.Text
+  ticketId      String   @map("ticket_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  isFromSupport Boolean  @default(false) @map("is_from_support")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User          @relation("SupportMessages", fields: [userId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("support_messages")
+}/
+/ ================================
+// DELIVERY PARTNER MANAGEMENT
+// ================================
+
+model DeliveryPartner {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String    @db.VarChar(100)
+  code              String    @unique @db.VarChar(20)
+  apiEndpoint       String?   @map("api_endpoint") @db.VarChar(500)
+  apiKey            String?   @map("api_key") @db.VarChar(255)
+  supportedServices Json?     @map("supported_services") // ['standard', 'express', 'overnight']
+  serviceAreas      Json?     @map("service_areas") // Supported pincodes/cities
+  isActive          Boolean   @default(true) @map("is_active")
+  priority          Int       @default(0)
+  rateCard          Json?     @map("rate_card") // Pricing structure
+  contactInfo       Json?     @map("contact_info") // Contact details
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  sellerPreferences SellerDeliveryPreference[]
+  shipments         Shipment[] @relation("DeliveryPartnerShipments")
+
+  @@index([isActive, priority])
+  @@map("delivery_partners")
+}
+
+model SellerDeliveryPreference {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sellerId          String   @map("seller_id") @db.Uuid
+  deliveryPartnerId String   @map("delivery_partner_id") @db.Uuid
+  priority          Int      @default(0)
+  isActive          Boolean  @default(true) @map("is_active")
+  serviceTypes      Json?    @map("service_types") // Preferred service types
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  seller          User            @relation("SellerDeliveryPreferences", fields: [sellerId], references: [id], onDelete: Cascade)
+  deliveryPartner DeliveryPartner @relation(fields: [deliveryPartnerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, deliveryPartnerId])
+  @@index([sellerId, priority])
+  @@map("seller_delivery_preferences")
+}
