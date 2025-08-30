@@ -99,6 +99,12 @@ model User {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
+  // 2FA fields
+  twoFactorEnabled      Boolean               @default(false) @map("two_factor_enabled")
+  twoFactorSecret       String?               @map("two_factor_secret")
+  tempTwoFactorSecret   String?               @map("temp_two_factor_secret")
+  twoFactorBackupCodes  String[]              @default([]) @map("two_factor_backup_codes")
+
   // Relations
   wallet                    Wallet?
   products                  Product[]
@@ -130,6 +136,19 @@ model User {
   adApprovalReviews         AdApproval[] @relation("AdApprovalReviewer")
   wishlist                  Wishlist[]
   businessWishlist          Wishlist[] @relation("BusinessWishlist")
+  
+  // New relations for dashboard models
+  announcements             Announcement[] @relation("AnnouncementAuthor")
+  businessProfile           BusinessProfile?
+  securitySettings          SecuritySettings?
+  notificationSettings      NotificationSettings?
+  integrations              Integration[]
+  webhooks                  Webhook[]
+  apiKeys                   ApiKey[]
+  warehouses                Warehouse[]
+  inventoryMovements        InventoryMovement[]
+  securityEvents            SecurityEvent[]
+  loginSessions             LoginSession[]
 
   @@map("users")
 }
@@ -210,6 +229,7 @@ model Product {
   featuredProducts     FeaturedProduct[]
   reviews              Review[]
   wishlist             Wishlist[]
+  inventory            Inventory[]
 
   @@map("products")
 }
@@ -1378,6 +1398,219 @@ model Wishlist {
   @@unique([userId, businessId])
   @@index([userId, createdAt])
   @@map("wishlists")
+}
+
+// ================================
+// ADDITIONAL MODELS FOR DASHBOARD
+// ================================
+
+model Announcement {
+  id              String   @id @default(cuid())
+  title           String
+  content         String
+  type            String   // 'info', 'warning', 'success', 'urgent'
+  status          String   @default("draft") // 'draft', 'published', 'scheduled', 'archived'
+  targetAudience  String   @default("all") // 'all', 'buyers', 'sellers', 'premium'
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
+  expiresAt       DateTime?
+  viewCount       Int      @default(0)
+  clickCount      Int      @default(0)
+  authorId        String   @db.Uuid
+  author          User     @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("announcements")
+}
+
+model BusinessProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName  String
+  businessType String?
+  industry     String?
+  description  String?
+  logo         String?
+  website      String?
+  email        String
+  phone        String
+  address      Json     // { street, city, state, country, postalCode }
+  taxInfo      Json     // { taxId, gstNumber, panNumber }
+  bankDetails  Json     // { accountName, accountNumber, bankName, ifscCode, swiftCode }
+  verification Json     // { isVerified, verificationLevel, documents }
+  settings     Json     // { allowPublicProfile, showContactInfo, autoAcceptOrders, etc }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("business_profiles")
+}
+
+model SecuritySettings {
+  id             String   @id @default(cuid())
+  userId         String   @unique @db.Uuid
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  twoFactorAuth  Json     // { enabled, method, backupCodes, lastUsed }
+  passwordPolicy Json     // { requireUppercase, requireLowercase, etc }
+  loginSecurity  Json     // { maxFailedAttempts, lockoutDuration, etc }
+  notifications  Json     // { loginAlerts, passwordChanges, etc }
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("security_settings")
+}
+
+model NotificationSettings {
+  id          String   @id @default(cuid())
+  userId      String   @unique @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email       Json     // { enabled, address, frequency, categories }
+  sms         Json     // { enabled, phoneNumber, categories }
+  push        Json     // { enabled, categories }
+  inApp       Json     // { enabled, sound, desktop, categories }
+  schedule    Json     // { quietHours, workingDays }
+  preferences Json     // { language, digestFrequency, marketingEmails }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("notification_settings")
+}
+
+model Integration {
+  id          String    @id @default(cuid())
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider    String    // 'stripe', 'paypal', 'fedex', etc
+  status      String    @default("disconnected") // 'connected', 'disconnected', 'error', 'pending'
+  isEnabled   Boolean   @default(false)
+  config      Json      @default("{}")
+  credentials Json      @default("{}")
+  connectedAt DateTime?
+  lastSync    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, provider])
+  @@map("integrations")
+}
+
+model Webhook {
+  id           String    @id @default(cuid())
+  userId       String    @db.Uuid
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  url          String
+  events       String[]  // Array of event types
+  secret       String
+  isActive     Boolean   @default(true)
+  successCount Int       @default(0)
+  failureCount Int       @default(0)
+  lastTriggered DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("webhooks")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  key         String    @unique
+  permissions String[]  // Array of permissions
+  isActive    Boolean   @default(true)
+  lastUsed    DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("api_keys")
+}
+
+model Warehouse {
+  id        String      @id @default(cuid())
+  userId    String      @db.Uuid
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  location  String
+  address   Json?       // Full address details
+  isActive  Boolean     @default(true)
+  inventory Inventory[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@map("warehouses")
+}
+
+model Inventory {
+  id                    String              @id @default(cuid())
+  productId             String              @db.Uuid
+  product               Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId           String
+  warehouse             Warehouse           @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  available             Int                 @default(0)
+  reserved              Int                 @default(0)
+  reorderLevel          Int                 @default(0)
+  maxStock              Int                 @default(1000)
+  costPrice             Float?
+  sellingPrice          Float?
+  totalValue            Float?
+  lastMovementType      String?             // 'in', 'out', 'adjustment'
+  lastMovementQuantity  Int?
+  velocity              Float               @default(0) // Items per day
+  movements             InventoryMovement[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([productId, warehouseId])
+  @@map("inventory")
+}
+
+model InventoryMovement {
+  id          String    @id @default(cuid())
+  inventoryId String
+  inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  type        String    // 'in', 'out', 'adjustment', 'transfer'
+  quantity    Int
+  reason      String
+  reference   String?   // Order ID, Transfer ID, etc
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@map("inventory_movements")
+}
+
+model SecurityEvent {
+  id          String   @id @default(cuid())
+  userId      String   @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // 'login', 'password_change', 'failed_login', etc
+  description String
+  ip          String
+  userAgent   String?
+  location    String?
+  severity    String   @default("low") // 'low', 'medium', 'high'
+  createdAt   DateTime @default(now())
+
+  @@map("security_events")
+}
+
+model LoginSession {
+  id           String   @id @default(cuid())
+  userId       String   @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionToken String   @unique
+  deviceInfo   Json     // { browser, os, device }
+  location     Json     // { city, country, ip }
+  isCurrent    Boolean  @default(false)
+  lastActivity DateTime @default(now())
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@map("login_sessions")
 }
 
 // End of schema - duplicate models removed

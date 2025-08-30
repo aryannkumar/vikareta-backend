@@ -64,7 +64,7 @@ import privacyRoutes from '@/routes/privacy';
 import fraudRoutes from '@/routes/fraud';
 import kycRoutes from '@/routes/kyc';
 import adsRoutes from '@/routes/ads';
-import { analyticsRoutes } from '@/routes/analytics';
+import analyticsRoutes from '@/routes/analytics';
 import adminNotificationRoutes from '@/routes/admin-notifications';
 import { workerManagementRoutes } from '@/routes/worker-management';
 import { serviceRoutes } from '@/routes/service';
@@ -79,6 +79,9 @@ import statsRoutes from '@/routes/stats';
 import { subcategoryRoutes } from '@/routes/subcategory';
 import providerRoutes from '@/routes/provider';
 import wishlistRoutes from '@/routes/wishlist';
+import customersRoutes from '@/routes/customers';
+import shipmentsRoutes from '@/routes/shipments';
+import analyticsBackendRoutes from '@/routes/analytics';
 
 const app = express();
 
@@ -449,6 +452,9 @@ app.use('/api/users', (req, res, next) => {
 }, apiLimiter, userRoutes);
 app.use('/api/wallet', apiLimiter, walletRoutes);
 app.use('/api/wishlist', apiLimiter, wishlistRoutes);
+app.use('/api/customers', apiLimiter, customersRoutes);
+app.use('/api/shipments', apiLimiter, shipmentsRoutes);
+app.use('/api/analytics-backend', apiLimiter, analyticsBackendRoutes);
 
 // Admin routes (with /api prefix) - with explicit CORS handling
 app.use('/api/admin', (req, res, next) => {

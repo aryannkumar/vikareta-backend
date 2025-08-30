@@ -24,7 +24,7 @@ import walletRoutes from './wallet';
 import paymentRoutes from './payment';
 import { userRoutes } from './user';
 import { dashboardRoutes } from './dashboard';
-import { analyticsRoutes } from './analytics';
+import analyticsRoutes from './analytics';
 import { searchRoutes } from './search';
 import { marketplaceRoutes } from './marketplace';
 import dealRoutes from './deal';
@@ -50,6 +50,12 @@ import providerRoutes from './provider';
 import { adminRoutes } from './admin';
 import adminNotificationRoutes from './admin-notifications';
 import { workerManagementRoutes } from './worker-management';
+
+// New dashboard feature routes
+import communicationsRoutes from './communications';
+import settingsRoutes from './settings';
+import integrationsRoutes from './integrations';
+import inventoryRoutes from './inventory';
 
 /**
  * Route Configuration Interface
@@ -443,6 +449,39 @@ export class RouteRegistry {
       router: workerManagementRoutes,
       middleware: [apiLimiter],
       description: 'Background worker management',
+      version: 'v1',
+    });
+
+    // New dashboard feature routes
+    this.addRoute({
+      path: '/communications',
+      router: communicationsRoutes,
+      middleware: [apiLimiter, authenticate],
+      description: 'Communications and announcements',
+      version: 'v1',
+    });
+
+    this.addRoute({
+      path: '/settings',
+      router: settingsRoutes,
+      middleware: [apiLimiter, authenticate],
+      description: 'User and business settings',
+      version: 'v1',
+    });
+
+    this.addRoute({
+      path: '/integrations',
+      router: integrationsRoutes,
+      middleware: [apiLimiter, authenticate],
+      description: 'Third-party integrations and webhooks',
+      version: 'v1',
+    });
+
+    this.addRoute({
+      path: '/inventory',
+      router: inventoryRoutes,
+      middleware: [apiLimiter, authenticate],
+      description: 'Inventory management',
       version: 'v1',
     });
   }
