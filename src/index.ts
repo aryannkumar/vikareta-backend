@@ -91,6 +91,9 @@ import adminOrdersRoutes from '@/routes/admin-orders';
 import adminProductsRoutes from '@/routes/admin-products';
 import adminServicesRoutes from '@/routes/admin-services';
 import adminSystemRoutes from '@/routes/admin-system';
+import settingsRoutes from '@/routes/settings';
+import integrationsRoutes from '@/routes/integrations';
+import accountRoutes from '@/routes/account';
 import { setupWebSocket } from '@/routes/websocket';
 
 const app = express();
@@ -497,6 +500,9 @@ app.use('/api/admin/system', apiLimiter, adminSystemRoutes);
 app.use('/api/admin/notifications', apiLimiter, adminNotificationRoutes);
 app.use('/api/admin/workers', apiLimiter, workerManagementRoutes);
 app.use('/api/dashboard', apiLimiter, dashboardRoutes);
+app.use('/api/settings', apiLimiter, authenticate, settingsRoutes);
+app.use('/api/integrations', apiLimiter, authenticate, integrationsRoutes);
+app.use('/api/account', apiLimiter, authenticate, accountRoutes);
 
 // Error handling middleware
 app.use(notFoundHandler);
