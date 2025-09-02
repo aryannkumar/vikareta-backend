@@ -1131,7 +1131,7 @@ model Shipment {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   order           Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  logisticsProvider LogisticsProvider? @relation(fields: [providerId], references: [id], map: "shipments_logistics_provider_fkey")
+  logisticsProvider LogisticsProvider? @relation(fields: [providerId], references: [id])
   deliveryPartner DeliveryPartner?   @relation("DeliveryPartnerShipments", fields: [providerId], references: [id], map: "shipments_delivery_partner_fkey")
 
   @@index([trackingNumber])

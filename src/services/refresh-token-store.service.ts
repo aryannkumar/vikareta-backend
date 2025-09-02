@@ -7,7 +7,7 @@ type RefreshEntry = {
   expiresAt: string;
 };
 
-class RefreshTokenStore {
+class RefreshTokenStoreService {
   private inMemory = new Map<string, RefreshEntry>();
 
   constructor() {
@@ -22,7 +22,7 @@ class RefreshTokenStore {
       const ok = await cacheService.set('refreshToken', token, entry, ttlSeconds);
       if (ok) return;
     } catch (err) {
-      logger.warn('RefreshTokenStore: cacheService set failed, falling back to memory', err && (err as any).message ? (err as any).message : err);
+      logger.warn('RefreshTokenStoreService: cacheService set failed, falling back to memory', err && (err as any).message ? (err as any).message : err);
     }
 
     // Fallback to in-memory
@@ -34,7 +34,7 @@ class RefreshTokenStore {
       const raw = await cacheService.get<RefreshEntry>('refreshToken', token);
       if (raw) return raw;
     } catch (err) {
-      logger.warn('RefreshTokenStore: cacheService get failed, falling back to memory', err && (err as any).message ? (err as any).message : err);
+      logger.warn('RefreshTokenStoreService: cacheService get failed, falling back to memory', err && (err as any).message ? (err as any).message : err);
     }
 
     const entry = this.inMemory.get(token) || null;
@@ -52,11 +52,11 @@ class RefreshTokenStore {
       const ok = await cacheService.delete('refreshToken', token);
       if (ok) return;
     } catch (err) {
-      logger.warn('RefreshTokenStore: cacheService delete failed, falling back to memory', err && (err as any).message ? (err as any).message : err);
+      logger.warn('RefreshTokenStoreService: cacheService delete failed, falling back to memory', err && (err as any).message ? (err as any).message : err);
     }
 
     this.inMemory.delete(token);
   }
 }
 
-export const refreshTokenStore = new RefreshTokenStore();
+export const refreshTokenStoreService = new RefreshTokenStoreService();

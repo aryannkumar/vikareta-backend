@@ -84,7 +84,7 @@ export class FeaturedProductService {
       WHERE ${whereClause}
       ORDER BY 
         CASE fp.promotion_type 
-          WHEN 'premium' THEN 1 
+          WHEN 'PREMIUM' THEN 1 
           WHEN 'organic' THEN 2 
           ELSE 3 
         END,
@@ -132,7 +132,7 @@ export class FeaturedProductService {
   static async promoteProduct(data: {
     productId: string;
     supplierId: string;
-    promotionType: 'standard' | 'premium' | 'organic';
+    promotionType: 'VERIFIED' | 'PREMIUM' | 'organic';
     duration: number;
     paymentAmount: number;
   }): Promise<string> {
@@ -163,7 +163,7 @@ export class FeaturedProductService {
   static async removeFeaturedStatus(productId: string, supplierId: string): Promise<void> {
     const query = `
       UPDATE featured_products 
-      SET status = 'cancelled', updated_at = NOW()
+      SET status = 'CANCELLED', updated_at = NOW()
       WHERE product_id = ? AND supplier_id = ? AND status = 'active'
     `;
     
@@ -230,7 +230,7 @@ export class FeaturedProductService {
   }
 
   // Track analytics
-  static async trackEvent(
+  static async async trackEvent(orderId: string
     productId: string,
     eventType: 'view' | 'click' | 'order',
     userId?: string,

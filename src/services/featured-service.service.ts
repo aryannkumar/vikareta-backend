@@ -92,7 +92,7 @@ export class FeaturedServiceService {
       WHERE ${whereClause}
       ORDER BY 
         CASE fs.promotion_type 
-          WHEN 'premium' THEN 1 
+          WHEN 'PREMIUM' THEN 1 
           WHEN 'creative' THEN 2 
           ELSE 3 
         END,
@@ -141,7 +141,7 @@ export class FeaturedServiceService {
   static async promoteService(data: {
     serviceId: string;
     providerId: string;
-    promotionType: 'standard' | 'premium' | 'creative';
+    promotionType: 'VERIFIED' | 'PREMIUM' | 'creative';
     duration: number;
     paymentAmount: number;
   }): Promise<string> {
@@ -172,7 +172,7 @@ export class FeaturedServiceService {
   static async removeFeaturedStatus(serviceId: string, providerId: string): Promise<void> {
     const query = `
       UPDATE featured_services 
-      SET status = 'cancelled', updated_at = NOW()
+      SET status = 'CANCELLED', updated_at = NOW()
       WHERE service_id = ? AND provider_id = ? AND status = 'active'
     `;
     
@@ -243,7 +243,7 @@ export class FeaturedServiceService {
   }
 
   // Track analytics
-  static async trackEvent(
+  static async async trackEvent(orderId: string
     serviceId: string,
     eventType: 'view' | 'inquiry' | 'booking',
     userId?: string,
