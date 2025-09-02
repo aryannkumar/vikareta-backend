@@ -1,6 +1,6 @@
 /**
  * Shipment Service
- * Manages shipments with proper schema alignment
+ * Manages shipments and delivery tracking with proper schema alignment
  */
 
 import { PrismaClient, Shipment } from '@prisma/client';
@@ -19,9 +19,14 @@ export class ShipmentService {
     orderId: string;
     providerId?: string;
     trackingNumber?: string;
-    estimatedDelivery?: Date;
-    shippingAddress: any;
+    carrier?: string;
+    pickupAddress?: any;
+    deliveryAddress?: any;
     packageDetails?: any;
+    shippingCost?: number;
+    service?: string;
+    provider?: string;
+    estimatedDelivery?: Date;
   }): Promise<Shipment> {
     try {
       return await this.prisma.shipment.create({
@@ -29,29 +34,24 @@ export class ShipmentService {
           orderId: data.orderId,
           providerId: data.providerId,
           trackingNumber: data.trackingNumber,
+          carrier: data.carrier,
           status: 'pending',
+          pickupAddress: data.pickupAddress,
+          deliveryAddress: data.deliveryAddress,
+          packageDetails: data.packageDetails,
+          shippingCost: data.shippingCost,
+          service: data.service,
+          provider: data.provider,
           estimatedDelivery: data.estimatedDelivery,
-          shippingAddress: data.shippingAddress,
-          packageDetails: data.packageDetails || {},
         },
         include: {
           order: {
             select: {
               id: true,
               orderNumber: true,
-              buyer: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-              seller: {
-                select: {
-                  id: true,
-                  businessName: true,
-                },
-              },
+              buyerId: true,
+              sellerId: true,
+              totalAmount: true,
             },
           },
           logisticsProvider: {
@@ -59,6 +59,7 @@ export class ShipmentService {
               id: true,
               name: true,
               displayName: true,
+              code: true,
             },
           },
         },
@@ -81,16 +82,22 @@ export class ShipmentService {
             select: {
               id: true,
               orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              totalAmount: true,
               buyer: {
                 select: {
                   id: true,
                   firstName: true,
                   lastName: true,
+                  email: true,
                 },
               },
               seller: {
                 select: {
                   id: true,
+                  firstName: true,
+                  lastName: true,
                   businessName: true,
                 },
               },
@@ -101,6 +108,7 @@ export class ShipmentService {
               id: true,
               name: true,
               displayName: true,
+              code: true,
             },
           },
         },
@@ -119,11 +127,21 @@ export class ShipmentService {
       return await this.prisma.shipment.findUnique({
         where: { orderId },
         include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              totalAmount: true,
+            },
+          },
           logisticsProvider: {
             select: {
               id: true,
               name: true,
               displayName: true,
+              code: true,
             },
           },
         },
@@ -135,54 +153,19 @@ export class ShipmentService {
   }
 
   /**
-   * Get shipment by tracking number
-   */
-  async getShipmentByTrackingNumber(trackingNumber: string): Promise<Shipment | null> {
-    try {
-      return await this.prisma.shipment.findUnique({
-        where: { trackingNumber },
-        include: {
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-              buyer: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-              seller: {
-                select: {
-                  id: true,
-                  businessName: true,
-                },
-              },
-            },
-          },
-          logisticsProvider: {
-            select: {
-              id: true,
-              name: true,
-              displayName: true,
-            },
-          },
-        },
-      });
-    } catch (error) {
-      console.error('Error fetching shipment by tracking number:', error);
-      throw new Error('Failed to fetch shipment by tracking number');
-    }
-  }
-
-  /**
    * Update shipment status
    */
   async updateShipmentStatus(
     id: string,
     status: string,
-    notes?: string
+    trackingData?: {
+      trackingNumber?: string;
+      carrier?: string;
+      shippedAt?: Date;
+      deliveredAt?: Date;
+      deliveryProof?: string;
+      actualDelivery?: Date;
+    }
   ): Promise<Shipment> {
     try {
       const updateData: any = {
@@ -190,51 +173,40 @@ export class ShipmentService {
         updatedAt: new Date(),
       };
 
-      if (notes) updateData.notes = notes;
-
-      if (status === 'shipped' && !updateData.shippedAt) {
-        updateData.shippedAt = new Date();
-      } else if (status === 'delivered') {
-        updateData.deliveredAt = new Date();
+      if (trackingData) {
+        if (trackingData.trackingNumber) updateData.trackingNumber = trackingData.trackingNumber;
+        if (trackingData.carrier) updateData.carrier = trackingData.carrier;
+        if (trackingData.shippedAt) updateData.shippedAt = trackingData.shippedAt;
+        if (trackingData.deliveredAt) updateData.deliveredAt = trackingData.deliveredAt;
+        if (trackingData.deliveryProof) updateData.deliveryProof = trackingData.deliveryProof;
+        if (trackingData.actualDelivery) updateData.actualDelivery = trackingData.actualDelivery;
       }
 
       return await this.prisma.shipment.update({
         where: { id },
         data: updateData,
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+            },
+          },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+              code: true,
+            },
+          },
+        },
       });
     } catch (error) {
       console.error('Error updating shipment status:', error);
       throw new Error('Failed to update shipment status');
-    }
-  }
-
-  /**
-   * Update tracking number
-   */
-  async updateTrackingNumber(id: string, trackingNumber: string): Promise<Shipment> {
-    try {
-      return await this.prisma.shipment.update({
-        where: { id },
-        data: { trackingNumber },
-      });
-    } catch (error) {
-      console.error('Error updating tracking number:', error);
-      throw new Error('Failed to update tracking number');
-    }
-  }
-
-  /**
-   * Update estimated delivery
-   */
-  async updateEstimatedDelivery(id: string, estimatedDelivery: Date): Promise<Shipment> {
-    try {
-      return await this.prisma.shipment.update({
-        where: { id },
-        data: { estimatedDelivery },
-      });
-    } catch (error) {
-      console.error('Error updating estimated delivery:', error);
-      throw new Error('Failed to update estimated delivery');
     }
   }
 
@@ -250,19 +222,9 @@ export class ShipmentService {
             select: {
               id: true,
               orderNumber: true,
-              buyer: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-              seller: {
-                select: {
-                  id: true,
-                  businessName: true,
-                },
-              },
+              buyerId: true,
+              sellerId: true,
+              totalAmount: true,
             },
           },
           logisticsProvider: {
@@ -270,6 +232,7 @@ export class ShipmentService {
               id: true,
               name: true,
               displayName: true,
+              code: true,
             },
           },
         },
@@ -293,6 +256,17 @@ export class ShipmentService {
             select: {
               id: true,
               orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              totalAmount: true,
+            },
+          },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+              code: true,
             },
           },
         },
@@ -305,30 +279,26 @@ export class ShipmentService {
   }
 
   /**
-   * Get shipments for seller
+   * Track shipment by tracking number
    */
-  async getShipmentsForSeller(sellerId: string, status?: string): Promise<Shipment[]> {
+  async trackShipment(trackingNumber: string): Promise<Shipment | null> {
     try {
-      const where: any = {
-        order: { sellerId },
-      };
-
-      if (status) {
-        where.status = status;
-      }
-
-      return await this.prisma.shipment.findMany({
-        where,
+      return await this.prisma.shipment.findUnique({
+        where: { trackingNumber },
         include: {
           order: {
             select: {
               id: true,
               orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              totalAmount: true,
               buyer: {
                 select: {
                   id: true,
                   firstName: true,
                   lastName: true,
+                  email: true,
                 },
               },
             },
@@ -338,140 +308,118 @@ export class ShipmentService {
               id: true,
               name: true,
               displayName: true,
+              code: true,
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
       });
     } catch (error) {
-      console.error('Error fetching shipments for seller:', error);
-      throw new Error('Failed to fetch shipments for seller');
+      console.error('Error tracking shipment:', error);
+      throw new Error('Failed to track shipment');
     }
   }
 
   /**
-   * Get shipments for buyer
+   * Request return
    */
-  async getShipmentsForBuyer(buyerId: string, status?: string): Promise<Shipment[]> {
+  async requestReturn(
+    id: string,
+    returnReason: string
+  ): Promise<Shipment> {
     try {
-      const where: any = {
-        order: { buyerId },
-      };
-
-      if (status) {
-        where.status = status;
-      }
-
-      return await this.prisma.shipment.findMany({
-        where,
-        include: {
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-              seller: {
-                select: {
-                  id: true,
-                  businessName: true,
-                },
-              },
-            },
-          },
-          logisticsProvider: {
-            select: {
-              id: true,
-              name: true,
-              displayName: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (error) {
-      console.error('Error fetching shipments for buyer:', error);
-      throw new Error('Failed to fetch shipments for buyer');
-    }
-  }
-
-  /**
-   * Get delayed shipments
-   */
-  async getDelayedShipments(): Promise<Shipment[]> {
-    try {
-      const now = new Date();
-
-      return await this.prisma.shipment.findMany({
-        where: {
-          status: {
-            in: ['pending', 'shipped', 'in_transit'],
-          },
-          estimatedDelivery: {
-            lt: now,
-          },
+      return await this.prisma.shipment.update({
+        where: { id },
+        data: {
+          returnRequested: true,
+          returnReason,
+          updatedAt: new Date(),
         },
         include: {
           order: {
             select: {
               id: true,
               orderNumber: true,
-              buyer: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-              seller: {
-                select: {
-                  id: true,
-                  businessName: true,
-                },
-              },
-            },
-          },
-          logisticsProvider: {
-            select: {
-              id: true,
-              name: true,
-              displayName: true,
+              buyerId: true,
+              sellerId: true,
             },
           },
         },
-        orderBy: { estimatedDelivery: 'asc' },
       });
     } catch (error) {
-      console.error('Error fetching delayed shipments:', error);
-      throw new Error('Failed to fetch delayed shipments');
+      console.error('Error requesting return:', error);
+      throw new Error('Failed to request return');
     }
   }
 
   /**
    * Get shipment statistics
    */
-  async getShipmentStats(): Promise<{
+  async getShipmentStats(providerId?: string): Promise<{
     total: number;
     pending: number;
     shipped: number;
-    inTransit: number;
     delivered: number;
-    delayed: number;
+    returned: number;
+    avgDeliveryTime: number;
+    totalShippingCost: number;
   }> {
     try {
-      const [total, pending, shipped, inTransit, delivered, delayed] = await Promise.all([
-        this.prisma.shipment.count(),
-        this.prisma.shipment.count({ where: { status: 'pending' } }),
-        this.prisma.shipment.count({ where: { status: 'shipped' } }),
-        this.prisma.shipment.count({ where: { status: 'in_transit' } }),
-        this.prisma.shipment.count({ where: { status: 'delivered' } }),
-        this.prisma.shipment.count({
+      const where = providerId ? { providerId } : {};
+
+      const [
+        total,
+        pending,
+        shipped,
+        delivered,
+        returned,
+        shippingCostSum,
+        deliveredShipments
+      ] = await Promise.all([
+        this.prisma.shipment.count({ where }),
+        this.prisma.shipment.count({ where: { ...where, status: 'pending' } }),
+        this.prisma.shipment.count({ where: { ...where, status: 'shipped' } }),
+        this.prisma.shipment.count({ where: { ...where, status: 'delivered' } }),
+        this.prisma.shipment.count({ where: { ...where, returnRequested: true } }),
+        this.prisma.shipment.aggregate({
+          where,
+          _sum: { shippingCost: true },
+        }),
+        this.prisma.shipment.findMany({
           where: {
-            status: { in: ['pending', 'shipped', 'in_transit'] },
-            estimatedDelivery: { lt: new Date() },
+            ...where,
+            status: 'delivered',
+            shippedAt: { not: null },
+            deliveredAt: { not: null },
+          },
+          select: {
+            shippedAt: true,
+            deliveredAt: true,
           },
         }),
       ]);
 
-      return { total, pending, shipped, inTransit, delivered, delayed };
+      // Calculate average delivery time
+      let avgDeliveryTime = 0;
+      if (deliveredShipments.length > 0) {
+        const totalDeliveryTime = deliveredShipments.reduce((sum, shipment) => {
+          if (shipment.shippedAt && shipment.deliveredAt) {
+            const deliveryTime = shipment.deliveredAt.getTime() - shipment.shippedAt.getTime();
+            return sum + (deliveryTime / (1000 * 60 * 60 * 24)); // Convert to days
+          }
+          return sum;
+        }, 0);
+        avgDeliveryTime = totalDeliveryTime / deliveredShipments.length;
+      }
+
+      return {
+        total,
+        pending,
+        shipped,
+        delivered,
+        returned,
+        avgDeliveryTime: Math.round(avgDeliveryTime * 100) / 100,
+        totalShippingCost: Number(shippingCostSum._sum.shippingCost || 0),
+      };
     } catch (error) {
       console.error('Error fetching shipment stats:', error);
       throw new Error('Failed to fetch shipment stats');
@@ -479,16 +427,120 @@ export class ShipmentService {
   }
 
   /**
-   * Delete shipment
+   * Generate AWB number
    */
-  async deleteShipment(id: string): Promise<void> {
+  async generateAwbNumber(shipmentId: string): Promise<string> {
     try {
-      await this.prisma.shipment.delete({
+      const shipment = await this.getShipmentById(shipmentId);
+      if (!shipment) {
+        throw new Error('Shipment not found');
+      }
+
+      // Generate AWB number (Air Waybill)
+      const prefix = 'AWB';
+      const timestamp = Date.now().toString().slice(-8);
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const awbNumber = `${prefix}${timestamp}${random}`;
+
+      // Update shipment with AWB number
+      await this.prisma.shipment.update({
+        where: { id: shipmentId },
+        data: { awbNumber },
+      });
+
+      return awbNumber;
+    } catch (error) {
+      console.error('Error generating AWB number:', error);
+      throw new Error('Failed to generate AWB number');
+    }
+  }
+
+  /**
+   * Update package details
+   */
+  async updatePackageDetails(
+    id: string,
+    packageDetails: any
+  ): Promise<Shipment> {
+    try {
+      return await this.prisma.shipment.update({
         where: { id },
+        data: {
+          packageDetails,
+          updatedAt: new Date(),
+        },
       });
     } catch (error) {
-      console.error('Error deleting shipment:', error);
-      throw new Error('Failed to delete shipment');
+      console.error('Error updating package details:', error);
+      throw new Error('Failed to update package details');
+    }
+  }
+
+  /**
+   * Get shipments with pagination
+   */
+  async getShipments(
+    page: number = 1,
+    limit: number = 10,
+    filters?: {
+      status?: string;
+      providerId?: string;
+      carrier?: string;
+    }
+  ): Promise<{
+    shipments: Shipment[];
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  }> {
+    try {
+      const skip = (page - 1) * limit;
+      const where: any = {};
+
+      if (filters?.status) where.status = filters.status;
+      if (filters?.providerId) where.providerId = filters.providerId;
+      if (filters?.carrier) where.carrier = filters.carrier;
+
+      const [shipments, total] = await Promise.all([
+        this.prisma.shipment.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            order: {
+              select: {
+                id: true,
+                orderNumber: true,
+                buyerId: true,
+                sellerId: true,
+                totalAmount: true,
+              },
+            },
+            logisticsProvider: {
+              select: {
+                id: true,
+                name: true,
+                displayName: true,
+                code: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.shipment.count({ where }),
+      ]);
+
+      return {
+        shipments,
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      };
+    } catch (error) {
+      console.error('Error fetching shipments:', error);
+      throw new Error('Failed to fetch shipments');
     }
   }
 }

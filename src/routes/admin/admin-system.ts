@@ -20,10 +20,6 @@ router.get('/analytics/overview', authenticateAdmin, requirePermission('analytic
   try {
     const { period = '30d' } = req.query;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     let dateFilter = {};
     const now = new Date();
     
@@ -236,10 +232,6 @@ router.get('/settings', authenticateAdmin, requirePermission('settings.read'), a
       }
     };
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     res.json({
       success: true,
       data: settings
@@ -261,10 +253,6 @@ router.put('/settings', authenticateAdmin, requireSuperAdmin, async (req: Reques
   try {
     const { settings } = req.body;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // In production, save settings to database
     // For now, just log the update
     console.log('System settings updated by admin:', (req as any).adminUser.email, settings);
@@ -307,10 +295,6 @@ router.get('/health', authenticateAdmin, requirePermission('system.read'), async
   try {
     const startTime = Date.now();
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Database health check
     const dbHealth = await prisma.$queryRaw`SELECT 1 as status`;
     const dbResponseTime = Date.now() - startTime;
@@ -378,10 +362,6 @@ router.get('/activity-logs', authenticateAdmin, requirePermission('system.read')
   try {
     const { page = 1, limit = 50, adminId, action, targetType } = req.query;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const pageNum = parseInt(page as string);
     const limitNum = Math.min(parseInt(limit as string), 100);
     const skip = (pageNum - 1) * limitNum;
@@ -453,10 +433,6 @@ router.post('/maintenance', authenticateAdmin, requireSuperAdmin, async (req: Re
   try {
     const { enabled, message } = req.body;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // In production, this would update a system setting
     console.log(`Maintenance mode ${enabled ? 'enabled' : 'disabled'} by admin:`, (req as any).adminUser.email);
     
@@ -496,10 +472,6 @@ router.post('/cache/clear', authenticateAdmin, requireSuperAdmin, async (req: Re
     // In production, this would clear Redis cache, CDN cache, etc.
     console.log('System cache cleared by admin:', (req as any).adminUser.email);
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Log admin action
     await prisma.adminAction.create({
       data: {

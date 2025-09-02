@@ -1,9 +1,9 @@
 /**
  * Return Request Service
- * Manages return requests with proper schema alignment
+ * Manages return requests through shipments with proper schema alignment
  */
 
-import { PrismaClient, ReturnRequest } from '@prisma/client';
+import { PrismaClient, Shipment } from '@prisma/client';
 
 export class ReturnRequestService {
   private prisma: PrismaClient;
@@ -13,43 +13,78 @@ export class ReturnRequestService {
   }
 
   /**
-   * Create a new return request
+   * Create a return request
    */
   async createReturnRequest(data: {
     orderId: string;
     reason: string;
     description?: string;
-    requestedAmount?: number;
-    images?: string[];
-  }): Promise<ReturnRequest> {
+    requestedBy: string;
+  }): Promise<Shipment> {
     try {
-      return await this.prisma.returnRequest.create({
+      // Find the shipment for this order
+      const shipment = await this.prisma.shipment.findUnique({
+        where: { orderId: data.orderId },
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      if (!shipment) {
+        throw new Error('Shipment not found for this order');
+      }
+
+      if (shipment.returnRequested) {
+        throw new Error('Return already requested for this shipment');
+      }
+
+      // Update shipment with return request
+      return await this.prisma.shipment.update({
+        where: { id: shipment.id },
         data: {
-          orderId: data.orderId,
-          reason: data.reason,
-          description: data.description,
-          requestedAmount: data.requestedAmount || 0,
-          images: data.images || [],
-          status: 'pending',
+          returnRequested: true,
+          returnReason: `${data.reason}: ${data.description || ''}`.trim(),
+          updatedAt: new Date(),
         },
         include: {
           order: {
             select: {
               id: true,
               orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              status: true,
               buyer: {
                 select: {
                   id: true,
                   firstName: true,
                   lastName: true,
+                  email: true,
                 },
               },
               seller: {
                 select: {
                   id: true,
+                  firstName: true,
+                  lastName: true,
                   businessName: true,
                 },
               },
+            },
+          },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
             },
           },
         },
@@ -61,30 +96,46 @@ export class ReturnRequestService {
   }
 
   /**
-   * Get return request by ID
+   * Get return request by shipment ID
    */
-  async getReturnRequestById(id: string): Promise<ReturnRequest | null> {
+  async getReturnRequestById(shipmentId: string): Promise<Shipment | null> {
     try {
-      return await this.prisma.returnRequest.findUnique({
-        where: { id },
+      return await this.prisma.shipment.findUnique({
+        where: { 
+          id: shipmentId,
+          returnRequested: true,
+        },
         include: {
           order: {
             select: {
               id: true,
               orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              status: true,
               buyer: {
                 select: {
                   id: true,
                   firstName: true,
                   lastName: true,
+                  email: true,
                 },
               },
               seller: {
                 select: {
                   id: true,
+                  firstName: true,
+                  lastName: true,
                   businessName: true,
                 },
               },
+            },
+          },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
             },
           },
         },
@@ -96,325 +147,371 @@ export class ReturnRequestService {
   }
 
   /**
-   * Get return requests by order
+   * Get return request by order ID
    */
-  async getReturnRequestsByOrder(orderId: string): Promise<ReturnRequest[]> {
+  async getReturnRequestByOrderId(orderId: string): Promise<Shipment | null> {
     try {
-      return await this.prisma.returnRequest.findMany({
-        where: { orderId },
-        include: {
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-            },
-          },
+      return await this.prisma.shipment.findUnique({
+        where: { 
+          orderId,
+          returnRequested: true,
         },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (error) {
-      console.error('Error fetching return requests by order:', error);
-      throw new Error('Failed to fetch return requests by order');
-    }
-  }
-
-  /**
-   * Get return requests by seller
-   */
-  async getReturnRequestsBySeller(sellerId: string, status?: string): Promise<ReturnRequest[]> {
-    try {
-      const where: any = {
-        order: { sellerId },
-      };
-
-      if (status) {
-        where.status = status;
-      }
-
-      return await this.prisma.returnRequest.findMany({
-        where,
         include: {
           order: {
             select: {
               id: true,
               orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              status: true,
               buyer: {
                 select: {
                   id: true,
                   firstName: true,
                   lastName: true,
+                  email: true,
+                },
+              },
+              seller: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  businessName: true,
                 },
               },
             },
           },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
+          },
         },
-        orderBy: { createdAt: 'desc' },
       });
     } catch (error) {
-      console.error('Error fetching return requests by seller:', error);
-      throw new Error('Failed to fetch return requests by seller');
+      console.error('Error fetching return request by order:', error);
+      throw new Error('Failed to fetch return request by order');
+    }
+  }
+
+  /**
+   * Get all return requests with pagination
+   */
+  async getAllReturnRequests(
+    page: number = 1,
+    limit: number = 10,
+    filters?: {
+      status?: string;
+      sellerId?: string;
+      buyerId?: string;
+    }
+  ): Promise<{
+    returnRequests: Shipment[];
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  }> {
+    try {
+      const skip = (page - 1) * limit;
+      const where: any = { returnRequested: true };
+
+      if (filters?.status) where.status = filters.status;
+      if (filters?.sellerId) {
+        where.order = { sellerId: filters.sellerId };
+      }
+      if (filters?.buyerId) {
+        where.order = { buyerId: filters.buyerId };
+      }
+
+      const [returnRequests, total] = await Promise.all([
+        this.prisma.shipment.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            order: {
+              select: {
+                id: true,
+                orderNumber: true,
+                buyerId: true,
+                sellerId: true,
+                status: true,
+                totalAmount: true,
+                buyer: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                  },
+                },
+                seller: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    businessName: true,
+                  },
+                },
+              },
+            },
+            logisticsProvider: {
+              select: {
+                id: true,
+                name: true,
+                displayName: true,
+              },
+            },
+          },
+          orderBy: { updatedAt: 'desc' },
+        }),
+        this.prisma.shipment.count({ where }),
+      ]);
+
+      return {
+        returnRequests,
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      };
+    } catch (error) {
+      console.error('Error fetching return requests:', error);
+      throw new Error('Failed to fetch return requests');
     }
   }
 
   /**
    * Update return request status
    */
-  async updateReturnRequestStatus(
-    id: string,
+  async updateReturnStatus(
+    shipmentId: string,
     status: string,
-    approvedBy?: string
-  ): Promise<ReturnRequest> {
+    notes?: string
+  ): Promise<Shipment> {
     try {
       const updateData: any = {
         status,
         updatedAt: new Date(),
       };
 
-      if (status === 'approved' && approvedBy) {
-        updateData.approvedBy = approvedBy;
-        updateData.approvedAt = new Date();
-      } else if (status === 'completed') {
-        updateData.completedAt = new Date();
+      if (notes) {
+        const currentShipment = await this.prisma.shipment.findUnique({
+          where: { id: shipmentId },
+          select: { returnReason: true },
+        });
+
+        if (currentShipment?.returnReason) {
+          updateData.returnReason = `${currentShipment.returnReason}\n\nUpdate: ${notes}`;
+        } else {
+          updateData.returnReason = notes;
+        }
       }
 
-      return await this.prisma.returnRequest.update({
-        where: { id },
+      return await this.prisma.shipment.update({
+        where: { id: shipmentId },
         data: updateData,
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyerId: true,
+              sellerId: true,
+              status: true,
+            },
+          },
+        },
       });
     } catch (error) {
-      console.error('Error updating return request status:', error);
-      throw new Error('Failed to update return request status');
+      console.error('Error updating return status:', error);
+      throw new Error('Failed to update return status');
     }
   }
 
   /**
    * Approve return request
    */
-  async approveReturnRequest(
-    id: string,
-    approvedBy: string
-  ): Promise<ReturnRequest> {
-    return this.updateReturnRequestStatus(id, 'approved', approvedBy);
+  async approveReturn(shipmentId: string, notes?: string): Promise<Shipment> {
+    try {
+      return await this.updateReturnStatus(shipmentId, 'return_approved', notes);
+    } catch (error) {
+      console.error('Error approving return:', error);
+      throw new Error('Failed to approve return');
+    }
   }
 
   /**
    * Reject return request
    */
-  async rejectReturnRequest(id: string): Promise<ReturnRequest> {
-    return this.updateReturnRequestStatus(id, 'rejected');
-  }
-
-  /**
-   * Complete return request
-   */
-  async completeReturnRequest(id: string): Promise<ReturnRequest> {
-    return this.updateReturnRequestStatus(id, 'completed');
-  }
-
-  /**
-   * Add images to return request
-   */
-  async addReturnImages(id: string, images: string[]): Promise<ReturnRequest> {
+  async rejectReturn(shipmentId: string, reason: string): Promise<Shipment> {
     try {
-      const returnRequest = await this.prisma.returnRequest.findUnique({
-        where: { id },
-        select: { images: true },
-      });
-
-      if (!returnRequest) {
-        throw new Error('Return request not found');
-      }
-
-      const updatedImages = [...(returnRequest.images || []), ...images];
-
-      return await this.prisma.returnRequest.update({
-        where: { id },
-        data: { images: updatedImages },
-      });
+      return await this.updateReturnStatus(shipmentId, 'return_rejected', reason);
     } catch (error) {
-      console.error('Error adding return images:', error);
-      throw new Error('Failed to add return images');
+      console.error('Error rejecting return:', error);
+      throw new Error('Failed to reject return');
     }
   }
 
   /**
-   * Get return requests by status
+   * Process return (mark as returned)
    */
-  async getReturnRequestsByStatus(status: string): Promise<ReturnRequest[]> {
+  async processReturn(shipmentId: string, notes?: string): Promise<Shipment> {
     try {
-      return await this.prisma.returnRequest.findMany({
-        where: { status },
-        include: {
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-              buyer: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-              seller: {
-                select: {
-                  id: true,
-                  businessName: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+      return await this.updateReturnStatus(shipmentId, 'returned', notes);
     } catch (error) {
-      console.error('Error fetching return requests by status:', error);
-      throw new Error('Failed to fetch return requests by status');
+      console.error('Error processing return:', error);
+      throw new Error('Failed to process return');
     }
   }
 
   /**
-   * Get pending return requests
+   * Get return statistics
    */
-  async getPendingReturnRequests(): Promise<ReturnRequest[]> {
-    return this.getReturnRequestsByStatus('pending');
-  }
-
-  /**
-   * Get return request statistics
-   */
-  async getReturnRequestStats(sellerId?: string): Promise<{
-    total: number;
-    pending: number;
-    approved: number;
-    rejected: number;
-    completed: number;
-    totalRefundAmount: number;
+  async getReturnStats(sellerId?: string): Promise<{
+    totalReturns: number;
+    pendingReturns: number;
+    approvedReturns: number;
+    rejectedReturns: number;
+    processedReturns: number;
+    returnRate: number;
+    totalOrders: number;
   }> {
     try {
-      const where = sellerId ? { order: { sellerId } } : {};
+      const orderWhere = sellerId ? { sellerId } : {};
+      const returnWhere = sellerId 
+        ? { returnRequested: true, order: { sellerId } }
+        : { returnRequested: true };
 
-      const [total, pending, approved, rejected, completed, refundData] = await Promise.all([
-        this.prisma.returnRequest.count({ where }),
-        this.prisma.returnRequest.count({ where: { ...where, status: 'pending' } }),
-        this.prisma.returnRequest.count({ where: { ...where, status: 'approved' } }),
-        this.prisma.returnRequest.count({ where: { ...where, status: 'rejected' } }),
-        this.prisma.returnRequest.count({ where: { ...where, status: 'completed' } }),
-        this.prisma.returnRequest.aggregate({
-          where: { ...where, status: 'completed' },
-          _sum: { requestedAmount: true },
+      const [
+        totalReturns,
+        pendingReturns,
+        approvedReturns,
+        rejectedReturns,
+        processedReturns,
+        totalOrders,
+      ] = await Promise.all([
+        this.prisma.shipment.count({ where: returnWhere }),
+        this.prisma.shipment.count({ 
+          where: { ...returnWhere, status: 'return_requested' } 
         }),
+        this.prisma.shipment.count({ 
+          where: { ...returnWhere, status: 'return_approved' } 
+        }),
+        this.prisma.shipment.count({ 
+          where: { ...returnWhere, status: 'return_rejected' } 
+        }),
+        this.prisma.shipment.count({ 
+          where: { ...returnWhere, status: 'returned' } 
+        }),
+        this.prisma.order.count({ where: orderWhere }),
       ]);
 
+      const returnRate = totalOrders > 0 ? (totalReturns / totalOrders) * 100 : 0;
+
       return {
-        total,
-        pending,
-        approved,
-        rejected,
-        completed,
-        totalRefundAmount: refundData._sum.requestedAmount || 0,
+        totalReturns,
+        pendingReturns,
+        approvedReturns,
+        rejectedReturns,
+        processedReturns,
+        returnRate: Math.round(returnRate * 100) / 100,
+        totalOrders,
       };
     } catch (error) {
-      console.error('Error fetching return request stats:', error);
-      throw new Error('Failed to fetch return request stats');
+      console.error('Error fetching return stats:', error);
+      throw new Error('Failed to fetch return stats');
     }
   }
 
   /**
-   * Get return requests by reason
+   * Cancel return request
    */
-  async getReturnRequestsByReason(reason: string): Promise<ReturnRequest[]> {
+  async cancelReturnRequest(shipmentId: string): Promise<Shipment> {
     try {
-      return await this.prisma.returnRequest.findMany({
-        where: { reason },
+      return await this.prisma.shipment.update({
+        where: { id: shipmentId },
+        data: {
+          returnRequested: false,
+          returnReason: null,
+          updatedAt: new Date(),
+        },
         include: {
           order: {
             select: {
               id: true,
               orderNumber: true,
-              buyer: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-              seller: {
-                select: {
-                  id: true,
-                  businessName: true,
-                },
-              },
+              buyerId: true,
+              sellerId: true,
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
       });
     } catch (error) {
-      console.error('Error fetching return requests by reason:', error);
-      throw new Error('Failed to fetch return requests by reason');
+      console.error('Error canceling return request:', error);
+      throw new Error('Failed to cancel return request');
     }
   }
 
   /**
-   * Delete return request
+   * Check if return is eligible
    */
-  async deleteReturnRequest(id: string): Promise<void> {
-    try {
-      await this.prisma.returnRequest.delete({
-        where: { id },
-      });
-    } catch (error) {
-      console.error('Error deleting return request:', error);
-      throw new Error('Failed to delete return request');
-    }
-  }
-
-  /**
-   * Check if return request can be created
-   */
-  async canCreateReturnRequest(orderId: string): Promise<{
-    canReturn: boolean;
-    reason?: string;
+  async checkReturnEligibility(orderId: string): Promise<{
+    eligible: boolean;
+    reason: string;
+    daysLeft?: number;
   }> {
     try {
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
+      const shipment = await this.prisma.shipment.findUnique({
+        where: { orderId },
         select: {
           status: true,
-          createdAt: true,
-          deliveryDate: true,
+          deliveredAt: true,
+          returnRequested: true,
         },
       });
 
-      if (!order) {
-        return { canReturn: false, reason: 'Order not found' };
+      if (!shipment) {
+        return { eligible: false, reason: 'Shipment not found' };
       }
 
-      if (order.status !== 'DELIVERED') {
-        return { canReturn: false, reason: 'Order must be delivered to create return request' };
+      if (shipment.returnRequested) {
+        return { eligible: false, reason: 'Return already requested' };
       }
 
-      // Check if return window is still open (e.g., 30 days)
-      const returnWindowDays = 30;
-      const deliveryDate = order.deliveryDate || order.createdAt;
-      const returnDeadline = new Date(deliveryDate);
-      returnDeadline.setDate(returnDeadline.getDate() + returnWindowDays);
-
-      if (new Date() > returnDeadline) {
-        return { canReturn: false, reason: 'Return window has expired' };
+      if (shipment.status !== 'delivered') {
+        return { eligible: false, reason: 'Order must be delivered to request return' };
       }
 
-      // Check if return request already exists
-      const existingReturn = await this.prisma.returnRequest.findFirst({
-        where: { orderId },
-      });
-
-      if (existingReturn) {
-        return { canReturn: false, reason: 'Return request already exists for this order' };
+      if (!shipment.deliveredAt) {
+        return { eligible: false, reason: 'Delivery date not available' };
       }
 
-      return { canReturn: true };
+      // Check if within return window (e.g., 7 days)
+      const returnWindowDays = 7;
+      const deliveryDate = new Date(shipment.deliveredAt);
+      const currentDate = new Date();
+      const daysSinceDelivery = Math.floor(
+        (currentDate.getTime() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      if (daysSinceDelivery > returnWindowDays) {
+        return { 
+          eligible: false, 
+          reason: `Return window expired. Returns must be requested within ${returnWindowDays} days of delivery.` 
+        };
+      }
+
+      const daysLeft = returnWindowDays - daysSinceDelivery;
+      return { 
+        eligible: true, 
+        reason: 'Eligible for return',
+        daysLeft: Math.max(0, daysLeft)
+      };
     } catch (error) {
       console.error('Error checking return eligibility:', error);
       throw new Error('Failed to check return eligibility');

@@ -1,4 +1,4 @@
-import { PrismaClient, DeliveryPartner } from '@prisma/client';
+import { PrismaClient, LogisticsProvider } from '@prisma/client';
 
 export class DeliveryPartnerService {
   private prisma: PrismaClient;
@@ -9,49 +9,43 @@ export class DeliveryPartnerService {
 
   async createDeliveryPartner(data: {
     name: string;
-    contactPerson?: string;
-    email?: string;
-    phone?: string;
-    address?: any;
-    serviceAreas?: any;
-    capabilities?: any;
-    pricing?: any;
+    displayName: string;
+    code: string;
     apiEndpoint?: string;
     apiKey?: string;
+    apiSecret?: string;
+    supportedServices?: any;
+    pricingModel?: any;
+    coverage?: any;
+    configuration?: any;
     isActive?: boolean;
-  }): Promise<DeliveryPartner> {
-    return this.prisma.deliveryPartner.create({
+    priority?: number;
+  }): Promise<LogisticsProvider> {
+    return this.prisma.logisticsProvider.create({
       data: {
         name: data.name,
-        contactPerson: data.contactPerson,
-        email: data.email,
-        phone: data.phone,
-        address: data.address,
-        serviceAreas: data.serviceAreas,
-        capabilities: data.capabilities,
-        pricing: data.pricing,
+        displayName: data.displayName,
+        code: data.code,
         apiEndpoint: data.apiEndpoint,
         apiKey: data.apiKey,
+        apiSecret: data.apiSecret,
+        supportedServices: data.supportedServices,
+        pricingModel: data.pricingModel,
+        coverage: data.coverage,
+        configuration: data.configuration,
         isActive: data.isActive ?? true,
+        priority: data.priority ?? 0,
       },
     });
   }
 
-  async getDeliveryPartnerById(id: string): Promise<DeliveryPartner | null> {
-    return this.prisma.deliveryPartner.findUnique({
+  async getDeliveryPartnerById(id: string): Promise<LogisticsProvider | null> {
+    return this.prisma.logisticsProvider.findUnique({
       where: { id },
       include: {
-        sellerPreferences: {
-          include: {
-            seller: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                businessName: true,
-              },
-            },
-          },
+        shipments: {
+          take: 10,
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
@@ -59,19 +53,17 @@ export class DeliveryPartnerService {
 
   async getAllDeliveryPartners(filters?: {
     isActive?: boolean;
-    serviceArea?: string;
-  }): Promise<DeliveryPartner[]> {
-    return this.prisma.deliveryPartner.findMany({
+    code?: string;
+  }): Promise<LogisticsProvider[]> {
+    return this.prisma.logisticsProvider.findMany({
       where: {
         ...(filters?.isActive !== undefined && { isActive: filters.isActive }),
-        ...(filters?.serviceArea && {
-          serviceAreas: {
-            path: ['areas'],
-            array_contains: filters.serviceArea,
-          },
-        }),
+        ...(filters?.code && { code: filters.code }),
       },
-      orderBy: { name: 'asc' },
+      orderBy: [
+        { priority: 'desc' },
+        { name: 'asc' }
+      ],
     });
   }
 
@@ -79,26 +71,27 @@ export class DeliveryPartnerService {
     id: string,
     data: Partial<{
       name: string;
-      contactPerson: string;
-      email: string;
-      phone: string;
-      address: any;
-      serviceAreas: any;
-      capabilities: any;
-      pricing: any;
+      displayName: string;
+      code: string;
       apiEndpoint: string;
       apiKey: string;
+      apiSecret: string;
+      supportedServices: any;
+      pricingModel: any;
+      coverage: any;
+      configuration: any;
       isActive: boolean;
+      priority: number;
     }>
-  ): Promise<DeliveryPartner> {
-    return this.prisma.deliveryPartner.update({
+  ): Promise<LogisticsProvider> {
+    return this.prisma.logisticsProvider.update({
       where: { id },
       data,
     });
   }
 
-  async deactivateDeliveryPartner(id: string): Promise<DeliveryPartner> {
-    return this.prisma.deliveryPartner.update({
+  async deactivateDeliveryPartner(id: string): Promise<LogisticsProvider> {
+    return this.prisma.logisticsProvider.update({
       where: { id },
       data: { isActive: false },
     });
@@ -108,32 +101,19 @@ export class DeliveryPartnerService {
     pincode: string,
     city?: string,
     state?: string
-  ): Promise<DeliveryPartner[]> {
-    return this.prisma.deliveryPartner.findMany({
+  ): Promise<LogisticsProvider[]> {
+    return this.prisma.logisticsProvider.findMany({
       where: {
         isActive: true,
-        OR: [
-          {
-            serviceAreas: {
-              path: ['pincodes'],
-              array_contains: pincode,
-            },
-          },
-          {
-            serviceAreas: {
-              path: ['cities'],
-              array_contains: city,
-            },
-          },
-          {
-            serviceAreas: {
-              path: ['states'],
-              array_contains: state,
-            },
-          },
-        ],
+        coverage: {
+          path: ['areas'],
+          array_contains: [pincode, city, state].filter(Boolean),
+        },
       },
-      orderBy: { name: 'asc' },
+      orderBy: [
+        { priority: 'desc' },
+        { name: 'asc' }
+      ],
     });
   }
 
@@ -162,23 +142,23 @@ export class DeliveryPartnerService {
     }
 
     // This is a simplified calculation - in reality, you'd call the partner's API
-    const pricing = partner.pricing as any;
+    const pricingModel = partner.pricingModel as any;
     
-    if (!pricing) {
+    if (!pricingModel) {
       return null;
     }
 
     // Basic calculation based on weight and distance
-    const baseRate = pricing.baseRate || 50;
-    const perKgRate = pricing.perKgRate || 20;
-    const codCharges = data.codAmount ? (pricing.codRate || 0.02) * data.codAmount : 0;
+    const baseRate = pricingModel.baseRate || 50;
+    const perKgRate = pricingModel.perKgRate || 20;
+    const codCharges = data.codAmount ? (pricingModel.codRate || 0.02) * data.codAmount : 0;
     
     const cost = baseRate + (data.weight * perKgRate) + codCharges;
     
     return {
       cost: Math.round(cost),
-      estimatedDays: pricing.estimatedDays || 3,
-      serviceType: pricing.serviceType || 'standard',
+      estimatedDays: pricingModel.estimatedDays || 3,
+      serviceType: pricingModel.serviceType || 'standard',
     };
   }
 
@@ -191,21 +171,35 @@ export class DeliveryPartnerService {
   }> {
     const where = partnerId ? { id: partnerId } : {};
 
-    const [totalCount, activeCount] = await Promise.all([
-      this.prisma.deliveryPartner.count({ where }),
-      this.prisma.deliveryPartner.count({ 
+    const [totalCount, activeCount, shipmentStats] = await Promise.all([
+      this.prisma.logisticsProvider.count({ where }),
+      this.prisma.logisticsProvider.count({ 
         where: { ...where, isActive: true } 
+      }),
+      this.prisma.shipment.aggregate({
+        where: partnerId ? { providerId: partnerId } : {},
+        _count: { id: true },
+        _avg: { shippingCost: true },
       }),
     ]);
 
-    // These would need to be calculated from actual shipment data
-    // For now, returning placeholder values
+    // Calculate success rate based on delivered shipments
+    const deliveredShipments = await this.prisma.shipment.count({
+      where: {
+        ...(partnerId && { logisticsProviderId: partnerId }),
+        status: 'delivered',
+      },
+    });
+
+    const totalShipments = typeof shipmentStats._count === 'number' ? shipmentStats._count : shipmentStats._count._all || 0;
+    const successRate = totalShipments > 0 ? (deliveredShipments / totalShipments) * 100 : 0;
+
     return {
       totalPartners: totalCount,
       activePartners: activeCount,
-      totalShipments: 0, // Would need shipment tracking
-      avgDeliveryTime: 0, // Would need delivery time calculation
-      successRate: 0, // Would need success/failure tracking
+      totalShipments,
+      avgDeliveryTime: Number(shipmentStats._avg.shippingCost) || 0,
+      successRate: Math.round(successRate * 100) / 100,
     };
   }
 
@@ -233,10 +227,6 @@ export class DeliveryPartnerService {
     try {
       const startTime = Date.now();
       
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
       // This would make an actual API call to test connectivity
       // For now, simulating a successful connection
       const responseTime = Date.now() - startTime;

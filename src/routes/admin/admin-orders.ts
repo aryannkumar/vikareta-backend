@@ -27,10 +27,6 @@ router.get('/', authenticateAdmin, requirePermission('orders.read'), async (req:
       paymentStatus
     } = req.query;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const pageNum = parseInt(page as string);
     const limitNum = Math.min(parseInt(limit as string), 100);
     const skip = (pageNum - 1) * limitNum;
@@ -205,10 +201,6 @@ router.get('/:id', authenticateAdmin, requirePermission('orders.read'), async (r
   try {
     const { id } = req.params;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const order = await prisma.order.findUnique({
       where: { id },
       include: {
@@ -302,10 +294,6 @@ router.put('/:id/status', authenticateAdmin, requirePermission('orders.write'), 
     const { id } = req.params;
     const { status, reason, notifyUsers = true } = req.body;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const validStatuses = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REFUNDED'];
     
     if (!validStatuses.includes(status)) {

@@ -1,353 +1,375 @@
-import { Router, Request, Response } from 'express';
-import { AdNotificationService } from '../../services/ads/ad-notification.service';
-import { adNotificationScheduler } from '../../services/ads/ad-notification-scheduler.service';
-import { authenticate, requireAdmin } from '../../middleware/auth';
-import { logger } from '../../utils/logger';
+import { Router } from 'express';
+import { authenticateAdmin } from '../../middleware/auth';
+import { PrismaClient } from '@prisma/client';
 
 const router = Router();
-const adNotificationService = new AdNotificationService();
+const prisma = new PrismaClient();
 
-// Apply authentication and admin middleware to all routes
-router.use(authenticate);
-router.use(requireAdmin);
+// Apply authentication middleware to all routes
+router.use(authenticateAdmin);
+
+/**
+ * GET /api/admin/notifications
+ * Get all notifications with pagination
+ */
+router.get('/', async (req, res) => {
+  try {
+    const { page = '1', limit = '10', status, type } = req.query;
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const skip = (pageNum - 1) * limitNum;
+
+    const whereClause: any = {};
+    if (status) whereClause.status = status;
+    if (type) whereClause.type = type;
+
+    const [notifications, total] = await Promise.all([
+      prisma.notification.findMany({
+        where: whereClause,
+        skip,
+        take: limitNum,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
+      }),
+      prisma.notification.count({ where: whereClause })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        notifications,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch notifications'
+    });
+  }
+});
+
+/**
+ * GET /api/admin/notifications/:id
+ * Get notification by ID
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const notification = await prisma.notification.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        error: 'Notification not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: notification
+    });
+  } catch (error) {
+    console.error('Error fetching notification:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch notification'
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/notifications/:id
+ * Update notification
+ */
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, isRead } = req.body;
+
+    const notification = await prisma.notification.update({
+      where: { id },
+      data: { status, isRead },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      data: notification
+    });
+  } catch (error) {
+    console.error('Error updating notification:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update notification'
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/notifications/:id
+ * Delete notification
+ */
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.notification.delete({
+      where: { id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Notification deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting notification:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete notification'
+    });
+  }
+});
 
 /**
  * GET /api/admin/notifications/stats
- * Get notification statistics for a date range
+ * Get notification statistics
  */
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  if (!startDate || !endDate) {
-    return res.status(400).json({
-      error: 'startDate and endDate query parameters are required'
-    });
-  }
-
-  const dateRange = {
-    start: new Date(startDate as string),
-    end: new Date(endDate as string)
-  };
-
-  // Validate dates
-  if (isNaN(dateRange.start.getTime()) || isNaN(dateRange.end.getTime())) {
-    return res.status(400).json({
-      error: 'Invalid date format. Use ISO 8601 format (YYYY-MM-DD)'
-    });
-  }
-
-  if (dateRange.start >= dateRange.end) {
-    return res.status(400).json({
-      error: 'startDate must be before endDate'
-    });
-  }
-
-  const stats = await adNotificationService.getNotificationStats(dateRange);
-
-  return res.json({
-    success: true,
-    data: {
-      dateRange: {
-        start: dateRange.start.toISOString(),
-        end: dateRange.end.toISOString()
-      },
-      stats
+    
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        createdAt: {
+          gte: new Date(startDate as string),
+          lte: new Date(endDate as string)
+        }
+      };
     }
-  });
-} catch (error) {
-  logger.error('Failed to get notification stats:', error);
-  return res.status(500).json({
-    error: 'Failed to get notification statistics'
-  });
-}
+
+    const notifications = await prisma.notification.findMany({
+      where: dateFilter,
+      select: {
+        type: true,
+        status: true,
+        isRead: true,
+        createdAt: true
+      }
+    });
+
+    const stats = {
+      total: notifications.length,
+      byType: notifications.reduce((acc: any, notif) => {
+        acc[notif.type] = (acc[notif.type] || 0) + 1;
+        return acc;
+      }, {}),
+      byStatus: notifications.reduce((acc: any, notif) => {
+        acc[notif.status] = (acc[notif.status] || 0) + 1;
+        return acc;
+      }, {}),
+      readCount: notifications.filter(n => n.isRead).length,
+      unreadCount: notifications.filter(n => !n.isRead).length
+    };
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error fetching notification stats:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch notification statistics'
+    });
+  }
 });
 
 /**
- * GET /api/admin/notifications/scheduler/status
- * Get notification scheduler status
+ * POST /api/admin/notifications/bulk-update
+ * Bulk update notifications
  */
-router.get('/scheduler/status', (req: Request, res: Response) => {
+router.post('/bulk-update', async (req, res) => {
   try {
-    const status = adNotificationScheduler.getStatus();
+    const { ids, status, isRead } = req.body;
 
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  return res.json({
-    success: true,
-    data: {
-      schedulers: status,
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString()
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'ids array is required'
+      });
     }
-  });
-} catch (error) {
-  logger.error('Failed to get scheduler status:', error);
-  return res.status(500).json({
-    error: 'Failed to get scheduler status'
-  });
-}
-});
 
-/**
- * POST /api/admin/notifications/scheduler/start
- * Start notification schedulers
- */
-router.post('/scheduler/start', (req: Request, res: Response) => {
-  try {
-    adNotificationScheduler.start();
+    const updateData: any = {};
+    if (status !== undefined) updateData.status = status;
+    if (isRead !== undefined) updateData.isRead = isRead;
 
+    await prisma.notification.updateMany({
+      where: { id: { in: ids } },
+      data: updateData
+    });
+
+    res.json({
+      success: true,
+      message: `Updated ${ids.length} notifications`
+    });
   } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  return res.json({
-    success: true,
-    message: 'Notification schedulers started successfully'
-  });
-} catch (error) {
-  logger.error('Failed to start schedulers:', error);
-  return res.status(500).json({
-    error: 'Failed to start notification schedulers'
-  });
-}
-});
-
-/**
- * POST /api/admin/notifications/scheduler/stop
- * Stop notification schedulers
- */
-router.post('/scheduler/stop', (req: Request, res: Response) => {
-  try {
-    adNotificationScheduler.stop();
-
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  return res.json({
-    success: true,
-    message: 'Notification schedulers stopped successfully'
-  });
-} catch (error) {
-  logger.error('Failed to stop schedulers:', error);
-  return res.status(500).json({
-    error: 'Failed to stop notification schedulers'
-  });
-}
-});
-
-/**
- * POST /api/admin/notifications/trigger/budget-check
- * Manually trigger budget alert check
- */
-router.post('/trigger/budget-check', async (req: Request, res: Response) => {
-  try {
-    await adNotificationScheduler.triggerBudgetCheck();
-
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  return res.json({
-    success: true,
-    message: 'Budget alert check triggered successfully'
-  });
-} catch (error) {
-  logger.error('Failed to trigger budget check:', error);
-  return res.status(500).json({
-    error: 'Failed to trigger budget alert check'
-  });
-}
-});
-
-/**
- * POST /api/admin/notifications/trigger/performance-check
- * Manually trigger performance alert check
- */
-router.post('/trigger/performance-check', async (req: Request, res: Response) => {
-  try {
-    await adNotificationScheduler.triggerPerformanceCheck();
-
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  return res.json({
-    success: true,
-    message: 'Performance alert check triggered successfully'
-  });
-} catch (error) {
-  logger.error('Failed to trigger performance check:', error);
-  return res.status(500).json({
-    error: 'Failed to trigger performance alert check'
-  });
-}
-});
-
-/**
- * POST /api/admin/notifications/trigger/admin-check
- * Manually trigger admin alert check
- */
-router.post('/trigger/admin-check', async (req: Request, res: Response) => {
-  try {
-    await adNotificationScheduler.triggerAdminCheck();
-
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  return res.json({
-    success: true,
-    message: 'Admin alert check triggered successfully'
-  });
-} catch (error) {
-  logger.error('Failed to trigger admin check:', error);
-  return res.status(500).json({
-    error: 'Failed to trigger admin alert check'
-  });
-}
-});
-
-/**
- * POST /api/admin/notifications/trigger/system-health
- * Manually trigger system health check
- */
-router.post('/trigger/system-health', async (req: Request, res: Response) => {
-  try {
-    await adNotificationScheduler.triggerSystemHealthCheck();
-
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  return res.json({
-    success: true,
-    message: 'System health check triggered successfully'
-  });
-} catch (error) {
-  logger.error('Failed to trigger system health check:', error);
-  return res.status(500).json({
-    error: 'Failed to trigger system health check'
-  });
-}
-});
-
-/**
- * POST /api/admin/notifications/test-alert
- * Send a test admin alert
- */
-router.post('/test-alert', async (req: Request, res: Response) => {
-  try {
-    const { type, priority, title, message } = req.body;
-
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-  if (!type || !priority || !title || !message) {
-    return res.status(400).json({
-      error: 'type, priority, title, and message are required'
+    console.error('Error bulk updating notifications:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to bulk update notifications'
     });
   }
-
-  const validTypes = ['pending_approval', 'system_health', 'performance_issue', 'critical_error'];
-  const validPriorities = ['low', 'normal', 'high', 'critical'];
-
-  if (!validTypes.includes(type)) {
-    return res.status(400).json({
-      error: `Invalid type. Must be one of: ${validTypes.join(', ')}`
-    });
-  }
-
-  if (!validPriorities.includes(priority)) {
-    return res.status(400).json({
-      error: `Invalid priority. Must be one of: ${validPriorities.join(', ')}`
-    });
-  }
-
-  // Create test alert
-  const testAlert = {
-    type,
-    priority,
-    title,
-    message,
-    data: {
-      testAlert: true,
-      triggeredBy: req.authUser?.userId,
-      timestamp: new Date().toISOString()
-    }
-  };
-
-  // Send the test alert (this will use the private method, so we'll call the system health alert with test data)
-  await adNotificationService.sendSystemHealthAlert({
-    adServingLatency: 100,
-    errorRate: 0.01,
-    activeNetworks: 3,
-    totalNetworks: 3
-  });
-
-  return res.json({
-    success: true,
-    message: 'Test alert sent successfully',
-    data: testAlert
-  });
-} catch (error) {
-  logger.error('Failed to send test alert:', error);
-  return res.status(500).json({
-    error: 'Failed to send test alert'
-  });
-}
 });
 
 /**
- * GET /api/admin/notifications/health
- * Get notification system health status
+ * GET /api/admin/notifications/templates
+ * Get notification templates
  */
-router.get('/health', async (req: Request, res: Response) => {
+router.get('/templates', async (req, res) => {
   try {
-    const schedulerStatus = adNotificationScheduler.getStatus();
+    const templates = await prisma.notificationTemplate.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
 
+    res.json({
+      success: true,
+      data: templates
+    });
   } catch (error) {
-    console.error("Error:", error);
-    throw error;
+    console.error('Error fetching notification templates:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch notification templates'
+    });
   }
-  // Check if all schedulers are running
-  const allSchedulersRunning = Object.values(schedulerStatus).every(status => status === true);
+});
 
-  // Get recent notification stats (last 24 hours)
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
+/**
+ * POST /api/admin/notifications/templates
+ * Create notification template
+ */
+router.post('/templates', async (req, res) => {
+  try {
+    const { name, type, title, content, variables } = req.body;
 
-  const recentStats = await adNotificationService.getNotificationStats({
-    start: yesterday,
-    end: new Date()
-  });
+    const template = await prisma.notificationTemplate.create({
+      data: {
+        name,
+        type,
+        title,
+        content,
+        variables: variables || []
+      }
+    });
 
-  const health = {
-    status: allSchedulersRunning ? 'healthy' : 'degraded',
-    schedulers: schedulerStatus,
-    recentActivity: recentStats,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  };
+    res.json({
+      success: true,
+      data: template
+    });
+  } catch (error) {
+    console.error('Error creating notification template:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create notification template'
+    });
+  }
+});
 
-  return res.json({
-    success: true,
-    data: health
-  });
-} catch (error) {
-  logger.error('Failed to get notification system health:', error);
-  return res.status(500).json({
-    error: 'Failed to get notification system health'
-  });
-}
+/**
+ * PUT /api/admin/notifications/templates/:id
+ * Update notification template
+ */
+router.put('/templates/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, type, title, content, variables } = req.body;
+
+    const template = await prisma.notificationTemplate.update({
+      where: { id },
+      data: {
+        name,
+        type,
+        title,
+        content,
+        variables: variables || []
+      }
+    });
+
+    res.json({
+      success: true,
+      data: template
+    });
+  } catch (error) {
+    console.error('Error updating notification template:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update notification template'
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/notifications/templates/:id
+ * Delete notification template
+ */
+router.delete('/templates/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.notificationTemplate.delete({
+      where: { id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Notification template deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting notification template:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete notification template'
+    });
+  }
 });
 
 export default router;

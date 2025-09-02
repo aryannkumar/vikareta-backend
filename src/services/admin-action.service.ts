@@ -3,7 +3,7 @@
  * Handles administrative actions and audit logging
  */
 
-import { PrismaClient, AdminAction, AdminActionType } from '@prisma/client';
+import { PrismaClient, AdminAction } from '@prisma/client';
 
 export interface CreateAdminActionData {
   adminId: string;
@@ -25,7 +25,7 @@ export class AdminActionService {
     return await this.prisma.adminAction.create({
       data: {
         ...data,
-        timestamp: new Date(),
+        createdAt: new Date(),
       },
       include: {
         admin: {
@@ -77,7 +77,7 @@ export class AdminActionService {
             },
           },
         },
-        orderBy: { timestamp: 'desc' },
+        orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
@@ -127,7 +127,7 @@ export class AdminActionService {
           },
         },
       },
-      orderBy: { timestamp: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 

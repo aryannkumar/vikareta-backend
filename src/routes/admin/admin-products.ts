@@ -27,10 +27,6 @@ router.get('/', authenticateAdmin, requirePermission('products.read'), async (re
       sortOrder = 'desc'
     } = req.query;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const pageNum = parseInt(page as string);
     const limitNum = Math.min(parseInt(limit as string), 100);
     const skip = (pageNum - 1) * limitNum;
@@ -172,10 +168,6 @@ router.get('/:id', authenticateAdmin, requirePermission('products.read'), async 
   try {
     const { id } = req.params;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
@@ -261,10 +253,6 @@ router.put('/:id/status', authenticateAdmin, requirePermission('products.write')
     const { id } = req.params;
     const { isActive, reason } = req.body;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const updatedProduct = await prisma.product.update({
       where: { id },
       data: {
@@ -319,10 +307,6 @@ router.delete('/:id', authenticateAdmin, requirePermission('products.delete'), a
     const { id } = req.params;
     const { reason } = req.body;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Check if product has orders
     const orderCount = await prisma.orderItem.count({
       where: { productId: id }
@@ -379,10 +363,6 @@ router.get('/analytics/summary', authenticateAdmin, requirePermission('analytics
   try {
     const { period = '30d' } = req.query;
     
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     let dateFilter = {};
     const now = new Date();
     

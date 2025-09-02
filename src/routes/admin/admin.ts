@@ -31,10 +31,6 @@ router.get('/dashboard/stats', authenticate, requireAdmin, asyncHandler(async (r
       prisma.order.count({ where: { status: 'PENDING' } })
     ]);
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Calculate revenue (simplified - you might want to add proper revenue calculation)
     const totalRevenue = 0; // Placeholder
     const monthlyRevenue = 0; // Placeholder
@@ -84,10 +80,6 @@ router.get('/dashboard/activity', authenticate, requireAdmin, asyncHandler(async
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Transform to activity format
     const recentActivity = recentUsers.map(user => ({
       id: user.id,
@@ -118,10 +110,6 @@ router.get('/users', authenticate, requireAdmin, asyncHandler(async (req: Reques
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const [rawUsers, total] = await Promise.all([
       prisma.user.findMany({
         skip,
@@ -208,10 +196,6 @@ router.get('/analytics', authenticate, requireAdmin, asyncHandler(async (req: Re
       }),
     ]);
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Analytics retrieved successfully',
@@ -243,10 +227,6 @@ router.get('/users/:id', authenticate, requireAdmin, asyncHandler(async (req: Re
   try {
     const { id } = req.params;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const user = await prisma.user.findUnique({
       where: { id },
       include: {
@@ -300,10 +280,6 @@ router.put('/users/:id/verification', authenticate, requireAdmin, asyncHandler(a
     const { id } = req.params;
     const { verificationTier, isVerified } = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const user = await prisma.user.update({
       where: { id },
       data: {
@@ -332,10 +308,6 @@ router.put('/users/:id', authenticate, requireAdmin, asyncHandler(async (req: Re
     const { id } = req.params;
     const updateData = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const user = await prisma.user.update({
       where: { id },
       data: updateData,
@@ -361,10 +333,6 @@ router.post('/users/:id/verify', authenticate, requireAdmin, asyncHandler(async 
     const { id } = req.params;
     const { verified } = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const user = await prisma.user.update({
       where: { id },
       data: {
@@ -393,10 +361,6 @@ router.get('/products', authenticate, requireAdmin, asyncHandler(async (req: Req
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const [products, total] = await Promise.all([
       prisma.product.findMany({
         skip,
@@ -454,10 +418,6 @@ router.post('/products/:id/approve', authenticate, requireAdmin, asyncHandler(as
   try {
     const { id } = req.params;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const product = await prisma.product.update({
       where: { id },
       data: {
@@ -485,10 +445,6 @@ router.post('/products/:id/reject', authenticate, requireAdmin, asyncHandler(asy
     const { id } = req.params;
     const { reason } = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Get current product first
     const currentProduct = await prisma.product.findUnique({
       where: { id },
@@ -536,10 +492,6 @@ router.get('/orders', authenticate, requireAdmin, asyncHandler(async (req: Reque
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         skip,
@@ -600,10 +552,6 @@ router.get('/transactions', authenticate, requireAdmin, asyncHandler(async (req:
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const [transactions, total] = await Promise.all([
       prisma.walletTransaction.findMany({
         skip,
@@ -691,10 +639,6 @@ router.get('/dashboard/transactions', authenticate, requireAdmin, asyncHandler(a
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const transformedTransactions = recentTransactions.map(transaction => ({
       id: transaction.id,
       transactionType: transaction.transactionType,
@@ -745,10 +689,6 @@ router.get('/dashboard/order-stats', authenticate, requireAdmin, asyncHandler(as
       })
     ]);
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const stats = {
       totalOrders,
       pendingOrders,
@@ -801,10 +741,6 @@ router.get('/dashboard/products/pending', authenticate, requireAdmin, asyncHandl
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Pending products retrieved successfully',
@@ -835,10 +771,6 @@ router.get('/dashboard/categories', authenticate, requireAdmin, asyncHandler(asy
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const categoriesWithStats = categories.map(category => ({
       ...category,
       productCount: category._count.products,
@@ -865,10 +797,6 @@ router.get('/categories', authenticate, requireAdmin, asyncHandler(async (req: R
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const [categories, total] = await Promise.all([
       prisma.productCategory.findMany({
         skip,
@@ -921,10 +849,6 @@ router.post('/categories', authenticate, requireAdmin, asyncHandler(async (req: 
   try {
     const { name, description, parentId, isActive, featured } = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Generate slug from name
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
@@ -959,10 +883,6 @@ router.put('/categories/:id', authenticate, requireAdmin, asyncHandler(async (re
     const { id } = req.params;
     const updateData = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const category = await prisma.productCategory.update({
       where: { id },
       data: updateData,
@@ -987,10 +907,6 @@ router.delete('/categories/:id', authenticate, requireAdmin, asyncHandler(async 
   try {
     const { id } = req.params;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Check if category has products
     const productCount = await prisma.product.count({
       where: { categoryId: id },
@@ -1061,10 +977,6 @@ router.get('/dashboard/users/verification', authenticate, requireAdmin, asyncHan
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Users for verification retrieved successfully',
@@ -1106,10 +1018,6 @@ router.get('/dashboard/users/suspended', authenticate, requireAdmin, asyncHandle
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Suspended users retrieved successfully',
@@ -1160,10 +1068,6 @@ router.get('/dashboard/orders/refunds', authenticate, requireAdmin, asyncHandler
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Refund orders retrieved successfully',
@@ -1208,10 +1112,6 @@ router.get('/dashboard/content/reported', authenticate, requireAdmin, asyncHandl
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const transformedContent = reportedContent.map(product => ({
       id: product.id,
       type: 'PRODUCT',
@@ -1268,10 +1168,6 @@ router.get('/dashboard/content/flagged', authenticate, requireAdmin, asyncHandle
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const transformedContent = flaggedContent.map(product => ({
       id: product.id,
       type: 'PRODUCT',
@@ -1305,10 +1201,6 @@ router.get('/content/moderation', authenticate, requireAdmin, asyncHandler(async
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const [flaggedProducts, total] = await Promise.all([
       prisma.product.findMany({
         where: {
@@ -1388,10 +1280,6 @@ router.post('/content/:id/moderate', authenticate, requireAdmin, asyncHandler(as
     const { id } = req.params;
     const { action, reason } = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     let updateData: any = {};
 
     switch (action) {
@@ -1442,10 +1330,6 @@ router.get('/disputes', authenticate, requireAdmin, asyncHandler(async (req: Req
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Since we don't have a disputes table yet, return mock data structure
     const mockDisputes: any[] = [];
 
@@ -1500,10 +1384,6 @@ router.get('/system/config', authenticate, requireAdmin, asyncHandler(async (req
       },
     };
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'System configuration retrieved successfully',
@@ -1523,10 +1403,6 @@ router.put('/system/config', authenticate, requireAdmin, asyncHandler(async (req
   try {
     const { config } = req.body;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // In a real implementation, you would save this to database
     // For now, just return success
 
@@ -1574,10 +1450,6 @@ router.get('/dashboard/content/flagged', authenticate, requireAdmin, asyncHandle
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const transformedContent = flaggedContent.map(product => ({
       id: product.id,
       type: 'PRODUCT',
@@ -1611,10 +1483,6 @@ router.get('/orders/refunds', authenticate, requireAdmin, asyncHandler(async (re
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Get orders that might need refunds
     const [refunds, total] = await Promise.all([
       prisma.order.findMany({
@@ -1711,10 +1579,6 @@ router.get('/content/reported', authenticate, requireAdmin, asyncHandler(async (
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Get rejected products as reported content
     const [reports, total] = await Promise.all([
       prisma.product.findMany({
@@ -1801,10 +1665,6 @@ router.get('/content/flagged', authenticate, requireAdmin, asyncHandler(async (r
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Get pending products as flagged content
     const [flagged, total] = await Promise.all([
       prisma.product.findMany({
@@ -1890,10 +1750,6 @@ router.get('/wallets', authenticate, requireAdmin, asyncHandler(async (req: Requ
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const [wallets, total] = await Promise.all([
       prisma.wallet.findMany({
         skip,
@@ -1953,10 +1809,6 @@ router.get('/settlements', authenticate, requireAdmin, asyncHandler(async (req: 
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Get completed orders as settlements
     const [settlements, total] = await Promise.all([
       prisma.order.findMany({
@@ -2091,10 +1943,6 @@ router.get('/system/api', authenticate, requireAdmin, asyncHandler(async (req: R
       })),
     };
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'API metrics retrieved successfully',
@@ -2116,10 +1964,6 @@ router.get('/content/moderation', authenticate, requireAdmin, asyncHandler(async
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     // Get pending products for moderation
     const [moderationItems, total] = await Promise.all([
       prisma.product.findMany({
@@ -2216,10 +2060,6 @@ router.get('/dashboard/content-stats', authenticate, requireAdmin, asyncHandler(
       prisma.product.count({ where: { status: 'UNVERIFIED' } }), // Using rejected as reported
     ]);
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const stats = {
       totalContent,
       pendingReview,
@@ -2251,10 +2091,6 @@ router.get('/reports/financial', authenticate, requireAdmin, asyncHandler(async 
   try {
     const { type = 'all', dateFrom, dateTo } = req.query;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const whereClause: any = {};
     if (dateFrom && dateTo) {
       whereClause.createdAt = {
@@ -2342,10 +2178,6 @@ router.get('/reports/users', authenticate, requireAdmin, asyncHandler(async (req
   try {
     const { dateFrom, dateTo, segment = 'all' } = req.query;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const whereClause: any = {};
     if (dateFrom && dateTo) {
       whereClause.createdAt = {
@@ -2442,10 +2274,6 @@ router.get('/system/config', authenticate, requireAdmin, asyncHandler(async (req
       },
     };
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'System configuration retrieved successfully',
@@ -2493,10 +2321,6 @@ router.get('/system/notification-templates', authenticate, requireAdmin, asyncHa
       },
     ];
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Notification templates retrieved successfully',
@@ -2538,10 +2362,6 @@ router.get('/system/feature-flags', authenticate, requireAdmin, asyncHandler(asy
       },
     ];
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Feature flags retrieved successfully',
@@ -2574,10 +2394,6 @@ router.get('/system/ab-tests', authenticate, requireAdmin, asyncHandler(async (r
       },
     ];
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'A/B tests retrieved successfully',
@@ -2620,10 +2436,6 @@ router.get('/dashboard/wallets', authenticate, requireAdmin, asyncHandler(async 
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const walletsWithStats = wallets.map(wallet => ({
       ...wallet,
       transactionCount: wallet._count.transactions,
@@ -2673,10 +2485,6 @@ router.get('/dashboard/settlements', authenticate, requireAdmin, asyncHandler(as
       },
     });
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const transformedSettlements = settlements.map(transaction => ({
       id: transaction.id,
       amount: transaction.amount,
@@ -2726,10 +2534,6 @@ router.get('/dashboard/system/api', authenticate, requireAdmin, asyncHandler(asy
       }),
     ]);
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const systemInfo = {
       apiVersion: '1.0.0',
       uptime: process.uptime(),
@@ -2799,10 +2603,6 @@ router.get('/dashboard/advertisements', authenticate, requireAdmin, asyncHandler
       },
     ];
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'Advertisements retrieved successfully',
@@ -2853,10 +2653,6 @@ router.get('/dashboard/disputes', authenticate, requireAdmin, asyncHandler(async
       },
     }) as any;
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const disputes = disputeOrders.map(order => ({
       id: order.id,
       // Field removed
@@ -2930,10 +2726,6 @@ router.get('/dashboard/reports/financial', authenticate, requireAdmin, asyncHand
       }).then(result => Number(result._sum.totalAmount || 0) * 0.05), // 5% commission
     ]);
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const financialReport = {
       revenue: {
         total: totalRevenue._sum.totalAmount || 0,
@@ -2998,10 +2790,6 @@ router.get('/dashboard/reports/users', authenticate, requireAdmin, asyncHandler(
       prisma.user.count({ where: { userType: 'buyer' } }),
     ]);
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     const userReport = {
       overview: {
         total: totalUsers,
@@ -3066,10 +2854,6 @@ router.get('/dashboard/system/config', authenticate, requireAdmin, asyncHandler(
       timestamp: new Date().toISOString(),
     };
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'System configuration retrieved successfully',
@@ -3132,10 +2916,6 @@ router.get('/dashboard/system/features', authenticate, requireAdmin, asyncHandle
       },
     ];
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'System features retrieved successfully',
@@ -3189,10 +2969,6 @@ router.get('/dashboard/system/notifications', authenticate, requireAdmin, asyncH
       timestamp: new Date().toISOString(),
     };
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
     return res.json({
       success: true,
       message: 'System notifications configuration retrieved successfully',
