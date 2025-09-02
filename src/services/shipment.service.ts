@@ -1,327 +1,453 @@
+/**
+ * Shipment Service
+ * Manages shipments with proper schema alignment
+ */
+
 import { PrismaClient, Shipment } from '@prisma/client';
 
 export class ShipmentService {
   private prisma: PrismaClient;
 
-  constructor(prisma: PrismaClient) {
-    this.prisma = prisma;
+  constructor() {
+    this.prisma = new PrismaClient();
   }
 
+  /**
+   * Create a new shipment
+   */
   async createShipment(data: {
-    
+    orderId: string;
     providerId?: string;
     trackingNumber?: string;
-    carrier?: string;
     estimatedDelivery?: Date;
-    shippingCost?: number;
-    pickupAddress?: any;
-    deliveryAddress?: any;
+    shippingAddress: any;
     packageDetails?: any;
-    service?: string;
-    provider?: string;
   }): Promise<Shipment> {
-    return this.prisma.shipment.create({
-      data: {
-        // Field removed
-        providerId: data.providerId,
-        trackingNumber: data.trackingNumber,
-        carrier: data.carrier,
-        status: 'pending',
-        estimatedDelivery: data.estimatedDelivery,
-        shippingCost: data.shippingCost,
-        pickupAddress: data.pickupAddress,
-        deliveryAddress: data.deliveryAddress,
-        packageDetails: data.packageDetails,
-        service: data.service,
-        provider: data.provider,
-      },
-    });
+    try {
+      return await this.prisma.shipment.create({
+        data: {
+          orderId: data.orderId,
+          providerId: data.providerId,
+          trackingNumber: data.trackingNumber,
+          status: 'pending',
+          estimatedDelivery: data.estimatedDelivery,
+          shippingAddress: data.shippingAddress,
+          packageDetails: data.packageDetails || {},
+        },
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              seller: {
+                select: {
+                  id: true,
+                  businessName: true,
+                },
+              },
+            },
+          },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Error creating shipment:', error);
+      throw new Error('Failed to create shipment');
+    }
   }
 
+  /**
+   * Get shipment by ID
+   */
   async getShipmentById(id: string): Promise<Shipment | null> {
-    return this.prisma.shipment.findUnique({
-      where: { id },
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            buyer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                phone: true,
+    try {
+      return await this.prisma.shipment.findUnique({
+        where: { id },
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              seller: {
+                select: {
+                  id: true,
+                  businessName: true,
+                },
               },
             },
-            seller: {
-              select: {
-                id: true,
-                businessName: true,
-                email: true,
-                phone: true,
-              },
+          },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
             },
           },
         },
-        logisticsProvider: {
-          select: {
-            id: true,
-            name: true,
-            contactInfo: true,
-          },
-        },
-      },
-    });
+      });
+    } catch (error) {
+      console.error('Error fetching shipment:', error);
+      throw new Error('Failed to fetch shipment');
+    }
   }
 
-  async async getShipmentByOrderId(orderId: string
-    return this.prisma.shipment.findUnique({
-      where: { orderId },
-      include: {
-        logisticsProvider: {
-          select: {
-            id: true,
-            name: true,
-            contactInfo: true,
+  /**
+   * Get shipment by order ID
+   */
+  async getShipmentByOrderId(orderId: string): Promise<Shipment | null> {
+    try {
+      return await this.prisma.shipment.findUnique({
+        where: { orderId },
+        include: {
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      console.error('Error fetching shipment by order:', error);
+      throw new Error('Failed to fetch shipment by order');
+    }
   }
 
+  /**
+   * Get shipment by tracking number
+   */
   async getShipmentByTrackingNumber(trackingNumber: string): Promise<Shipment | null> {
-    return this.prisma.shipment.findUnique({
-      where: { trackingNumber },
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            buyer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
+    try {
+      return await this.prisma.shipment.findUnique({
+        where: { trackingNumber },
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              seller: {
+                select: {
+                  id: true,
+                  businessName: true,
+                },
               },
             },
           },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
+          },
         },
-
-      },
-    });
+      });
+    } catch (error) {
+      console.error('Error fetching shipment by tracking number:', error);
+      throw new Error('Failed to fetch shipment by tracking number');
+    }
   }
 
-  async async updateShipmentStatus(orderId: string
+  /**
+   * Update shipment status
+   */
+  async updateShipmentStatus(
     id: string,
     status: string,
     notes?: string
   ): Promise<Shipment> {
-    const updateData: any = {
-      status,
-      updatedAt: new Date(),
-    };
+    try {
+      const updateData: any = {
+        status,
+        updatedAt: new Date(),
+      };
 
-    if (status === 'shipped' && !updateData.shippedAt) {
-      updateData.shippedAt = new Date();
-    } else if (status === 'delivered') {
-      updateData.deliveredAt = new Date();
+      if (notes) updateData.notes = notes;
+
+      if (status === 'shipped' && !updateData.shippedAt) {
+        updateData.shippedAt = new Date();
+      } else if (status === 'delivered') {
+        updateData.deliveredAt = new Date();
+      }
+
+      return await this.prisma.shipment.update({
+        where: { id },
+        data: updateData,
+      });
+    } catch (error) {
+      console.error('Error updating shipment status:', error);
+      throw new Error('Failed to update shipment status');
     }
-
-    return this.prisma.shipment.update({
-      where: { id },
-      data: updateData,
-    });
   }
 
-  // Tracking history functionality can be added when the model is available
-
+  /**
+   * Update tracking number
+   */
   async updateTrackingNumber(id: string, trackingNumber: string): Promise<Shipment> {
-    return this.prisma.shipment.update({
-      where: { id },
-      data: { trackingNumber },
-    });
+    try {
+      return await this.prisma.shipment.update({
+        where: { id },
+        data: { trackingNumber },
+      });
+    } catch (error) {
+      console.error('Error updating tracking number:', error);
+      throw new Error('Failed to update tracking number');
+    }
   }
 
+  /**
+   * Update estimated delivery
+   */
   async updateEstimatedDelivery(id: string, estimatedDelivery: Date): Promise<Shipment> {
-    return this.prisma.shipment.update({
-      where: { id },
-      data: { estimatedDelivery },
-    });
+    try {
+      return await this.prisma.shipment.update({
+        where: { id },
+        data: { estimatedDelivery },
+      });
+    } catch (error) {
+      console.error('Error updating estimated delivery:', error);
+      throw new Error('Failed to update estimated delivery');
+    }
   }
 
+  /**
+   * Get shipments by status
+   */
   async getShipmentsByStatus(status: string): Promise<Shipment[]> {
-    return this.prisma.shipment.findMany({
-      where: { status },
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            buyer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
+    try {
+      return await this.prisma.shipment.findMany({
+        where: { status },
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
               },
-            },
-            seller: {
-              select: {
-                id: true,
-                businessName: true,
+              seller: {
+                select: {
+                  id: true,
+                  businessName: true,
+                },
               },
             },
           },
-        },
-        carrier: {
-          select: {
-            id: true,
-            name: true,
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      console.error('Error fetching shipments by status:', error);
+      throw new Error('Failed to fetch shipments by status');
+    }
   }
 
+  /**
+   * Get shipments by provider
+   */
   async getShipmentsByProvider(providerId: string): Promise<Shipment[]> {
-    return this.prisma.shipment.findMany({
-      where: { providerId },
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            buyer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+    try {
+      return await this.prisma.shipment.findMany({
+        where: { providerId },
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
             },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      console.error('Error fetching shipments by provider:', error);
+      throw new Error('Failed to fetch shipments by provider');
+    }
   }
 
+  /**
+   * Get shipments for seller
+   */
   async getShipmentsForSeller(sellerId: string, status?: string): Promise<Shipment[]> {
-    const where: any = {
-      order: {
-        sellerId,
-      },
-    };
+    try {
+      const where: any = {
+        order: { sellerId },
+      };
 
-    if (status) {
-      where.status = status;
-    }
+      if (status) {
+        where.status = status;
+      }
 
-    return this.prisma.shipment.findMany({
-      where,
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            buyer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
+      return await this.prisma.shipment.findMany({
+        where,
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
               },
             },
           },
-        },
-        carrier: {
-          select: {
-            id: true,
-            name: true,
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      console.error('Error fetching shipments for seller:', error);
+      throw new Error('Failed to fetch shipments for seller');
+    }
   }
 
+  /**
+   * Get shipments for buyer
+   */
   async getShipmentsForBuyer(buyerId: string, status?: string): Promise<Shipment[]> {
-    const where: any = {
-      order: {
-        buyerId,
-      },
-    };
+    try {
+      const where: any = {
+        order: { buyerId },
+      };
 
-    if (status) {
-      where.status = status;
+      if (status) {
+        where.status = status;
+      }
+
+      return await this.prisma.shipment.findMany({
+        where,
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              seller: {
+                select: {
+                  id: true,
+                  businessName: true,
+                },
+              },
+            },
+          },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      console.error('Error fetching shipments for buyer:', error);
+      throw new Error('Failed to fetch shipments for buyer');
     }
-
-    return this.prisma.shipment.findMany({
-      where,
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            seller: {
-              select: {
-                id: true,
-                businessName: true,
-              },
-            },
-          },
-        },
-        carrier: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-
-      },
-      orderBy: { createdAt: 'desc' },
-    });
   }
 
+  /**
+   * Get delayed shipments
+   */
   async getDelayedShipments(): Promise<Shipment[]> {
-    const now = new Date();
-    
-    return this.prisma.shipment.findMany({
-      where: {
-        status: {
-          in: ['pending', 'picked_up', 'in_transit'],
+    try {
+      const now = new Date();
+
+      return await this.prisma.shipment.findMany({
+        where: {
+          status: {
+            in: ['pending', 'shipped', 'in_transit'],
+          },
+          estimatedDelivery: {
+            lt: now,
+          },
         },
-        estimatedDelivery: {
-          lt: now,
-        },
-      },
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            buyer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              buyer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
               },
-            },
-            seller: {
-              select: {
-                id: true,
-                businessName: true,
-                email: true,
+              seller: {
+                select: {
+                  id: true,
+                  businessName: true,
+                },
               },
             },
           },
+          logisticsProvider: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
+          },
         },
-      },
-      orderBy: { estimatedDelivery: 'asc' },
-    });
+        orderBy: { estimatedDelivery: 'asc' },
+      });
+    } catch (error) {
+      console.error('Error fetching delayed shipments:', error);
+      throw new Error('Failed to fetch delayed shipments');
+    }
   }
 
+  /**
+   * Get shipment statistics
+   */
   async getShipmentStats(): Promise<{
     total: number;
     pending: number;
@@ -330,30 +456,41 @@ export class ShipmentService {
     delivered: number;
     delayed: number;
   }> {
-    const [total, pending, shipped, inTransit, delivered, delayed] = await Promise.all([
-      this.prisma.shipment.count(),
-      this.prisma.shipment.count({ where: { status: 'pending' } }),
-      this.prisma.shipment.count({ where: { status: 'shipped' } }),
-      this.prisma.shipment.count({ where: { status: 'in_transit' } }),
-      this.prisma.shipment.count({ where: { status: 'delivered' } }),
-      this.getDelayedShipments().then(shipments => shipments.length),
-    ]);
+    try {
+      const [total, pending, shipped, inTransit, delivered, delayed] = await Promise.all([
+        this.prisma.shipment.count(),
+        this.prisma.shipment.count({ where: { status: 'pending' } }),
+        this.prisma.shipment.count({ where: { status: 'shipped' } }),
+        this.prisma.shipment.count({ where: { status: 'in_transit' } }),
+        this.prisma.shipment.count({ where: { status: 'delivered' } }),
+        this.prisma.shipment.count({
+          where: {
+            status: { in: ['pending', 'shipped', 'in_transit'] },
+            estimatedDelivery: { lt: new Date() },
+          },
+        }),
+      ]);
 
-    return {
-      total,
-      pending,
-      shipped,
-      inTransit,
-      delivered,
-      delayed,
-    };
+      return { total, pending, shipped, inTransit, delivered, delayed };
+    } catch (error) {
+      console.error('Error fetching shipment stats:', error);
+      throw new Error('Failed to fetch shipment stats');
+    }
   }
 
+  /**
+   * Delete shipment
+   */
   async deleteShipment(id: string): Promise<void> {
-    await this.prisma.shipment.delete({
-      where: { id },
-    });
+    try {
+      await this.prisma.shipment.delete({
+        where: { id },
+      });
+    } catch (error) {
+      console.error('Error deleting shipment:', error);
+      throw new Error('Failed to delete shipment');
+    }
   }
 }
 
-export const shipmentService = new ShipmentService(new PrismaClient());
+export const shipmentService = new ShipmentService();

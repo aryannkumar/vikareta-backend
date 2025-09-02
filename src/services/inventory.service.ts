@@ -73,7 +73,7 @@ export class InventoryService {
     });
   }
 
-  async async updateInventoryQuantity(orderId: string
+  async updateInventoryQuantity(
     id: string,
     available: number,
     operation: 'add' | 'subtract' | 'set' = 'set'

@@ -3,7 +3,7 @@
  * Manages service execution lifecycle with proper schema alignment
  */
 
-import { PrismaClient, ServiceExecution, ServiceOrderStatus } from '@prisma/client';
+import { PrismaClient, ServiceAppointment } from '@prisma/client';
 
 export class ServiceExecutionService {
   private prisma: PrismaClient;
@@ -18,34 +18,24 @@ export class ServiceExecutionService {
   async createExecution(data: {
     serviceId: string;
     orderId: string;
-    assigneeId?: string;
-    scheduledDate?: Date;
-    estimatedDuration?: string;
-    requirements?: string;
-    executionStatus?: ServiceOrderStatus;
-  }): Promise<ServiceExecution> {
+    scheduledDate: Date;
+    duration?: string;
+    status?: string;
+    notes?: string;
+  }): Promise<ServiceAppointment> {
     try {
-      return await this.prisma.ServiceExecution.create({
+      return await this.prisma.serviceAppointment.create({
         data: {
           serviceId: data.serviceId,
           orderId: data.orderId,
-          assigneeId: data.assigneeId,
           scheduledDate: data.scheduledDate,
-          estimatedDuration: data.estimatedDuration,
-          requirements: data.requirements,
-          executionStatus: data.executionStatus || 'PENDING',
+          duration: data.duration,
+          status: data.status || 'scheduled',
+          notes: data.notes,
         },
         include: {
           service: true,
           order: true,
-          assignee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-            },
-          },
         },
       });
     } catch (error) {
@@ -57,21 +47,13 @@ export class ServiceExecutionService {
   /**
    * Get execution by ID
    */
-  async getExecutionById(id: string): Promise<ServiceExecution | null> {
+  async getExecutionById(id: string): Promise<ServiceAppointment | null> {
     try {
-      return await this.prisma.ServiceExecution.findUnique({
+      return await this.prisma.serviceAppointment.findUnique({
         where: { id },
         include: {
           service: true,
           order: true,
-          assignee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-            },
-          },
         },
       });
     } catch (error) {
@@ -85,41 +67,23 @@ export class ServiceExecutionService {
    */
   async updateExecutionStatus(
     id: string,
-    executionStatus: ServiceOrderStatus,
-    customerFeedback?: string,
-    providerNotes?: string,
-    qualityScore?: number
-  ): Promise<ServiceExecution> {
+    status: string,
+    notes?: string
+  ): Promise<ServiceAppointment> {
     try {
       const updateData: any = {
-        executionStatus,
+        status,
         updatedAt: new Date(),
       };
 
-      if (customerFeedback) updateData.customerFeedback = customerFeedback;
-      if (providerNotes) updateData.providerNotes = providerNotes;
-      if (qualityScore) updateData.qualityScore = qualityScore;
+      if (notes) updateData.notes = notes;
 
-      if (executionStatus === 'IN_PROGRESS') {
-        updateData.startedAt = new Date();
-      } else if (executionStatus === 'COMPLETED') {
-        updateData.completedAt = new Date();
-      }
-
-      return await this.prisma.ServiceExecution.update({
+      return await this.prisma.serviceAppointment.update({
         where: { id },
         data: updateData,
         include: {
           service: true,
           order: true,
-          assignee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-            },
-          },
         },
       });
     } catch (error) {
@@ -131,21 +95,13 @@ export class ServiceExecutionService {
   /**
    * Get executions by service
    */
-  async getExecutionsByService(serviceId: string): Promise<ServiceExecution[]> {
+  async getExecutionsByService(serviceId: string): Promise<ServiceAppointment[]> {
     try {
-      return await this.prisma.ServiceExecution.findMany({
+      return await this.prisma.serviceAppointment.findMany({
         where: { serviceId },
         include: {
           service: true,
           order: true,
-          assignee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-            },
-          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -158,21 +114,13 @@ export class ServiceExecutionService {
   /**
    * Get executions by status
    */
-  async getExecutionsByStatus(executionStatus: ServiceOrderStatus): Promise<ServiceExecution[]> {
+  async getExecutionsByStatus(status: string): Promise<ServiceAppointment[]> {
     try {
-      return await this.prisma.ServiceExecution.findMany({
-        where: { executionStatus },
+      return await this.prisma.serviceAppointment.findMany({
+        where: { status },
         include: {
           service: true,
           order: true,
-          assignee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-            },
-          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -187,7 +135,7 @@ export class ServiceExecutionService {
    */
   async deleteExecution(id: string): Promise<void> {
     try {
-      await this.prisma.ServiceExecution.delete({
+      await this.prisma.serviceAppointment.delete({
         where: { id },
       });
     } catch (error) {
@@ -201,8 +149,6 @@ export class ServiceExecutionService {
    */
   async getExecutionStats(serviceId?: string): Promise<{
     total: number;
-    pending: number;
-    confirmed: number;
     scheduled: number;
     inProgress: number;
     completed: number;
@@ -211,17 +157,15 @@ export class ServiceExecutionService {
     try {
       const where = serviceId ? { serviceId } : {};
 
-      const [total, pending, confirmed, scheduled, inProgress, completed, cancelled] = await Promise.all([
-        this.prisma.ServiceExecution.count({ where }),
-        this.prisma.ServiceExecution.count({ where: { ...where, executionStatus: 'PENDING' } }),
-        this.prisma.ServiceExecution.count({ where: { ...where, executionStatus: 'CONFIRMED' } }),
-        this.prisma.ServiceExecution.count({ where: { ...where, executionStatus: 'SCHEDULED' } }),
-        this.prisma.ServiceExecution.count({ where: { ...where, executionStatus: 'IN_PROGRESS' } }),
-        this.prisma.ServiceExecution.count({ where: { ...where, executionStatus: 'COMPLETED' } }),
-        this.prisma.ServiceExecution.count({ where: { ...where, executionStatus: 'CANCELLED' } }),
+      const [total, scheduled, inProgress, completed, cancelled] = await Promise.all([
+        this.prisma.serviceAppointment.count({ where }),
+        this.prisma.serviceAppointment.count({ where: { ...where, status: 'scheduled' } }),
+        this.prisma.serviceAppointment.count({ where: { ...where, status: 'in_progress' } }),
+        this.prisma.serviceAppointment.count({ where: { ...where, status: 'completed' } }),
+        this.prisma.serviceAppointment.count({ where: { ...where, status: 'cancelled' } }),
       ]);
 
-      return { total, pending, confirmed, scheduled, inProgress, completed, cancelled };
+      return { total, scheduled, inProgress, completed, cancelled };
     } catch (error) {
       console.error('Error fetching execution stats:', error);
       throw new Error('Failed to fetch execution stats');
@@ -229,54 +173,17 @@ export class ServiceExecutionService {
   }
 
   /**
-   * Pause execution
+   * Update appointment notes
    */
-  async pauseExecution(id: string): Promise<ServiceExecution> {
+  async updateNotes(id: string, notes: string): Promise<ServiceAppointment> {
     try {
-      return await this.prisma.ServiceExecution.update({
+      return await this.prisma.serviceAppointment.update({
         where: { id },
-        data: {
-          executionStatus: 'PENDING',
-          updatedAt: new Date(),
-        },
+        data: { notes },
       });
     } catch (error) {
-      console.error('Error pausing execution:', error);
-      throw new Error('Failed to pause execution');
-    }
-  }
-
-  /**
-   * Resume execution
-   */
-  async resumeExecution(id: string): Promise<ServiceExecution> {
-    try {
-      return await this.prisma.ServiceExecution.update({
-        where: { id },
-        data: {
-          executionStatus: 'IN_PROGRESS',
-          startedAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
-    } catch (error) {
-      console.error('Error resuming execution:', error);
-      throw new Error('Failed to resume execution');
-    }
-  }
-
-  /**
-   * Update work log
-   */
-  async updateWorkLog(id: string, workLog: any): Promise<ServiceExecution> {
-    try {
-      return await this.prisma.ServiceExecution.update({
-        where: { id },
-        data: { workLog },
-      });
-    } catch (error) {
-      console.error('Error updating work log:', error);
-      throw new Error('Failed to update work log');
+      console.error('Error updating notes:', error);
+      throw new Error('Failed to update notes');
     }
   }
 }

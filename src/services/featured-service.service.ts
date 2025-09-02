@@ -243,7 +243,7 @@ export class FeaturedServiceService {
   }
 
   // Track analytics
-  static async async trackEvent(orderId: string
+  static async trackEvent(
     serviceId: string,
     eventType: 'view' | 'inquiry' | 'booking',
     userId?: string,

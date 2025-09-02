@@ -75,7 +75,7 @@ export class DeliveryPartnerService {
     });
   }
 
-  async async updateDeliveryPartner(orderId: string
+  async updateDeliveryPartner(
     id: string,
     data: Partial<{
       name: string;
@@ -104,7 +104,7 @@ export class DeliveryPartnerService {
     });
   }
 
-  async async getDeliveryPartnersForLocation(orderId: string
+  async getDeliveryPartnersForLocation(
     pincode: string,
     city?: string,
     state?: string
@@ -137,7 +137,7 @@ export class DeliveryPartnerService {
     });
   }
 
-  async async calculateShippingCost(orderId: string
+  async calculateShippingCost(
     partnerId: string,
     data: {
       fromPincode: string;

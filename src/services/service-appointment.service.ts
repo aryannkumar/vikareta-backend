@@ -147,7 +147,7 @@ export class ServiceAppointmentService {
     });
   }
 
-  async async updateAppointmentStatus(orderId: string
+  async updateAppointmentStatus(
     id: string,
     status: string,
     completedAt?: Date,
@@ -163,7 +163,7 @@ export class ServiceAppointmentService {
     });
   }
 
-  async async rescheduleAppointment(orderId: string
+  async rescheduleAppointment(
     id: string,
     newScheduledDate: Date,
     reason?: string
@@ -188,14 +188,14 @@ export class ServiceAppointmentService {
     });
   }
 
-  async async getProviderAvailability(orderId: string
+  async getProviderAvailability(
     providerId: string,
     dateFrom: Date,
     dateTo: Date
   ): Promise<{ date: Date; isAvailable: boolean }[]> {
     const appointments = await this.prisma.serviceAppointment.findMany({
       where: {
-        providerId,
+        service: { providerId },
         scheduledDate: {
           gte: dateFrom,
           lte: dateTo,

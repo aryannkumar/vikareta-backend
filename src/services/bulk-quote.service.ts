@@ -142,7 +142,7 @@ export class BulkQuoteService {
     });
   }
 
-  async async updateBulkQuote(orderId: string
+  async updateBulkQuote(
     id: string,
     data: Partial<{
       totalPrice: number;

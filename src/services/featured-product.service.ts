@@ -230,7 +230,7 @@ export class FeaturedProductService {
   }
 
   // Track analytics
-  static async async trackEvent(orderId: string
+  static async trackEvent(
     productId: string,
     eventType: 'view' | 'click' | 'order',
     userId?: string,

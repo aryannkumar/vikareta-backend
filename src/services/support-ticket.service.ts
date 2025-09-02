@@ -1,197 +1,241 @@
-import { PrismaClient, SupportTicket, TicketStatus } from '@prisma/client';
+/**
+ * Support Ticket Service
+ * Manages support tickets with proper schema alignment
+ */
+
+import { PrismaClient, SupportTicket } from '@prisma/client';
+
+enum TicketStatus {
+  OPEN = 'open',
+  IN_PROGRESS = 'in_progress',
+  WAITING_RESPONSE = 'waiting_response',
+  RESOLVED = 'resolved',
+  CLOSED = 'closed'
+}
 
 export class SupportTicketService {
   private prisma: PrismaClient;
 
-  constructor(prisma: PrismaClient) {
-    this.prisma = prisma;
+  constructor() {
+    this.prisma = new PrismaClient();
   }
 
+  /**
+   * Create a new support ticket
+   */
   async createTicket(data: {
-    userId: string;
     subject: string;
     description: string;
-    category?: string;
-    priority?: string;
-    attachments?: any;
+    category: string;
+    priority: string;
+    userId: string;
+    assigneeId?: string;
   }): Promise<SupportTicket> {
-    const ticketNumber = await this.generateTicketNumber();
-    
-    return this.prisma.supportTicket.create({
-      data: {
-        userId: data.userId,
-        ticketNumber,
-        subject: data.subject,
-        description: data.description,
-        category: data.category || 'general',
-        priority: data.priority || 'medium',
-        status: TicketStatus.OPEN,
-        // Field removed
-      },
-    });
-  }
+    try {
+      const ticketNumber = await this.generateTicketNumber();
 
-  async getTicketById(id: string): Promise<SupportTicket | null> {
-    return this.prisma.supportTicket.findUnique({
-      where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            businessName: true,
-          },
+      return await this.prisma.supportTicket.create({
+        data: {
+          ticketNumber,
+          subject: data.subject,
+          description: data.description,
+          category: data.category,
+          priority: data.priority,
+          userId: data.userId,
+          assigneeId: data.assigneeId,
+          status: TicketStatus.OPEN,
         },
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
           },
-        },
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                role: true,
-              },
+          assignee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
             },
           },
         },
-      },
-    });
-  }
-
-  async getTicketsByUser(userId: string, filters?: {
-    status?: TicketStatus;
-    category?: string;
-    priority?: string;
-  }): Promise<SupportTicket[]> {
-    return this.prisma.supportTicket.findMany({
-      where: {
-        userId,
-        ...(filters?.status && { status: filters.status }),
-        ...(filters?.category && { category: filters.category }),
-        ...(filters?.priority && { priority: filters.priority }),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        _count: {
-          select: {
-            messages: true,
-          },
-        },
-      },
-    });
-  }
-
-  async getAssignedTickets(assigneeId: string, filters?: {
-    status?: TicketStatus;
-    category?: string;
-    priority?: string;
-  }): Promise<SupportTicket[]> {
-    return this.prisma.supportTicket.findMany({
-      where: {
-        assignedTo: assigneeId,
-        ...(filters?.status && { status: filters.status }),
-        ...(filters?.category && { category: filters.category }),
-        ...(filters?.priority && { priority: filters.priority }),
-      },
-      orderBy: [
-        { priority: 'desc' },
-        { createdAt: 'asc' },
-      ],
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            businessName: true,
-          },
-        },
-        _count: {
-          select: {
-            messages: true,
-          },
-        },
-      },
-    });
-  }
-
-  async assignTicket(ticketId: string, assigneeId: string): Promise<SupportTicket> {
-    return this.prisma.supportTicket.update({
-      where: { id: ticketId },
-      data: {
-        assignedTo: assigneeId,
-        status: TicketStatus.IN_PROGRESS,
-      },
-    });
-  }
-
-  async updateTicketStatus(ticketId: string, status: TicketStatus): Promise<SupportTicket> {
-    const updateData: any = { status };
-    
-    if (status === TicketStatus.RESOLVED) {
-      updateData.resolvedAt = new Date();
-    } else if (status === TicketStatus.CLOSED) {
-      updateData.closedAt = new Date();
+      });
+    } catch (error) {
+      console.error('Error creating support ticket:', error);
+      throw new Error('Failed to create support ticket');
     }
-
-    return this.prisma.supportTicket.update({
-      where: { id: ticketId },
-      data: updateData,
-    });
   }
 
-  async updateTicketPriority(ticketId: string, priority: string): Promise<SupportTicket> {
-    return this.prisma.supportTicket.update({
-      where: { id: ticketId },
-      data: { priority },
-    });
+  /**
+   * Get ticket by ID
+   */
+  async getTicketById(id: string): Promise<SupportTicket | null> {
+    try {
+      return await this.prisma.supportTicket.findUnique({
+        where: { id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          assignee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          messages: {
+            include: {
+              sender: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching support ticket:', error);
+      throw new Error('Failed to fetch support ticket');
+    }
   }
 
-  async addMessage(data: {
-    ticketId: string;
-    userId: string;
-    message: string;
-    attachments?: any;
-    isInternal?: boolean;
-  }): Promise<void> {
-    const supportMessage = await this.prisma.supportMessage.create({
-      data: {
-        ticketId: data.ticketId,
-        userId: data.userId,
-        message: data.message,
-        isInternal: data.isInternal || false,
-      },
-    });
+  /**
+   * Get tickets by user
+   */
+  async getTicketsByUser(userId: string, status?: string): Promise<SupportTicket[]> {
+    try {
+      const where: any = { userId };
+      if (status) where.status = status;
 
-    // Update ticket's last activity
-    await this.prisma.supportTicket.update({
-      where: { id: data.ticketId },
-      data: { updatedAt: new Date() },
-    });
-
-    return supportMessage;
+      return await this.prisma.supportTicket.findMany({
+        where,
+        include: {
+          assignee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      console.error('Error fetching tickets by user:', error);
+      throw new Error('Failed to fetch tickets by user');
+    }
   }
 
+  /**
+   * Get tickets by assignee
+   */
+  async getTicketsByAssignee(assigneeId: string, status?: string): Promise<SupportTicket[]> {
+    try {
+      const where: any = { assigneeId };
+      if (status) where.status = status;
+
+      return await this.prisma.supportTicket.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      console.error('Error fetching tickets by assignee:', error);
+      throw new Error('Failed to fetch tickets by assignee');
+    }
+  }
+
+  /**
+   * Update ticket status
+   */
+  async updateTicketStatus(id: string, status: string): Promise<SupportTicket> {
+    try {
+      const updateData: any = { status };
+
+      if (status === TicketStatus.RESOLVED || status === TicketStatus.CLOSED) {
+        updateData.resolvedAt = new Date();
+      }
+
+      return await this.prisma.supportTicket.update({
+        where: { id },
+        data: updateData,
+      });
+    } catch (error) {
+      console.error('Error updating ticket status:', error);
+      throw new Error('Failed to update ticket status');
+    }
+  }
+
+  /**
+   * Assign ticket to user
+   */
+  async assignTicket(id: string, assigneeId: string): Promise<SupportTicket> {
+    try {
+      return await this.prisma.supportTicket.update({
+        where: { id },
+        data: { 
+          assigneeId,
+          status: TicketStatus.IN_PROGRESS,
+        },
+      });
+    } catch (error) {
+      console.error('Error assigning ticket:', error);
+      throw new Error('Failed to assign ticket');
+    }
+  }
+
+  /**
+   * Add message to ticket
+   */
+  async addMessage(ticketId: string, senderId: string, message: string): Promise<any> {
+    try {
+      return await this.prisma.supportMessage.create({
+        data: {
+          ticketId,
+          senderId,
+          message,
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Error adding message to ticket:', error);
+      throw new Error('Failed to add message to ticket');
+    }
+  }
+
+  /**
+   * Get ticket statistics
+   */
   async getTicketStats(assigneeId?: string): Promise<{
     total: number;
     open: number;
@@ -199,106 +243,113 @@ export class SupportTicketService {
     waitingResponse: number;
     resolved: number;
     closed: number;
-    avgResolutionTime: number;
   }> {
-    const where = assigneeId ? { assignedTo: assigneeId } : {};
+    try {
+      const where = assigneeId ? { assigneeId } : {};
 
-    const [totalCount, statusCounts, avgResolution] = await Promise.all([
-      this.prisma.supportTicket.count({ where }),
-      this.prisma.supportTicket.groupBy({
-        by: ['status'],
-        where,
-        _count: { status: true },
-      }),
-      this.prisma.supportTicket.aggregate({
-        where: {
-          ...where,
-          },
-          createdAt: { not: null },
-        },
-        _avg: {
-          // This would need a computed field for resolution time
-          // For now, we'll calculate it differently
-        },
-      }),
-    ]);
+      const [totalCount, statusCounts] = await Promise.all([
+        this.prisma.supportTicket.count({ where }),
+        this.prisma.supportTicket.groupBy({
+          by: ['status'],
+          where,
+          _count: { status: true },
+        }),
+      ]);
 
-    const statusMap = statusCounts.reduce((acc, item) => {
-      acc[item.status] = item._count.status;
-      return acc;
-    }, {} as Record<string, number>);
+      const statusMap = statusCounts.reduce((acc, item) => {
+        acc[item.status] = item._count.status;
+        return acc;
+      }, {} as Record<string, number>);
 
-    return {
-      total: totalCount,
-      open: statusMap[TicketStatus.OPEN] || 0,
-      inProgress: statusMap[TicketStatus.IN_PROGRESS] || 0,
-      waitingResponse: statusMap[TicketStatus.WAITING_RESPONSE] || 0,
-      resolved: statusMap[TicketStatus.RESOLVED] || 0,
-      closed: statusMap[TicketStatus.CLOSED] || 0,
-      avgResolutionTime: 0, // Would need to calculate based on created/resolved dates
-    };
+      return {
+        total: totalCount,
+        open: statusMap[TicketStatus.OPEN] || 0,
+        inProgress: statusMap[TicketStatus.IN_PROGRESS] || 0,
+        waitingResponse: statusMap[TicketStatus.WAITING_RESPONSE] || 0,
+        resolved: statusMap[TicketStatus.RESOLVED] || 0,
+        closed: statusMap[TicketStatus.CLOSED] || 0,
+      };
+    } catch (error) {
+      console.error('Error fetching ticket stats:', error);
+      throw new Error('Failed to fetch ticket stats');
+    }
   }
 
+  /**
+   * Search tickets
+   */
   async searchTickets(query: string, filters?: {
-    status?: TicketStatus;
+    status?: string;
     category?: string;
     priority?: string;
     assigneeId?: string;
   }): Promise<SupportTicket[]> {
-    return this.prisma.supportTicket.findMany({
-      where: {
-        ...(filters?.status && { status: filters.status }),
-        ...(filters?.category && { category: filters.category }),
-        ...(filters?.priority && { priority: filters.priority }),
-        ...(filters?.assigneeId && { assignedTo: filters.assigneeId }),
-        OR: [
-          { subject: { contains: query, mode: 'insensitive' } },
-          { description: { contains: query, mode: 'insensitive' } },
-          { mode: 'insensitive' } },
-        ],
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
+    try {
+      return await this.prisma.supportTicket.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                { subject: { contains: query, mode: 'insensitive' } },
+                { description: { contains: query, mode: 'insensitive' } },
+                { ticketNumber: { contains: query, mode: 'insensitive' } },
+              ],
+            },
+            ...(filters?.status ? [{ status: filters.status }] : []),
+            ...(filters?.category ? [{ category: filters.category }] : []),
+            ...(filters?.priority ? [{ priority: filters.priority }] : []),
+            ...(filters?.assigneeId ? [{ assigneeId: filters.assigneeId }] : []),
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          assignee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-    });
+      });
+    } catch (error) {
+      console.error('Error searching tickets:', error);
+      throw new Error('Failed to search tickets');
+    }
   }
 
+  /**
+   * Generate ticket number
+   */
   private async generateTicketNumber(): Promise<string> {
     const currentYear = new Date().getFullYear();
     const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
-    
+
     const lastTicket = await this.prisma.supportTicket.findFirst({
       where: {
-        
+        ticketNumber: {
           startsWith: `TKT-${currentYear}${currentMonth}`,
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    let sequence = 1;
+    let nextNumber = 1;
     if (lastTicket) {
-      const lastSequence = parseInt(lastTicket.ticketNumber.split('-').pop() || '0');
-      sequence = lastSequence + 1;
+      const lastNumber = parseInt(lastTicket.ticketNumber.split('-')[2]);
+      nextNumber = lastNumber + 1;
     }
 
-    return `TKT-${currentYear}${currentMonth}-${String(sequence).padStart(4, '0')}`;
+    return `TKT-${currentYear}${currentMonth}-${String(nextNumber).padStart(4, '0')}`;
   }
 }
 
-export const supportTicketService = new SupportTicketService(new PrismaClient());
+export const supportTicketService = new SupportTicketService();

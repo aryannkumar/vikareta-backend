@@ -162,7 +162,7 @@ export class VendorRatingService {
     };
   }
 
-  async async updateVendorRating(orderId: string
+  async updateVendorRating(
     id: string,
     data: Partial<{
       rating: number;

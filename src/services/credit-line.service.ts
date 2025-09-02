@@ -239,10 +239,6 @@ export class CreditLineService {
     }
   }
 
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
   async cleanup(): Promise<void> {
     await this.prisma.$disconnect();
   }

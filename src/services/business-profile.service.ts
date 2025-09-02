@@ -68,7 +68,7 @@ export class BusinessProfileService {
     });
   }
 
-  async async updateBusinessProfile(orderId: string
+  async updateBusinessProfile(
     userId: string,
     data: Partial<{
       companyName: string;
