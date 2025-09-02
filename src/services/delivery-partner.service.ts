@@ -191,7 +191,7 @@ export class DeliveryPartnerService {
       },
     });
 
-    const totalShipments = typeof shipmentStats._count === 'number' ? shipmentStats._count : shipmentStats._count._all || 0;
+    const totalShipments = typeof shipmentStats._count === 'number' ? shipmentStats._count : (shipmentStats._count as any)?.id || 0;
     const successRate = totalShipments > 0 ? (deliveredShipments / totalShipments) * 100 : 0;
 
     return {

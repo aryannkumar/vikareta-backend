@@ -7,7 +7,7 @@ import { PrismaClient, AdminAction } from '@prisma/client';
 
 export interface CreateAdminActionData {
   adminId: string;
-  actionType: AdminActionType;
+  action: string;
   targetType: string;
   targetId: string;
   description: string;
@@ -42,7 +42,7 @@ export class AdminActionService {
 
   async getAdminActions(filters: {
     adminId?: string;
-    actionType?: AdminActionType;
+    action?: string;
     targetType?: string;
     startDate?: Date;
     endDate?: Date;
@@ -55,7 +55,7 @@ export class AdminActionService {
     const where: any = {};
     
     if (whereFilters.adminId) where.adminId = whereFilters.adminId;
-    if (whereFilters.actionType) where.actionType = whereFilters.actionType;
+    if (whereFilters.action) where.action = whereFilters.action;
     if (whereFilters.targetType) where.targetType = whereFilters.targetType;
     
     if (whereFilters.startDate || whereFilters.endDate) {
