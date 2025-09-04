@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { body, param, query } from 'express-validator';
+import { body, query } from 'express-validator';
 import { UserController } from '@/controllers/user.controller';
 import { validate, validatePagination, validateSort, validateUUID } from '../middleware/validation.middleware';
-import { authMiddleware, requireAdmin, requireVerifiedUser } from '../middleware/auth-middleware';
+import { authMiddleware, requireAdmin } from '../middleware/auth-middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -11,8 +11,40 @@ const userController = new UserController();
 // All routes require authentication
 router.use(authMiddleware);
 
+/**
+ * @openapi
+ * /api/v1/users/profile:
+ *   get:
+ *     summary: Get current user's profile
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile
+ */
 // User profile routes
 router.get('/profile', asyncHandler(userController.getProfile.bind(userController)));
+
+/**
+ * @openapi
+ * /api/v1/users/profile:
+ *   put:
+ *     summary: Update current user's profile
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Updated profile
+ */
 router.put('/profile', 
   validate([
     body('firstName').optional().trim().isLength({ min: 2, max: 50 }),

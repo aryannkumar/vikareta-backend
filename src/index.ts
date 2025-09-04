@@ -18,6 +18,7 @@ import { minioService } from './services/minio.service';
 import { analyticsService } from './services/analytics.service';
 import { jobScheduler } from './jobs/scheduler';
 import { setupRoutes } from './routes';
+import { setupSwagger } from './swagger';
 
 // use shared prisma from config/database
 
@@ -219,6 +220,14 @@ class Application {
       // Setup middleware
       this.setupMiddleware();
 
+      // Setup Swagger UI
+      try {
+  setupSwagger(this.app as any);
+        logger.info('Swagger UI mounted at /api-docs');
+      } catch (err) {
+        logger.warn('Failed to mount Swagger UI:', err);
+      }
+
       // Setup health checks
       this.setupHealthChecks();
 
@@ -238,7 +247,8 @@ class Application {
         });
       });
 
-      this.app.use((error: any, req: any, res: any, next: any) => {
+      this.app.use((error: any, req: any, res: any, _next: any) => {
+        void _next;
         logger.error('Unhandled error:', error);
         res.status(500).json({
           success: false,

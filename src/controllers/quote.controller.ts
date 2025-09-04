@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { RfqService } from '../services/rfq.service';
 import { validationResult } from 'express-validator';

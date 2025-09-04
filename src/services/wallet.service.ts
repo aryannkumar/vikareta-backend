@@ -1,4 +1,4 @@
-import { PrismaClient, Wallet, WalletTransaction, LockedAmount } from '@prisma/client';
+import type { Wallet, WalletTransaction, LockedAmount } from '@prisma/client';
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
 

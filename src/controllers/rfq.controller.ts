@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { RfqService } from '../services/rfq.service';
 import { validationResult } from 'express-validator';
@@ -147,6 +146,11 @@ export class RfqController {
       });
     } catch (error) {
       logger.error('Error closing RFQ:', error);
+      const e: any = error;
+      if (e && e.code === 'P2025') {
+        res.status(404).json({ error: 'RFQ not found or unauthorized' });
+        return;
+      }
       res.status(500).json({ error: 'Internal server error' });
     }
   }

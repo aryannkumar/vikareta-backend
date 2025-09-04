@@ -108,8 +108,56 @@ const verifyOTPValidation = [
 
 // Routes
 
-// Public routes
+/**
+ * @openapi
+ * /api/v1/auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User created
+ */
 router.post('/register', validate(registerValidation), asyncHandler(authController.register.bind(authController)));
+
+/**
+ * @openapi
+ * /api/v1/auth/login:
+ *   post:
+ *     summary: Login with email/phone and password
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Authenticated
+ */
 router.post('/login', validate(loginValidation), asyncHandler(authController.login.bind(authController)));
 router.post('/forgot-password', validate(forgotPasswordValidation), asyncHandler(authController.forgotPassword.bind(authController)));
 router.post('/reset-password', validate(resetPasswordValidation), asyncHandler(authController.resetPassword.bind(authController)));

@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { prisma } from '@/config/database';
-import { redisClient, cacheHelper } from '../config/redis';
+import type { PrismaClient } from '@prisma/client';
+import { cacheHelper } from '../config/redis';
 import { logger } from '@/utils/logger';
 import { NotFoundError, ValidationError } from '@/middleware/error-handler';
 

@@ -1,4 +1,4 @@
-import { PrismaClient, Service, ServiceMedia } from '@prisma/client';
+import { Service, ServiceMedia } from '@prisma/client';
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
 import { elasticsearchService } from './elasticsearch.service';
@@ -71,11 +71,21 @@ export class ServiceService extends BaseService {
 
   async updateService(serviceId: string, providerId: string, data: UpdateServiceData): Promise<Service> {
     try {
+      // Ensure the service exists and belongs to the provider
+      const existing = await this.prisma.service.findUnique({ where: { id: serviceId } });
+      if (!existing) {
+        const err: any = new Error('Service not found');
+        err.code = 'P2025';
+        throw err;
+      }
+      if (existing.providerId !== providerId) {
+        const err: any = new Error('Unauthorized');
+        err.code = 'P2025';
+        throw err;
+      }
+
       const service = await this.prisma.service.update({
-        where: {
-          id: serviceId,
-          providerId, // Ensure provider can only update their own services
-        },
+        where: { id: serviceId },
         data,
         include: {
           provider: true,
@@ -212,12 +222,13 @@ export class ServiceService extends BaseService {
 
   async deleteService(serviceId: string, providerId: string): Promise<void> {
     try {
-      await this.prisma.service.delete({
-        where: {
-          id: serviceId,
-          providerId, // Ensure provider can only delete their own services
-        },
-      });
+      // Use deleteMany to ensure provider can only delete their own services
+      const result = await this.prisma.service.deleteMany({ where: { id: serviceId, providerId } });
+      if (result.count === 0) {
+        const err: any = new Error('Service not found or unauthorized');
+        err.code = 'P2025';
+        throw err;
+      }
 
       // Remove from Elasticsearch
       await this.removeServiceFromElasticsearch(serviceId);
@@ -295,9 +306,10 @@ export class ServiceService extends BaseService {
         searchBody.query.bool.filter.push({ range: { price: priceRange } });
       }
 
-      const response = await elasticsearchService.search(query, 'services');
+  const esResponse = await elasticsearchService.search<any>('services', searchBody);
 
-      const serviceIds = response.hits.map((hit: any) => hit.id);
+  const hits = esResponse.hits?.hits || [];
+  const serviceIds = hits.map((hit: any) => hit._source?.id || hit._id).filter(Boolean);
       
       if (serviceIds.length === 0) {
         return { services: [], total: 0, page, totalPages: 0 };
@@ -327,15 +339,20 @@ export class ServiceService extends BaseService {
       });
 
       // Maintain Elasticsearch order
-      const orderedServices = serviceIds.map((id: string) => 
+      const orderedServicesUnfiltered = serviceIds.map((id: string) => 
         services.find(s => s.id === id)
-      ).filter(Boolean);
+      );
+      const orderedServices = orderedServicesUnfiltered.filter(Boolean) as Service[];
+
+      const total = typeof esResponse.hits?.total === 'number'
+        ? esResponse.hits.total
+        : (esResponse.hits?.total?.value || 0);
 
       return {
         services: orderedServices,
-        total: response.total,
+        total,
         page,
-        totalPages: Math.ceil(response.total / limit),
+        totalPages: Math.ceil(total / limit),
       };
     } catch (error) {
       logger.error('Error searching services:', error);
@@ -389,27 +406,81 @@ export class ServiceService extends BaseService {
     customerNotes?: string;
   }): Promise<any> {
     try {
-      // This would typically create a service order or booking
-      // For now, we'll create a placeholder implementation
-      const service = await this.getServiceById(serviceId);
+      // Realistic booking flow:
+      // 1. Validate service exists and get providerId & price
+      // 2. Create an Order (orderType: 'service')
+      // 3. Create a ServiceOrder linked to the Order
+      // 4. Create a ServiceAppointment linked to the Order & Service
+      const service = await this.prisma.service.findUnique({ where: { id: serviceId } });
       if (!service) {
-        throw new Error('Service not found');
+        const err: any = new Error('Service not found');
+        err.code = 'P2025';
+        throw err;
       }
 
-      // Create service appointment
-      const appointment = await this.prisma.serviceAppointment.create({
-        data: {
-          serviceId,
-          orderId: '', // This would be set when creating an actual order
-          scheduledDate: bookingData.scheduledDate || new Date(),
-          duration: bookingData.duration,
-          notes: bookingData.requirements,
-          status: 'scheduled',
-        },
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        // create a simple order number
+        const orderNumber = `VKR${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
-      logger.info(`Service booked: ${serviceId} by customer: ${customerId}`);
-      return appointment;
+        const unitPrice = Number(service.price || 0);
+        const quantity = 1;
+        const subtotal = unitPrice * quantity;
+        const taxAmount = subtotal * 0.18; // 18% GST
+        const shippingAmount = 0;
+        const discountAmount = 0;
+        const totalAmount = subtotal + taxAmount + shippingAmount - discountAmount;
+
+        const order = await tx.order.create({
+          data: {
+            buyerId: customerId,
+            sellerId: service.providerId,
+            orderNumber,
+            orderType: 'service',
+            subtotal,
+            taxAmount,
+            shippingAmount,
+            discountAmount,
+            totalAmount,
+            status: 'confirmed',
+            paymentStatus: 'pending',
+            estimatedDelivery: bookingData.scheduledDate,
+          },
+        });
+
+        const serviceOrder = await tx.serviceOrder.create({
+          data: {
+            orderId: order.id,
+            serviceId,
+            quantity,
+            unitPrice,
+            totalPrice: subtotal,
+            scheduledDate: bookingData.scheduledDate,
+            duration: bookingData.duration,
+            location: bookingData.location,
+            requirements: bookingData.requirements,
+            status: 'scheduled',
+          },
+        });
+
+        const appointment = await tx.serviceAppointment.create({
+          data: {
+            orderId: order.id,
+            serviceId,
+            scheduledDate: bookingData.scheduledDate || new Date(),
+            duration: bookingData.duration,
+            status: 'scheduled',
+            notes: bookingData.requirements || bookingData.customerNotes,
+          },
+        });
+
+        logger.info(`Service booked: ${serviceId} by customer: ${customerId} - order: ${order.id}`);
+
+        return {
+          order,
+          serviceOrder,
+          appointment,
+        };
+      });
     } catch (error) {
       logger.error('Error booking service:', error);
       throw error;

@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { CategoryService } from '../services/category.service';
 import { validationResult } from 'express-validator';
@@ -134,7 +133,8 @@ export class CategoryController {
       });
     } catch (error) {
       logger.error('Error updating category:', error);
-      if (error.code === 'P2025') {
+      const e: any = error;
+      if (e && e.code === 'P2025') {
         res.status(404).json({ error: 'Category not found' });
         return;
       }
@@ -153,8 +153,9 @@ export class CategoryController {
       });
     } catch (error) {
       logger.error('Error deleting category:', error);
-      if (error.message.includes('associated products')) {
-        res.status(400).json({ error: error.message });
+      const e: any = error;
+      if (e && typeof e.message === 'string' && e.message.includes('associated products')) {
+        res.status(400).json({ error: e.message });
         return;
       }
       res.status(500).json({ error: 'Internal server error' });
@@ -259,7 +260,8 @@ export class CategoryController {
       });
     } catch (error) {
       logger.error('Error updating subcategory:', error);
-      if (error.code === 'P2025') {
+      const e: any = error;
+      if (e && e.code === 'P2025') {
         res.status(404).json({ error: 'Subcategory not found' });
         return;
       }
@@ -278,8 +280,9 @@ export class CategoryController {
       });
     } catch (error) {
       logger.error('Error deleting subcategory:', error);
-      if (error.message.includes('associated products')) {
-        res.status(400).json({ error: error.message });
+      const e: any = error;
+      if (e && typeof e.message === 'string' && e.message.includes('associated products')) {
+        res.status(400).json({ error: e.message });
         return;
       }
       res.status(500).json({ error: 'Internal server error' });

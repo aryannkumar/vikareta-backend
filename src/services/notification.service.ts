@@ -1,6 +1,7 @@
 import { prisma } from '@/config/database';
 import { logger } from '../utils/logger';
 import { redisClient } from '../config/redis';
+import { WebSocketService } from '@/websocket';
 // import { EmailService } from './email.service';
 // import { SMSService } from './sms.service';
 // import { WhatsAppService } from './whatsapp.service';
@@ -606,7 +607,7 @@ export class NotificationService {
       }
 
       // Send to buyer
-      await this.createNotification({
+      const buyerNotif = await this.createNotification({
         userId: order.buyerId,
         title,
         message,
@@ -614,14 +615,26 @@ export class NotificationService {
         data: { orderId: order.id, orderNumber: order.orderNumber },
       });
 
+      try {
+        WebSocketService.emitNotification(order.buyerId, buyerNotif);
+      } catch (wsErr) {
+        logger.warn('Failed to emit buyer order notification via WebSocket:', wsErr);
+      }
+
       // Send to seller
-      await this.createNotification({
+      const sellerNotif = await this.createNotification({
         userId: order.sellerId,
         title,
         message: message.replace('Your order', 'Order'),
         type: `order_${type}`,
         data: { orderId: order.id, orderNumber: order.orderNumber },
       });
+
+      try {
+        WebSocketService.emitNotification(order.sellerId, sellerNotif);
+      } catch (wsErr) {
+        logger.warn('Failed to emit seller order notification via WebSocket:', wsErr);
+      }
     } catch (error) {
       logger.error('Error sending order notification:', error);
     }

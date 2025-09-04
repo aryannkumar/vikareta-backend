@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { OrderService } from '../services/order.service';
 import { validationResult } from 'express-validator';
@@ -198,8 +197,9 @@ export class OrderController {
       });
     } catch (error) {
       logger.error('Error cancelling order:', error);
-      if (error.message.includes('cannot be cancelled')) {
-        res.status(400).json({ error: error.message });
+      const e: any = error;
+      if (e && typeof e.message === 'string' && e.message.includes('cannot be cancelled')) {
+        res.status(400).json({ error: e.message });
         return;
       }
       res.status(500).json({ error: 'Internal server error' });

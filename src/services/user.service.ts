@@ -4,7 +4,6 @@ import { User, Prisma } from '@prisma/client';
 import { BaseService, PaginationOptions, SortOptions, PaginatedResult } from './base.service';
 import { config } from '../config/environment';
 import { ValidationError, NotFoundError, ConflictError, AuthenticationError } from '../middleware/error-handler';
-import { elasticsearchService } from './elasticsearch.service';
 import { elasticsearchHelper, INDICES } from '@/config/elasticsearch';
 import { JWTPayload } from '../types/auth.types';
 
@@ -116,12 +115,13 @@ export class UserService extends BaseService {
       // Index user in Elasticsearch
       await this.indexUserInElasticsearch(user);
 
-      // Remove password hash from response
-      const { passwordHash: _, ...userWithoutPassword } = user;
+  // Remove password hash from response
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { passwordHash: _passwordHash, ...userWithoutPassword } = user as any;
 
-      this.logOperation('createUser', { userId: user.id, userType: user.userType });
+  this.logOperation('createUser', { userId: user.id, userType: user.userType });
 
-      return userWithoutPassword as User;
+  return userWithoutPassword as User;
     } catch (error) {
       this.handleError(error, 'createUser', data);
     }
@@ -171,8 +171,9 @@ export class UserService extends BaseService {
         isActive: user.isActive,
       }, 900); // 15 minutes
 
-      // Remove password hash from response
-      const { passwordHash: _, ...userWithoutPassword } = user;
+  // Remove password hash from response
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { passwordHash: _passwordHash, ...userWithoutPassword } = user as any;
 
       this.logOperation('login', { userId: user.id, userType: user.userType });
 
@@ -259,8 +260,9 @@ export class UserService extends BaseService {
       // Update in Elasticsearch
       await this.indexUserInElasticsearch(user);
 
-      // Remove password hash from response
-      const { passwordHash: _, ...userWithoutPassword } = user;
+  // Remove password hash from response
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { passwordHash: _passwordHash, ...userWithoutPassword } = user as any;
 
       this.logOperation('updateUser', { userId: id }, id);
 
@@ -427,6 +429,101 @@ export class UserService extends BaseService {
       this.logOperation('deactivateUser', { userId: id });
     } catch (error) {
       this.handleError(error, 'deactivateUser', { id });
+    }
+  }
+
+  /**
+   * Follow another user
+   */
+  async followUser(followerId: string, followingId: string): Promise<void> {
+    try {
+      this.validateUUID(followerId, 'followerId');
+      this.validateUUID(followingId, 'followingId');
+
+      if (followerId === followingId) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.userFollow.upsert({
+          where: { followerId_followingId: { followerId, followingId } },
+          create: { followerId, followingId },
+          update: {},
+        }).catch(() => null);
+
+        await tx.follow.upsert({
+          where: { followerId_followingId: { followerId, followingId } },
+          create: { followerId, followingId },
+          update: {},
+        }).catch(() => null);
+      });
+
+      await this.invalidateCache(`user:${followerId}:following*`);
+      await this.invalidateCache(`user:${followingId}:followers*`);
+
+      this.logOperation('followUser', { followerId, followingId });
+    } catch (error) {
+      this.handleError(error, 'followUser', { followerId, followingId });
+    }
+  }
+
+  /**
+   * Unfollow a user
+   */
+  async unfollowUser(followerId: string, followingId: string): Promise<void> {
+    try {
+      this.validateUUID(followerId, 'followerId');
+      this.validateUUID(followingId, 'followingId');
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.userFollow.deleteMany({ where: { followerId, followingId } });
+        await tx.follow.deleteMany({ where: { followerId, followingId } });
+      });
+
+      await this.invalidateCache(`user:${followerId}:following*`);
+      await this.invalidateCache(`user:${followingId}:followers*`);
+
+      this.logOperation('unfollowUser', { followerId, followingId });
+    } catch (error) {
+      this.handleError(error, 'unfollowUser', { followerId, followingId });
+    }
+  }
+
+  async getFollowing(userId: string, page = 1, limit = 20) {
+    try {
+      const skip = (page - 1) * limit;
+      const [rows, total] = await Promise.all([
+        this.prisma.userFollow.findMany({
+          where: { followerId: userId },
+          include: { following: { select: { id: true, firstName: true, lastName: true, businessName: true, avatar: true } } },
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' }
+        }),
+        this.prisma.userFollow.count({ where: { followerId: userId } })
+      ]);
+
+      return { data: rows.map(r => r.following), total };
+    } catch (error) {
+      this.handleError(error, 'getFollowing', { userId, page, limit });
+    }
+  }
+
+  async getFollowers(userId: string, page = 1, limit = 20) {
+    try {
+      const skip = (page - 1) * limit;
+      const [rows, total] = await Promise.all([
+        this.prisma.userFollow.findMany({
+          where: { followingId: userId },
+          include: { follower: { select: { id: true, firstName: true, lastName: true, businessName: true, avatar: true } } },
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' }
+        }),
+        this.prisma.userFollow.count({ where: { followingId: userId } })
+      ]);
+
+      return { data: rows.map(r => r.follower), total };
+    } catch (error) {
+      this.handleError(error, 'getFollowers', { userId, page, limit });
     }
   }
 

@@ -2,6 +2,7 @@ import { Client } from '@elastic/elasticsearch';
 import { logger } from '../utils/logger';
 import elasticsearchClient, { elasticsearchHelper, INDICES } from '@/config/elasticsearch';
 import { prisma } from '@/config/database';
+import { ESSearchResponse } from '@/types/elasticsearch.types';
 
 export class ElasticsearchService {
     private client: Client;
@@ -486,13 +487,13 @@ export class ElasticsearchService {
         }
     }
 
-    async search(index: string, query: any): Promise<any> {
+    async search<T = any>(index: string, query: any): Promise<ESSearchResponse<T>> {
         try {
             const response = await this.client.search({
                 index,
                 body: query,
             }) as any;
-            return response.body ?? response;
+            return (response.body ?? response) as ESSearchResponse<T>;
         } catch (error) {
             logger.error(`Error searching index ${index}:`, error);
             throw error;

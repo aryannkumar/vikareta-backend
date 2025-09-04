@@ -413,7 +413,7 @@ export class AnalyticsService {
             // Get search trends from Elasticsearch if available
             let searchTrends = [];
             try {
-                const esResponse = await elasticsearchService.search('search_logs', {
+                const esResponse = await elasticsearchService.search<any>('search_logs', {
                     query: {
                         range: {
                             timestamp: {
@@ -438,8 +438,8 @@ export class AnalyticsService {
                     }
                 });
 
-                if (esResponse.aggregations) {
-                    searchTrends = esResponse.aggregations.search_trends.buckets;
+                if (esResponse && esResponse.aggregations) {
+                    searchTrends = esResponse.aggregations.search_trends?.buckets || [];
                 }
             } catch (esError) {
                 logger.warn('Elasticsearch error in search analytics:', esError);

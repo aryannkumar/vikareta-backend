@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+// PrismaClient import removed (not used in this controller)
 import { logger } from '../utils/logger';
 import { ServiceService } from '../services/service.service';
+import { minioService } from '@/services/minio.service';
 import { validationResult } from 'express-validator';
 
 const serviceService = new ServiceService();
@@ -22,6 +23,21 @@ export class ServiceController {
       }
 
       const service = await serviceService.createService(providerId, req.body);
+      // Handle uploaded images (if any)
+      const files = (req.files as any[]) || [];
+      for (const file of files) {
+        try {
+          const uploadRes = await minioService.uploadFile(file.buffer, file.originalname || 'image.jpg', 'services', { 'content-type': file.mimetype });
+          await serviceService.addServiceMedia(service.id, {
+            mediaType: file.mimetype?.split('/')[0] || 'image',
+            url: uploadRes.url,
+            altText: file.originalname,
+            sortOrder: 0,
+          });
+        } catch (err) {
+          logger.warn('Failed to upload service image:', err);
+        }
+      }
       res.status(201).json({
         success: true,
         message: 'Service created successfully',
@@ -132,6 +148,21 @@ export class ServiceController {
       }
 
       const service = await serviceService.updateService(id, providerId, req.body);
+        // Handle uploaded images (if any)
+        const files = (req.files as any[]) || [];
+        for (const file of files) {
+          try {
+            const uploadRes = await minioService.uploadFile(file.buffer, file.originalname || 'image.jpg', 'services', { 'content-type': file.mimetype });
+            await serviceService.addServiceMedia(service.id, {
+              mediaType: file.mimetype?.split('/')[0] || 'image',
+              url: uploadRes.url,
+              altText: file.originalname,
+              sortOrder: 0,
+            });
+          } catch (err) {
+            logger.warn('Failed to upload service image:', err);
+          }
+        }
       res.status(200).json({
         success: true,
         message: 'Service updated successfully',
@@ -139,7 +170,8 @@ export class ServiceController {
       });
     } catch (error) {
       logger.error('Error updating service:', error);
-      if (error.code === 'P2025') {
+      const e: any = error;
+      if (e && e.code === 'P2025') {
         res.status(404).json({ error: 'Service not found or unauthorized' });
         return;
       }
@@ -164,7 +196,8 @@ export class ServiceController {
       });
     } catch (error) {
       logger.error('Error deleting service:', error);
-      if (error.code === 'P2025') {
+      const e: any = error;
+      if (e && e.code === 'P2025') {
         res.status(404).json({ error: 'Service not found or unauthorized' });
         return;
       }

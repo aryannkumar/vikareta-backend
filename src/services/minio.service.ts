@@ -114,7 +114,7 @@ export class MinioService {
      * Upload multiple files
      */
     async uploadMultipleFiles(
-        files: Array<{ buffer: Buffer; fileName: string; metadata?: Record<string, string> }>,
+        files: Array<{ buffer: Buffer | string; fileName: string; metadata?: Record<string, string> }>,
         folder: string = 'uploads'
     ): Promise<Array<{
         fileName: string;
@@ -123,7 +123,7 @@ export class MinioService {
         etag: string;
     }>> {
         try {
-            const uploadPromises = files.map(file =>
+            const uploadPromises = files.map((file) =>
                 this.uploadFile(file.buffer, file.fileName, folder, file.metadata)
             );
 
@@ -223,6 +223,8 @@ export class MinioService {
     async deleteFile(fileName: string, folder: string = 'uploads'): Promise<boolean> {
         try {
             const objectName = `${folder}/${fileName}`;
+
+            // Attempt to remove object from bucket
             await this.client.removeObject(this.bucketName, objectName);
 
             // Remove from cache

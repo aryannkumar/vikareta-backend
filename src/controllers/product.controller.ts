@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { ProductService } from '../services/product.service';
+import { minioService } from '@/services/minio.service';
 import { validationResult } from 'express-validator';
 
 const productService = new ProductService();
@@ -21,6 +22,22 @@ export class ProductController {
       }
 
       const product = await productService.createProduct(sellerId, req.body);
+
+      // Handle uploaded images (if any)
+      const files = (req.files as any[]) || [];
+      for (const file of files) {
+        try {
+          const uploadRes = await minioService.uploadFile(file.buffer, file.originalname || 'image.jpg', 'products', { 'content-type': file.mimetype });
+          await productService.addProductMedia(product.id, {
+            mediaType: file.mimetype?.split('/')[0] || 'image',
+            url: uploadRes.url,
+            altText: file.originalname,
+            sortOrder: 0,
+          });
+        } catch (err) {
+          logger.warn('Failed to upload product image:', err);
+        }
+      }
       res.status(201).json({
         success: true,
         message: 'Product created successfully',
@@ -129,6 +146,22 @@ export class ProductController {
       }
 
       const product = await productService.updateProduct(id, sellerId, req.body);
+
+      // Handle uploaded images (if any)
+      const files = (req.files as any[]) || [];
+      for (const file of files) {
+        try {
+          const uploadRes = await minioService.uploadFile(file.buffer, file.originalname || 'image.jpg', 'products', { 'content-type': file.mimetype });
+          await productService.addProductMedia(product.id, {
+            mediaType: file.mimetype?.split('/')[0] || 'image',
+            url: uploadRes.url,
+            altText: file.originalname,
+            sortOrder: 0,
+          });
+        } catch (err) {
+          logger.warn('Failed to upload product image:', err);
+        }
+      }
       res.status(200).json({
         success: true,
         message: 'Product updated successfully',

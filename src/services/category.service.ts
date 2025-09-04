@@ -1,4 +1,4 @@
-import { PrismaClient, Category, Subcategory } from '@prisma/client';
+import type { Category, Subcategory } from '@prisma/client';
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
 

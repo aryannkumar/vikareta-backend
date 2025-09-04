@@ -1,4 +1,4 @@
-import { PrismaClient, Order, OrderItem, OrderStatus, PaymentStatus } from '@prisma/client';
+import type { Order } from '@prisma/client';
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
 import { NotificationService } from './notification.service';

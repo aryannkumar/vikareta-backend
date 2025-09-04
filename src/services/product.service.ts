@@ -2,7 +2,9 @@ import { Product, ProductVariant, ProductMedia } from '@prisma/client';
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
 // minioClient intentionally not used in this service yet
-import { elasticsearchClient } from '@/config/elasticsearch';
+import { elasticsearchService } from './elasticsearch.service';
+import elasticsearchClient, { INDICES } from '@/config/elasticsearch';
+import { ESSearchResponse } from '@/types/elasticsearch.types';
 
 export interface CreateProductData {
   title: string;
@@ -74,11 +76,20 @@ export class ProductService extends BaseService {
 
   async updateProduct(productId: string, sellerId: string, data: UpdateProductData): Promise<Product> {
     try {
+      const existing = await this.prisma.product.findUnique({ where: { id: productId } });
+      if (!existing) {
+        const err: any = new Error('Product not found');
+        err.code = 'P2025';
+        throw err;
+      }
+      if (existing.sellerId !== sellerId) {
+        const err: any = new Error('Unauthorized');
+        err.code = 'P2025';
+        throw err;
+      }
+
       const product = await this.prisma.product.update({
-        where: {
-          id: productId,
-          sellerId, // Ensure seller can only update their own products
-        },
+        where: { id: productId },
         data,
         include: {
           seller: true,
@@ -257,12 +268,12 @@ export class ProductService extends BaseService {
 
   async deleteProduct(productId: string, sellerId: string): Promise<void> {
     try {
-      await this.prisma.product.delete({
-        where: {
-          id: productId,
-          sellerId, // Ensure seller can only delete their own products
-        },
-      });
+      const result = await this.prisma.product.deleteMany({ where: { id: productId, sellerId } });
+      if (result.count === 0) {
+        const err: any = new Error('Product not found or unauthorized');
+        err.code = 'P2025';
+        throw err;
+      }
 
       // Remove from Elasticsearch
       await this.removeProductFromElasticsearch(productId);
@@ -362,14 +373,11 @@ export class ProductService extends BaseService {
         searchBody.query.bool.filter.push({ range: { price: priceRange } });
       }
 
-      const esResponse: any = await elasticsearchClient.search({
-        index: 'products',
-        body: searchBody,
-      });
+  const esResponse: ESSearchResponse<any> = await elasticsearchService.search(INDICES.PRODUCTS, searchBody);
 
       const hits = esResponse.hits?.hits || [];
-      const productIds = hits.map((h: any) => h._source?.id || h._id).filter(Boolean);
-      const total = typeof esResponse.hits?.total === 'object' ? esResponse.hits.total.value : esResponse.hits?.total || 0;
+      const productIds = hits.map((h) => h._source?.id || h._id).filter(Boolean) as string[];
+      const total = typeof esResponse.hits?.total === 'object' ? (esResponse.hits.total as any).value : (esResponse.hits?.total as number) || 0;
 
       if (productIds.length === 0) {
         return { products: [], total: 0, page, totalPages: 0 };
@@ -401,7 +409,7 @@ export class ProductService extends BaseService {
       // Maintain Elasticsearch order
       const orderedProducts = productIds.map((id: string) => 
         products.find(p => p.id === id)
-      ).filter(Boolean);
+      ).filter(Boolean) as Product[];
 
       return {
         products: orderedProducts,
@@ -419,7 +427,7 @@ export class ProductService extends BaseService {
   private async indexProductInElasticsearch(product: any): Promise<void> {
     try {
       await elasticsearchClient.index({
-        index: 'products',
+        index: INDICES.PRODUCTS,
         id: product.id,
         document: {
           id: product.id,
@@ -446,7 +454,7 @@ export class ProductService extends BaseService {
   private async removeProductFromElasticsearch(productId: string): Promise<void> {
     try {
       await elasticsearchClient.delete({
-        index: 'products',
+        index: INDICES.PRODUCTS,
         id: productId,
       });
     } catch (error) {
