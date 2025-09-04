@@ -1,7 +1,7 @@
 import { PrismaClient, Service, ServiceMedia } from '@prisma/client';
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
-import { elasticsearchService } from './elasticsearch.service.simple';
+import { elasticsearchService } from './elasticsearch.service';
 import { elasticsearchClient } from '@/config/elasticsearch';
 
 export interface CreateServiceData {
@@ -257,7 +257,7 @@ export class ServiceService extends BaseService {
   }> {
     try {
       // Use Elasticsearch for advanced search
-      const searchBody = {
+      const searchBody: any = {
         query: {
           bool: {
             must: [

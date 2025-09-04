@@ -37,7 +37,7 @@ export interface LinkedInEmailData {
 
 export interface JWTPayload {
   userId: string;
-  email: string;
+  email?: string | null;
   userType: string;
   iat?: number;
   exp?: number;

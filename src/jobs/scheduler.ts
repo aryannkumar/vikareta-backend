@@ -5,9 +5,7 @@ import { elasticsearchService } from '../services/elasticsearch.service';
 import { minioService } from '../services/minio.service';
 import { notificationService } from '../services/notification.service';
 import { analyticsService } from '../services/analytics.service';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/config/database';
 
 export class JobScheduler {
     private jobs: Map<string, cron.ScheduledTask> = new Map();
@@ -240,8 +238,9 @@ export class JobScheduler {
                 });
 
                 // Update search analytics in database
-                for (const [query, count] of Object.entries(queryStats)) {
-                        // adAnalytics exists in schema (searchAnalytics not present)
+                for (const [q, c] of Object.entries(queryStats)) {
+                        logger.debug('Processing search query stat', { query: q, count: c });
+                        // adAnalytics exists in schema (searchAnalytics not present). Upsert best-effort.
                         await prisma.adAnalytics.upsert({
                             where: { campaignId_date: { campaignId: '', date: new Date() } } as any,
                             update: {},

@@ -14,9 +14,9 @@ interface JWTPayload {
   userType: string;
 }
 
-export const setupWebSocket = (io: any): void => {
+export const setupWebSocket = (io: SocketIOServer | any): void => {
   // Authentication middleware for WebSocket
-  (io as any).use(async (socket: AuthenticatedSocket, next) => {
+  (io as any).use(async (socket: AuthenticatedSocket, next: (err?: any) => void) => {
     try {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
       
@@ -40,10 +40,10 @@ export const setupWebSocket = (io: any): void => {
       socket.userType = user.userType;
       
       logger.info(`WebSocket user authenticated: ${user.id}`);
-      next();
+  next();
     } catch (error) {
       logger.error('WebSocket authentication failed:', error);
-      next(new Error('Authentication failed'));
+  next(new Error('Authentication failed'));
     }
   });
 

@@ -134,9 +134,10 @@ export class ProductController {
         message: 'Product updated successfully',
         data: product,
       });
-    } catch (error) {
+    } catch (err) {
+      const error: any = err;
       logger.error('Error updating product:', error);
-      if (error.code === 'P2025') {
+      if (error?.code === 'P2025') {
         res.status(404).json({ error: 'Product not found or unauthorized' });
         return;
       }
@@ -159,9 +160,10 @@ export class ProductController {
         success: true,
         message: 'Product deleted successfully',
       });
-    } catch (error) {
+    } catch (err) {
+      const error: any = err;
       logger.error('Error deleting product:', error);
-      if (error.code === 'P2025') {
+      if (error?.code === 'P2025') {
         res.status(404).json({ error: 'Product not found or unauthorized' });
         return;
       }

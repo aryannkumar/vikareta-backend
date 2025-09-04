@@ -8,18 +8,18 @@ import rateLimit from 'express-rate-limit';
 import slowDown from 'express-slow-down';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/config/database';
 
 import { logger } from './utils/logger';
 import { redisClient, initializeRedis } from './config/redis';
 import { elasticsearchService } from './services/elasticsearch.service';
 import { minioService } from './services/minio.service';
-import { notificationService } from './services/notification.service';
+// notificationService imported where needed in services; avoid unused import here
 import { analyticsService } from './services/analytics.service';
 import { jobScheduler } from './jobs/scheduler';
 import { setupRoutes } from './routes';
 
-const prisma = new PrismaClient();
+// use shared prisma from config/database
 
 class Application {
   public app: express.Application;

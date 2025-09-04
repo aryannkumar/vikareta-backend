@@ -1,11 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/config/database';
 import { logger } from '../utils/logger';
 import { redisClient } from '../config/redis';
 // import { EmailService } from './email.service';
 // import { SMSService } from './sms.service';
 // import { WhatsAppService } from './whatsapp.service';
 
-const prisma = new PrismaClient();
 
 export interface CreateNotificationData {
   userId: string;
@@ -200,6 +199,8 @@ export class NotificationService {
       subject = notification.template.subject || notification.title;
       content = this.processTemplate(notification.template.content, notification.variables);
     }
+    // Use subject/content variables if implemented by transport (kept for future integration)
+    logger.debug('Prepared notification content', { subject, content });
 
     // await emailService.sendEmail({
     //   to: notification.user.email,
@@ -224,6 +225,7 @@ export class NotificationService {
     if (notification.template) {
       message = this.processTemplate(notification.template.content, notification.variables);
     }
+    logger.debug('Prepared SMS content', { message });
 
     // await smsService.sendSMS({
     //   to: notification.user.phone,
@@ -246,6 +248,7 @@ export class NotificationService {
     if (notification.template) {
       message = this.processTemplate(notification.template.content, notification.variables);
     }
+    logger.debug('Prepared WhatsApp content', { message });
 
     // await whatsappService.sendMessage({
     //   to: notification.user.phone,

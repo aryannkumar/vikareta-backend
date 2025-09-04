@@ -4,7 +4,7 @@ import { User, Prisma } from '@prisma/client';
 import { BaseService, PaginationOptions, SortOptions, PaginatedResult } from './base.service';
 import { config } from '../config/environment';
 import { ValidationError, NotFoundError, ConflictError, AuthenticationError } from '../middleware/error-handler';
-import { elasticsearchService } from './elasticsearch.service.simple';
+import { elasticsearchService } from './elasticsearch.service';
 import { elasticsearchHelper, INDICES } from '@/config/elasticsearch';
 import { JWTPayload } from '../types/auth.types';
 

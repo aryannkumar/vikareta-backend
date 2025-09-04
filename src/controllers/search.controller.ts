@@ -2,11 +2,13 @@ import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { ProductService } from '../services/product.service';
 import { ServiceService } from '../services/service.service';
-import { PrismaClient } from '@prisma/client';
+import { UserService } from '../services/user.service';
+import { RfqService } from '../services/rfq.service';
 
 const productService = new ProductService();
 const serviceService = new ServiceService();
-const prisma = new PrismaClient();
+const userService = new UserService();
+const rfqService = new RfqService();
 
 export class SearchController {
   // Slimmed search endpoint that delegates to ProductService.searchProducts
@@ -320,40 +322,23 @@ export class SearchController {
         where.userType = userType;
       }
 
-      const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+      const pageNum = parseInt(page as string);
+      const limitNum = parseInt(limit as string);
 
-      const [users, total] = await Promise.all([
-        prisma.user.findMany({
-          where,
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            businessName: true,
-            email: true,
-            avatar: true,
-            userType: true,
-            verificationTier: true,
-            isVerified: true,
-            location: true,
-            city: true,
-            state: true,
-          },
-          skip,
-          take: parseInt(limit as string),
-          orderBy: { createdAt: 'desc' },
-        }),
-        prisma.user.count({ where }),
-      ]);
+      const usersResult = await userService.getUsers(
+        { page: pageNum, limit: limitNum, skip: (pageNum - 1) * limitNum },
+        { field: 'createdAt', order: 'desc' },
+        { search: query as string, userType: userType as string }
+      );
 
       res.status(200).json({
         success: true,
         message: 'User search completed successfully',
         data: {
-          users,
-          total,
-          page: parseInt(page as string),
-          totalPages: Math.ceil(total / parseInt(limit as string)),
+          users: usersResult.data,
+          total: usersResult.pagination.total,
+          page: usersResult.pagination.page,
+          totalPages: usersResult.pagination.totalPages,
         },
       });
     } catch (error) {
@@ -389,33 +374,13 @@ export class SearchController {
         where.categoryId = categoryId;
       }
 
-      const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+      const pageNum = parseInt(page as string);
+      const limitNum = parseInt(limit as string);
+      const skip = (pageNum - 1) * limitNum;
 
       const [rfqs, total] = await Promise.all([
-        prisma.rfq.findMany({
-          where,
-          include: {
-            buyer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                businessName: true,
-                verificationTier: true,
-                isVerified: true,
-              },
-            },
-            category: true,
-            subcategory: true,
-            _count: {
-              select: { quotes: true },
-            },
-          },
-          skip,
-          take: parseInt(limit as string),
-          orderBy: { createdAt: 'desc' },
-        }),
-        prisma.rfq.count({ where }),
+        rfqService.searchRfqs(where, skip, limitNum),
+        rfqService.countRfqs(where),
       ]);
 
       res.status(200).json({
@@ -424,8 +389,8 @@ export class SearchController {
         data: {
           rfqs,
           total,
-          page: parseInt(page as string),
-          totalPages: Math.ceil(total / parseInt(limit as string)),
+          page: pageNum,
+          totalPages: Math.ceil(total / limitNum),
         },
       });
     } catch (error) {

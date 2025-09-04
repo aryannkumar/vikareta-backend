@@ -165,9 +165,10 @@ export abstract class BaseService {
    * Execute database transaction
    */
   protected async executeTransaction<T>(
-    callback: (tx: PrismaClient) => Promise<T>
+    callback: (prisma: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>) => Promise<T>
   ): Promise<T> {
-    return await this.prisma.$transaction(callback);
+    // Use the function overload of Prisma.$transaction and cast to Promise<T>
+    return await (this.prisma.$transaction(callback as any) as Promise<T>);
   }
 
   /**

@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/config/database';
 import { logger } from '../utils/logger';
 import { redisClient } from '../config/redis';
-
-const prisma = new PrismaClient();
 
 export class WishlistController {
     async getWishlist(req: Request, res: Response): Promise<void> {

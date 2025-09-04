@@ -1,10 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/config/database';
 import { redisClient } from '../config/redis';
 import { logger } from '../utils/logger';
-
-const prisma = new PrismaClient();
 
 // Extend Request interface to include user
 declare global {
@@ -90,8 +88,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       logger.warn('Redis error getting user:', redisError);
     }
     
-    if (!user) {
-      user = await prisma.user.findUnique({
+      if (!user) {
+      const dbUser = await prisma.user.findUnique({
         where: { id: decoded.userId },
         select: {
           id: true,
@@ -104,6 +102,20 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
           isActive: true,
         },
       });
+
+      if (dbUser) {
+        // Normalize nulls to undefined to satisfy request user typing
+        user = {
+          id: dbUser.id,
+          email: dbUser.email ?? undefined,
+          phone: dbUser.phone ?? undefined,
+          role: dbUser.role ?? undefined,
+          userType: dbUser.userType,
+          isVerified: dbUser.isVerified,
+          verificationTier: dbUser.verificationTier,
+          isActive: dbUser.isActive,
+        } as any;
+      }
 
       if (!user) {
         res.status(401).json({
@@ -121,7 +133,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       }
     }
 
-    if (!user.isActive) {
+      if (!user || !user.isActive) {
       res.status(401).json({
         success: false,
         error: 'Account has been deactivated'

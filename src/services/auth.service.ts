@@ -41,8 +41,10 @@ export class AuthService extends BaseService {
       // Generate tokens
       const tokens = this.generateTokens(user);
 
-      // Create login session
-      await this.createLoginSession(user.id, tokens.accessToken);
+      // Create login session if accessToken is present
+      if (tokens && typeof tokens.accessToken === 'string') {
+        await this.createLoginSession(user.id, tokens.accessToken);
+      }
 
       // Send welcome email if email is provided
       if (user.email) {
@@ -70,8 +72,10 @@ export class AuthService extends BaseService {
     try {
       const result = await this.userService.login(credentials);
 
-      // Create login session
-      await this.createLoginSession(result.user.id, result.accessToken);
+      // Create login session if accessToken is present
+      if (result && typeof result.accessToken === 'string') {
+        await this.createLoginSession(result.user.id, result.accessToken);
+      }
 
       this.logOperation('login', { userId: result.user.id });
 

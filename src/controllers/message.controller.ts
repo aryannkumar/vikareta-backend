@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
-
-const prisma = new PrismaClient();
+import { messageService } from '@/services/message.service';
+import { notificationService } from '@/services/notification.service';
 
 export class MessageController {
   async getMessages(req: Request, res: Response): Promise<void> {
@@ -16,51 +15,9 @@ export class MessageController {
         return;
       }
 
-      const { page = 1, limit = 20, status, type, relatedType } = req.query;
-      const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-
-      const where: any = {
-        OR: [
-          { senderId: userId },
-          { recipientId: userId },
-        ],
-      };
-
-      if (status) where.status = status;
-      if (type) where.type = type;
-      if (relatedType) where.relatedType = relatedType;
-
-      const [messages, total] = await Promise.all([
-        prisma.message.findMany({
-          where,
-          include: {
-            sender: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                businessName: true,
-                avatar: true,
-                userType: true,
-              },
-            },
-            recipient: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                businessName: true,
-                avatar: true,
-                userType: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: parseInt(limit as string),
-        }),
-        prisma.message.count({ where }),
-      ]);
+      const pageNum = parseInt((req.query.page as string) || '1');
+      const limitNum = parseInt((req.query.limit as string) || '20');
+      const { messages, total } = await messageService.getMessages(userId, pageNum, limitNum, req.query as any);
 
       res.status(200).json({
         success: true,
@@ -68,8 +25,8 @@ export class MessageController {
         data: {
           messages,
           total,
-          page: parseInt(page as string),
-          totalPages: Math.ceil(total / parseInt(limit as string)),
+          page: pageNum,
+          totalPages: Math.ceil(total / limitNum),
         },
       });
     } catch (error) {
@@ -94,31 +51,7 @@ export class MessageController {
         return;
       }
 
-      const message = await prisma.message.findUnique({
-        where: { id },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-              avatar: true,
-              userType: true,
-            },
-          },
-          recipient: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-              avatar: true,
-              userType: true,
-            },
-          },
-        },
-      });
+  const message = await messageService.getMessageById(id);
 
       if (!message) {
         res.status(404).json({ 
@@ -173,58 +106,30 @@ export class MessageController {
         relatedId,
       } = req.body;
 
-      // Verify recipient exists
-      const recipient = await prisma.user.findUnique({
-        where: { id: recipientId },
-        select: { id: true, firstName: true, lastName: true, businessName: true },
+      const message = await messageService.sendMessage(userId, {
+        recipientId,
+        content,
+        subject,
+        messageType,
+        priority,
+        type,
+        relatedType,
+        relatedId,
       });
 
-      if (!recipient) {
-        res.status(404).json({ 
-          success: false,
-          error: 'Recipient not found' 
+      // Send in-app notification to recipient
+      try {
+        await notificationService.createNotification({
+          userId: message.recipientId,
+          title: subject || 'New message',
+          message: content || 'You have received a new message',
+          type: 'message',
+          channel: 'in_app',
+          data: { messageId: message.id, senderId: userId },
         });
-        return;
+      } catch (notifErr) {
+        logger.warn('Failed to send message notification:', notifErr);
       }
-
-      const message = await prisma.message.create({
-        data: {
-          subject,
-          content,
-          senderId: userId,
-          recipientId,
-          messageType,
-          priority,
-          type,
-          relatedType,
-          relatedId,
-          status: 'unread',
-          isRead: false,
-        },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-              avatar: true,
-            },
-          },
-          recipient: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              businessName: true,
-              avatar: true,
-            },
-          },
-        },
-      });
-
-      // TODO: Send notification to recipient
-      // await notificationService.sendMessageNotification(message);
 
       res.status(201).json({
         success: true,
@@ -253,44 +158,20 @@ export class MessageController {
         return;
       }
 
-      // Verify message exists and user is the recipient
-      const existingMessage = await prisma.message.findUnique({
-        where: { id },
-        select: { recipientId: true, isRead: true },
-      });
-
-      if (!existingMessage) {
-        res.status(404).json({ 
-          success: false,
-          error: 'Message not found' 
-        });
-        return;
+      try {
+        await messageService.markAsRead(id, userId);
+      } catch (err) {
+        const error: any = err;
+        if (error.message === 'Message not found') {
+          res.status(404).json({ success: false, error: 'Message not found' });
+          return;
+        }
+        if (error.message === 'Access denied') {
+          res.status(403).json({ success: false, error: 'Access denied' });
+          return;
+        }
+        throw err;
       }
-
-      if (existingMessage.recipientId !== userId) {
-        res.status(403).json({ 
-          success: false,
-          error: 'Access denied' 
-        });
-        return;
-      }
-
-      if (existingMessage.isRead) {
-        res.status(200).json({
-          success: true,
-          message: 'Message already marked as read',
-        });
-        return;
-      }
-
-      await prisma.message.update({
-        where: { id },
-        data: {
-          isRead: true,
-          status: 'read',
-          updatedAt: new Date(),
-        },
-      });
 
       res.status(200).json({
         success: true,
@@ -316,18 +197,8 @@ export class MessageController {
         return;
       }
 
-      const unreadCount = await prisma.message.count({
-        where: {
-          recipientId: userId,
-          isRead: false,
-        },
-      });
-
-      res.status(200).json({
-        success: true,
-        message: 'Unread count retrieved successfully',
-        data: { unreadCount },
-      });
+  const unreadCount = await messageService.getUnreadCount(userId);
+  res.status(200).json({ success: true, message: 'Unread count retrieved successfully', data: { unreadCount } });
     } catch (error) {
       logger.error('Error getting unread count:', error);
       res.status(500).json({ 
@@ -350,66 +221,16 @@ export class MessageController {
         return;
       }
 
-      const { page = 1, limit = 50 } = req.query;
-      const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+      const pageNum = parseInt((req.query.page as string) || '1');
+      const limitNum = parseInt((req.query.limit as string) || '50');
+      const { messages, total } = await messageService.getConversation(userId, otherUserId, pageNum, limitNum);
 
-      const [messages, total] = await Promise.all([
-        prisma.message.findMany({
-          where: {
-            OR: [
-              { senderId: userId, recipientId: otherUserId },
-              { senderId: otherUserId, recipientId: userId },
-            ],
-          },
-          include: {
-            sender: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                businessName: true,
-                avatar: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: parseInt(limit as string),
-        }),
-        prisma.message.count({
-          where: {
-            OR: [
-              { senderId: userId, recipientId: otherUserId },
-              { senderId: otherUserId, recipientId: userId },
-            ],
-          },
-        }),
-      ]);
-
-      // Mark messages from other user as read
-      await prisma.message.updateMany({
-        where: {
-          senderId: otherUserId,
-          recipientId: userId,
-          isRead: false,
-        },
-        data: {
-          isRead: true,
-          status: 'read',
-          updatedAt: new Date(),
-        },
-      });
-
-      res.status(200).json({
-        success: true,
-        message: 'Conversation retrieved successfully',
-        data: {
-          messages: messages.reverse(), // Return in chronological order
-          total,
-          page: parseInt(page as string),
-          totalPages: Math.ceil(total / parseInt(limit as string)),
-        },
-      });
+      res.status(200).json({ success: true, message: 'Conversation retrieved successfully', data: {
+        messages,
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+      } });
     } catch (error) {
       logger.error('Error getting conversation:', error);
       res.status(500).json({ 
@@ -432,39 +253,29 @@ export class MessageController {
         return;
       }
 
-      const message = await prisma.message.findUnique({
-        where: { id },
-        select: { senderId: true, recipientId: true },
-      });
-
-      if (!message) {
-        res.status(404).json({ 
-          success: false,
-          error: 'Message not found' 
-        });
-        return;
+      try {
+        await messageService.deleteMessage(id, userId);
+      } catch (err) {
+        const error: any = err;
+        if (error.message === 'Message not found') {
+          res.status(404).json({ success: false, error: 'Message not found' });
+          return;
+        }
+        if (error.message === 'Access denied') {
+          res.status(403).json({ success: false, error: 'Access denied' });
+          return;
+        }
+        throw err;
       }
-
-      // Only sender or recipient can delete the message
-      if (message.senderId !== userId && message.recipientId !== userId) {
-        res.status(403).json({ 
-          success: false,
-          error: 'Access denied' 
-        });
-        return;
-      }
-
-      await prisma.message.delete({
-        where: { id },
-      });
 
       res.status(200).json({
         success: true,
         message: 'Message deleted successfully',
       });
-    } catch (error) {
+    } catch (err) {
+      const error: any = err;
       logger.error('Error deleting message:', error);
-      if (error.code === 'P2025') {
+      if (error?.code === 'P2025') {
         res.status(404).json({ 
           success: false,
           error: 'Message not found' 

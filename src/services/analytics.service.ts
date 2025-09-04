@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/config/database';
 import { redisClient } from '../config/redis';
 import { elasticsearchService } from './elasticsearch.service';
 import { logger } from '../utils/logger';
-
-const prisma = new PrismaClient();
 
 export class AnalyticsService {
     // User Analytics

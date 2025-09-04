@@ -1,8 +1,7 @@
-import { PrismaClient, Product, ProductVariant, ProductMedia } from '@prisma/client';
+import { Product, ProductVariant, ProductMedia } from '@prisma/client';
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
-import { minioClient } from '../config/minio';
-import { elasticsearchService } from './elasticsearch.service.simple';
+// minioClient intentionally not used in this service yet
 import { elasticsearchClient } from '@/config/elasticsearch';
 
 export interface CreateProductData {
@@ -328,7 +327,7 @@ export class ProductService extends BaseService {
   }> {
     try {
       // Use Elasticsearch for advanced search
-      const searchBody = {
+      const searchBody: any = {
         query: {
           bool: {
             must: [
@@ -363,10 +362,15 @@ export class ProductService extends BaseService {
         searchBody.query.bool.filter.push({ range: { price: priceRange } });
       }
 
-      const response = await elasticsearchService.search(query, 'products');
+      const esResponse: any = await elasticsearchClient.search({
+        index: 'products',
+        body: searchBody,
+      });
 
-      const productIds = response.hits.map((hit: any) => hit.id);
-      
+      const hits = esResponse.hits?.hits || [];
+      const productIds = hits.map((h: any) => h._source?.id || h._id).filter(Boolean);
+      const total = typeof esResponse.hits?.total === 'object' ? esResponse.hits.total.value : esResponse.hits?.total || 0;
+
       if (productIds.length === 0) {
         return { products: [], total: 0, page, totalPages: 0 };
       }
@@ -401,9 +405,9 @@ export class ProductService extends BaseService {
 
       return {
         products: orderedProducts,
-        total: response.total,
+        total,
         page,
-        totalPages: Math.ceil(response.total / limit),
+        totalPages: Math.ceil(total / limit),
       };
     } catch (error) {
       logger.error('Error searching products:', error);

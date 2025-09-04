@@ -1,9 +1,7 @@
 import { Client } from '@elastic/elasticsearch';
 import { logger } from '../utils/logger';
-import { PrismaClient } from '@prisma/client';
 import elasticsearchClient, { elasticsearchHelper, INDICES } from '@/config/elasticsearch';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/config/database';
 
 export class ElasticsearchService {
     private client: Client;
