@@ -1,321 +1,205 @@
 import axios from 'axios';
-import { logger } from '../utils/logger';
+import { config } from '@/config/environment';
+import { logger } from '@/utils/logger';
+
+export interface WhatsAppMessage {
+  to: string;
+  message: string;
+  type?: 'text' | 'template' | 'media';
+  templateName?: string;
+  templateParams?: string[];
+  mediaUrl?: string;
+  mediaType?: 'image' | 'document' | 'video';
+}
 
 export class WhatsAppService {
+  private apiUrl: string;
   private accessToken: string;
-  private phoneNumberId: string;
   private businessAccountId: string;
-  private webhookVerifyToken: string;
-  private apiVersion: string;
-  private baseUrl: string;
-  private configured: boolean;
 
   constructor() {
-    this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
-    this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
-    this.businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '';
-    this.webhookVerifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '';
-    this.apiVersion = process.env.WHATSAPP_API_VERSION || 'v18.0';
-    this.baseUrl = `https://graph.facebook.com/${this.apiVersion}`;
-    
-    this.configured = !!(
-      this.accessToken &&
-      this.phoneNumberId &&
-      this.businessAccountId &&
-      this.webhookVerifyToken
-    );
+    this.apiUrl = config.whatsapp.apiUrl || '';
+    this.accessToken = config.whatsapp.accessToken || '';
+    this.businessAccountId = config.whatsapp.businessAccountId || '';
   }
 
   /**
-   * Get service status and configuration
+   * Send WhatsApp message
    */
-  getStatus() {
-    return {
-      configured: this.configured,
-      config: {
-        apiVersion: this.apiVersion,
-        phoneNumberId: this.phoneNumberId,
-        businessAccountId: this.businessAccountId,
-      },
-    };
-  }
-
-  /**
-   * Verify webhook subscription
-   */
-  verifyWebhook(mode: string, token: string, challenge: string): string | null {
-    if (mode === 'subscribe' && token === this.webhookVerifyToken) {
-      return challenge;
-    }
-    return null;
-  }
-
-  /**
-   * Format phone number for WhatsApp API
-   */
-  formatPhoneNumber(phone: string): string {
-    // Remove all non-digit characters
-    let cleaned = phone.replace(/\D/g, '');
-    
-    // Handle Indian numbers
-    if (cleaned.startsWith('91') && cleaned.length === 12) {
-      return cleaned;
-    } else if (cleaned.startsWith('0') && cleaned.length === 11) {
-      return '91' + cleaned.substring(1);
-    } else if (cleaned.length === 10) {
-      return '91' + cleaned;
-    }
-    
-    return cleaned;
-  }
-
-  /**
-   * Format RFQ message
-   */
-  formatRFQMessage(rfq: {
-    id: string;
-    title: string;
-    description: string;
-    quantity: number;
-    budget: number;
-    deadline: Date;
-    buyer: { firstName: string; lastName: string; businessName?: string };
-  }): string {
-    const buyerName = rfq.buyer.businessName || `${rfq.buyer.firstName} ${rfq.buyer.lastName}`;
-    const frontendUrl = process.env.FRONTEND_URL || 'https://vikareta.com';
-    
-    return `🔔 *New RFQ Alert*
-
-📋 *Title:* ${rfq.title}
-📝 *Description:* ${rfq.description}
-📦 *Quantity:* ${rfq.quantity}
-💰 *Budget:* ₹${rfq.budget.toLocaleString()}
-⏰ *Deadline:* ${rfq.deadline.toLocaleDateString()}
-👤 *Buyer:* ${buyerName}
-
-🔗 View Details: ${frontendUrl}/rfq/${rfq.id}
-
-Reply with your best quote! 💼`;
-  }
-
-  /**
-   * Format quote message
-   */
-  formatQuoteMessage(quote: {
-    id: string;
-    rfqTitle: string;
-    totalAmount: number;
-    validUntil: Date;
-    seller: { firstName: string; lastName: string; businessName?: string };
-    items: Array<{ name: string; quantity: number; unitPrice: number }>;
-  }): string {
-    const sellerName = quote.seller.businessName || `${quote.seller.firstName} ${quote.seller.lastName}`;
-    const frontendUrl = process.env.FRONTEND_URL || 'https://vikareta.com';
-    
-    let itemsList = '';
-    quote.items.forEach(item => {
-      itemsList += `• ${item.name}: ${item.quantity} × ₹${item.unitPrice} = ₹${(item.quantity * item.unitPrice).toLocaleString()}\\n`;
-    });
-
-    return `💼 *New Quote Received*
-
-📋 *RFQ:* ${quote.rfqTitle}
-👤 *From:* ${sellerName}
-💰 *Total Amount:* ₹${quote.totalAmount.toLocaleString()}
-⏰ *Valid Until:* ${quote.validUntil.toLocaleDateString()}
-
-📦 *Items:*
-${itemsList}
-
-🔗 View Quote: ${frontendUrl}/quote/${quote.id}
-
-Accept or negotiate now! 🤝`;
-  }
-
-  /**
-   * Format order update message
-   */
-  formatOrderUpdateMessage(order: {
-    id: string;
-    orderNumber: string;
-    status: string;
-    totalAmount: number;
-    trackingNumber?: string;
-    estimatedDelivery?: Date;
-  }): string {
-    const statusEmoji = this.getStatusEmoji(order.status);
-    const frontendUrl = process.env.FRONTEND_URL || 'https://vikareta.com';
-    
-    let message = `${statusEmoji} *Order Update*
-
-📦 *Order:* #${order.orderNumber}
-📊 *Status:* ${order.status.toUpperCase()}
-💰 *Amount:* ₹${order.totalAmount.toLocaleString()}`;
-
-    if (order.trackingNumber) {
-      message += `\\n🚚 *Tracking:* ${order.trackingNumber}`;
-    }
-
-    if (order.estimatedDelivery) {
-      message += `\\n📅 *Est. Delivery:* ${order.estimatedDelivery.toLocaleDateString()}`;
-    }
-
-    message += `\\n\\n🔗 Track Order: ${frontendUrl}/orders/${order.id}`;
-
-    return message;
-  }
-
-  /**
-   * Get status emoji
-   */
-  getStatusEmoji(status: string): string {
-    const emojiMap: Record<string, string> = {
-      pending: '⏳',
-      confirmed: '✅',
-      processing: '⚙️',
-      shipped: '🚚',
-      delivered: '📦',
-      cancelled: '❌',
-      refunded: '💸',
-    };
-
-    return emojiMap[status.toLowerCase()] || '📋';
-  }
-
-  /**
-   * Send text message (alias for sendMessage)
-   */
-  async sendTextMessage(to: string, message: string): Promise<boolean> {
-    return this.sendMessage(to, message);
-  }
-
-  /**
-   * Send text message
-   */
-  async sendMessage(to: string, message: string): Promise<boolean> {
-    if (!this.configured) {
-      logger.error('WhatsApp service not configured');
-      return false;
-    }
-
+  async sendMessage(messageData: WhatsAppMessage): Promise<void> {
     try {
-      const formattedPhone = this.formatPhoneNumber(to);
-      
-      const response = await axios.post(
-        `${this.baseUrl}/${this.phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          to: formattedPhone,
-          type: 'text',
-          text: {
-            body: message,
-          },
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      if (!this.apiUrl || !this.accessToken) {
+        logger.warn('WhatsApp service not configured, skipping message send');
+        return;
+      }
 
-      logger.info(`WhatsApp message sent to ${formattedPhone}:`, response.data);
-      return true;
+      const payload = {
+        apikey: this.accessToken,
+        to: messageData.to,
+        message: messageData.message,
+        type: messageData.type || 'text',
+      };
+
+      // Add template-specific data
+      if (messageData.type === 'template' && messageData.templateName) {
+        Object.assign(payload, {
+          template_name: messageData.templateName,
+          template_params: messageData.templateParams || [],
+        });
+      }
+
+      // Add media-specific data
+      if (messageData.type === 'media' && messageData.mediaUrl) {
+        Object.assign(payload, {
+          media_url: messageData.mediaUrl,
+          media_type: messageData.mediaType || 'image',
+        });
+      }
+
+      const response = await axios.post(this.apiUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      logger.info('WhatsApp message sent successfully', {
+        to: messageData.to,
+        messageId: response.data.messageId,
+        type: messageData.type,
+      });
     } catch (error) {
       logger.error('Failed to send WhatsApp message:', error);
-      return false;
+      throw error;
     }
+  }
+
+  /**
+   * Send welcome message
+   */
+  async sendWelcomeMessage(to: string, userName: string): Promise<void> {
+    const message = `🎉 Welcome to Vikareta, ${userName}!\n\nYour B2B marketplace journey starts here. Discover thousands of products, connect with verified suppliers, and grow your business.\n\n✅ Browse products & services\n✅ Post RFQs & get quotes\n✅ Secure payments & fast delivery\n\nNeed help? Just reply to this message!`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
+  }
+
+  /**
+   * Send order confirmation message
+   */
+  async sendOrderConfirmation(to: string, orderData: any): Promise<void> {
+    const message = `📦 Order Confirmed!\n\nOrder #${orderData.orderNumber}\nAmount: ₹${orderData.totalAmount}\nDate: ${new Date(orderData.createdAt).toLocaleDateString()}\n\nWe'll keep you updated on your order status. Track your order in the Vikareta app.`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
+  }
+
+  /**
+   * Send order status update
+   */
+  async sendOrderStatusUpdate(to: string, orderNumber: string, status: string, trackingNumber?: string): Promise<void> {
+    let message = `📋 Order Update\n\nOrder #${orderNumber}\nStatus: ${status.toUpperCase()}\n`;
+
+    if (trackingNumber) {
+      message += `Tracking: ${trackingNumber}\n`;
+    }
+
+    message += `\nTrack your order in the Vikareta app for real-time updates.`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
+  }
+
+  /**
+   * Send payment confirmation
+   */
+  async sendPaymentConfirmation(to: string, amount: number, orderNumber: string): Promise<void> {
+    const message = `💳 Payment Received!\n\nAmount: ₹${amount}\nOrder: #${orderNumber}\nDate: ${new Date().toLocaleDateString()}\n\nThank you for your payment. Your order is being processed.`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
   }
 
   /**
    * Send RFQ notification
    */
-  async sendRFQNotification(to: string, rfq: any): Promise<boolean> {
-    const message = this.formatRFQMessage(rfq);
-    return this.sendMessage(to, message);
+  async sendRFQNotification(to: string, rfqData: any): Promise<void> {
+    const message = `🔔 New RFQ Opportunity!\n\n"${rfqData.title}"\n\nCategory: ${rfqData.category}\nBudget: ₹${rfqData.budgetMin} - ₹${rfqData.budgetMax}\nDeadline: ${rfqData.deliveryTimeline}\n\nLogin to submit your quote and win this business!`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
   }
 
   /**
-   * Send quote notification
+   * Send quote received notification
    */
-  async sendQuoteNotification(to: string, quote: any): Promise<boolean> {
-    const message = this.formatQuoteMessage(quote);
-    return this.sendMessage(to, message);
+  async sendQuoteReceived(to: string, quoteData: any): Promise<void> {
+    const message = `📝 New Quote Received!\n\nRFQ: "${quoteData.rfq.title}"\nQuote Amount: ₹${quoteData.totalPrice}\nSupplier: ${quoteData.seller.businessName}\n\nReview and compare quotes in your Vikareta dashboard.`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
   }
 
   /**
-   * Send order update notification
+   * Send verification OTP
    */
-  async sendOrderUpdate(to: string, order: any): Promise<boolean> {
-    const message = this.formatOrderUpdateMessage(order);
-    return this.sendMessage(to, message);
+  async sendVerificationOTP(to: string, otp: string): Promise<void> {
+    const message = `🔐 Vikareta Verification\n\nYour verification code is: ${otp}\n\nThis code will expire in 10 minutes. Do not share this code with anyone.`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
   }
 
   /**
-   * Send payment link
+   * Send low stock alert
    */
-  async sendPaymentLink(to: string, orderId: string, amount: number, paymentUrl: string): Promise<boolean> {
-    const message = `💳 *Payment Required*
+  async sendLowStockAlert(to: string, productName: string, currentStock: number): Promise<void> {
+    const message = `⚠️ Low Stock Alert!\n\nProduct: ${productName}\nCurrent Stock: ${currentStock} units\n\nRestock soon to avoid missing sales opportunities.`;
 
-📦 *Order:* #${orderId}
-💰 *Amount:* ₹${amount.toLocaleString()}
-
-🔗 Pay Now: ${paymentUrl}
-
-Complete your payment to confirm your order! 🛒`;
-
-    return this.sendMessage(to, message);
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
   }
 
   /**
-   * Process webhook message (alias for handleWebhook)
+   * Send promotional message
    */
-  async processWebhookMessage(message: any): Promise<void> {
-    return this.handleWebhook(message);
+  async sendPromotionalMessage(to: string, promoData: any): Promise<void> {
+    const message = `🎯 Special Offer!\n\n${promoData.title}\n\n${promoData.description}\n\nOffer valid till: ${promoData.validTill}\n\nShop now on Vikareta!`;
+
+    await this.sendMessage({
+      to,
+      message,
+      type: 'text',
+    });
   }
 
   /**
-   * Handle incoming webhook
+   * Check if WhatsApp service is configured
    */
-  async handleWebhook(body: any): Promise<void> {
-    try {
-      if (body.object === 'whatsapp_business_account') {
-        for (const entry of body.entry) {
-          for (const change of entry.changes) {
-            if (change.field === 'messages') {
-              await this.processMessage(change.value);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('Error processing WhatsApp webhook:', error);
-    }
-  }
-
-  /**
-   * Process incoming message
-   */
-  private async processMessage(value: any): Promise<void> {
-    if (value.messages) {
-      for (const message of value.messages) {
-        logger.info('Received WhatsApp message:', message);
-        
-        // Here you would implement your message processing logic
-        // For example, handling customer inquiries, order status requests, etc.
-        
-        if (message.type === 'text') {
-          const text = message.text.body.toLowerCase();
-          const from = message.from;
-          
-          // Simple auto-responses
-          if (text.includes('help') || text.includes('support')) {
-            await this.sendMessage(from, 'Hello! For support, please visit our website or call our customer service. 📞');
-          } else if (text.includes('order') || text.includes('status')) {
-            await this.sendMessage(from, 'To check your order status, please visit your dashboard on our website. 📦');
-          }
-        }
-      }
-    }
+  isConfigured(): boolean {
+    return !!(this.apiUrl && this.accessToken && this.businessAccountId);
   }
 }

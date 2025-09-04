@@ -6,237 +6,172 @@ dotenv.config();
 
 // Environment validation schema
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
-  PORT: z.string().transform(Number).default(() => 3000),
-  
+  // Application
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.string().transform(Number).default(5001),
+  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+
   // Database
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  
+  DATABASE_URL: z.string(),
+
   // Redis
-  REDIS_URL: z.string().default('redis://localhost:6379'),
-  
-  // JWT
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_EXPIRES_IN: z.string().default('24h'),
-  JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
-  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
-  
-  // Session
-  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
-  
-  // CORS
-  ALLOWED_ORIGINS: z.string().default('https://vikareta.com,https://www.vikareta.com,https://dashboard.vikareta.com,https://admin.vikareta.com,https://api.vikareta.com'),
-  
-  // External APIs
-  CASHFREE_CLIENT_ID: z.string().optional(),
-  CASHFREE_CLIENT_SECRET: z.string().optional(),
-  CASHFREE_ENV: z.enum(['SANDBOX', 'PRODUCTION']).default('SANDBOX'),
-  CASHFREE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
-  
-  DIGILOCKER_CLIENT_ID: z.string().optional(),
-  DIGILOCKER_CLIENT_SECRET: z.string().optional(),
-  // Optional explicit callback URLs for production deployments
-  GOOGLE_CALLBACK_URL: z.string().optional(),
-  LINKEDIN_CALLBACK_URL: z.string().optional(),
-  DIGILOCKER_CALLBACK_URL: z.string().optional(),
-  
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  
-  LINKEDIN_CLIENT_ID: z.string().optional(),
-  LINKEDIN_CLIENT_SECRET: z.string().optional(),
-  
-  // Email
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.string().transform(Number).optional(),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  
-  // SMS
-  SMS_API_KEY: z.string().optional(),
-  SMS_API_SECRET: z.string().optional(),
-  
-  // WhatsApp
-  WHATSAPP_API_KEY: z.string().optional(),
-  WHATSAPP_API_SECRET: z.string().optional(),
-  
-  // AWS S3
-  AWS_ACCESS_KEY_ID: z.string().optional(),
-  AWS_SECRET_ACCESS_KEY: z.string().optional(),
-  AWS_REGION: z.string().default('ap-south-1'),
-  AWS_S3_BUCKET: z.string().optional(),
-  
-  // MinIO S3 Compatible Storage
-  MINIO_ENDPOINT: z.string().optional(),
-  MINIO_PORT: z.string().transform(Number).optional(),
-  MINIO_USE_SSL: z.string().default('false').transform(val => val === 'true'),
-  MINIO_ACCESS_KEY: z.string().optional(),
-  MINIO_SECRET_KEY: z.string().optional(),
-  MINIO_BUCKET_PREFIX: z.string().default('vikareta'),
+  REDIS_URL: z.string(),
+  REDIS_PASSWORD: z.string().optional(),
+
+  // MinIO
+  MINIO_ENDPOINT: z.string(),
+  MINIO_PORT: z.string().transform(Number).default(9000),
+  MINIO_ACCESS_KEY: z.string(),
+  MINIO_SECRET_KEY: z.string(),
+  MINIO_USE_SSL: z.string().transform(val => val === 'true').default(false),
+  MINIO_BUCKET_NAME: z.string().default('vikareta-uploads'),
   MINIO_REGION: z.string().default('us-east-1'),
-  
-  // Storage Configuration
-  STORAGE_PROVIDER: z.enum(['aws', 'minio']).default('minio'),
-  STORAGE_CDN_URL: z.string().optional(),
-  
+  MINIO_PUBLIC_URL: z.string().optional(),
+
   // Elasticsearch
-  ELASTICSEARCH_URL: z.string().default('http://localhost:9200'),
+  ELASTICSEARCH_URL: z.string(),
   ELASTICSEARCH_USERNAME: z.string().optional(),
   ELASTICSEARCH_PASSWORD: z.string().optional(),
-  
-  // Logging
-  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
-  
-  // APM/Tracing
-  JAEGER_ENDPOINT: z.string().optional(),
-  JAEGER_SERVICE_NAME: z.string().default('vikareta-backend'),
-  
-  // Security
-  ENCRYPTION_KEY: z.string().optional(),
-  SSL_CERT_DIR: z.string().optional(),
-  HTTPS_PORT: z.string().transform(Number).optional(),
-  
-  // Rate limiting
-  RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default(() => 900000), // 15 minutes
-  RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default(() => 100),
-  AUTH_RATE_LIMIT_MAX: z.string().transform(Number).default(() => 5),
-  PAYMENT_RATE_LIMIT_MAX: z.string().transform(Number).default(() => 10),
-  // Trust proxy configuration for Express (number, boolean or string)
-  TRUST_PROXY: z.string().default('1'),
+
+  // JWT
+  JWT_SECRET: z.string(),
+  JWT_REFRESH_SECRET: z.string(),
+  JWT_ACCESS_EXPIRES: z.string().default('1h'),
+  JWT_REFRESH_EXPIRES: z.string().default('7d'),
+
+  // Session
+  SESSION_SECRET: z.string(),
+
+  // CORS
+  ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
+
+  // Payment
+  CASHFREE_CLIENT_ID: z.string(),
+  CASHFREE_CLIENT_SECRET: z.string(),
+  CASHFREE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
+
+  // Email
+  SMTP_HOST: z.string(),
+  SMTP_PORT: z.string().transform(Number).default(587),
+  SMTP_SECURE: z.string().transform(val => val === 'true').default(false),
+  SMTP_USER: z.string(),
+  SMTP_PASS: z.string(),
+  FROM_EMAIL: z.string(),
+  FROM_NAME: z.string().default('Vikareta'),
+
+  // OAuth
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  LINKEDIN_CLIENT_ID: z.string().optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().optional(),
+
+  // WhatsApp
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_API_URL: z.string().optional(),
+  WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
+
+  // URLs
+  FRONTEND_URL: z.string().default('http://localhost:3000'),
+  ADMIN_DOMAIN: z.string().optional(),
+  DASHBOARD_DOMAIN: z.string().optional(),
 });
 
 // Validate environment variables
 const env = envSchema.parse(process.env);
 
+// Export configuration object
 export const config = {
   env: env.NODE_ENV,
   port: env.PORT,
-  
+  logLevel: env.LOG_LEVEL,
+
   database: {
     url: env.DATABASE_URL,
   },
-  
+
   redis: {
     url: env.REDIS_URL,
+    password: env.REDIS_PASSWORD,
   },
-  
+
+  minio: {
+    endpoint: env.MINIO_ENDPOINT,
+    port: env.MINIO_PORT,
+    accessKey: env.MINIO_ACCESS_KEY,
+    secretKey: env.MINIO_SECRET_KEY,
+    useSSL: env.MINIO_USE_SSL,
+    bucketName: env.MINIO_BUCKET_NAME,
+    region: env.MINIO_REGION,
+    publicUrl: env.MINIO_PUBLIC_URL,
+  },
+
+  elasticsearch: {
+    url: env.ELASTICSEARCH_URL,
+    username: env.ELASTICSEARCH_USERNAME,
+    password: env.ELASTICSEARCH_PASSWORD,
+  },
+
   jwt: {
     secret: env.JWT_SECRET,
-    expiresIn: env.JWT_EXPIRES_IN,
     refreshSecret: env.JWT_REFRESH_SECRET,
-    refreshExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
+    accessExpires: env.JWT_ACCESS_EXPIRES,
+    refreshExpires: env.JWT_REFRESH_EXPIRES,
   },
-  
+
   session: {
     secret: env.SESSION_SECRET,
   },
-  
+
   cors: {
     allowedOrigins: env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()),
   },
-  
-  cashfree: {
-    clientId: env.CASHFREE_CLIENT_ID,
-    clientSecret: env.CASHFREE_CLIENT_SECRET,
-    environment: env.CASHFREE_ENV || env.CASHFREE_ENVIRONMENT,
-    baseUrl: (env.CASHFREE_ENV === 'PRODUCTION' || env.CASHFREE_ENVIRONMENT === 'production')
-      ? 'https://api.cashfree.com' 
-      : 'https://sandbox.cashfree.com',
+
+  payment: {
+    cashfree: {
+      clientId: env.CASHFREE_CLIENT_ID,
+      clientSecret: env.CASHFREE_CLIENT_SECRET,
+      environment: env.CASHFREE_ENVIRONMENT,
+    },
   },
-  
-  digilocker: {
-    clientId: env.DIGILOCKER_CLIENT_ID,
-    clientSecret: env.DIGILOCKER_CLIENT_SECRET,
-    baseUrl: 'https://api.digitallocker.gov.in',
+
+  email: {
+    smtp: {
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE,
+      auth: {
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+      },
+    },
+    from: {
+      email: env.FROM_EMAIL,
+      name: env.FROM_NAME,
+    },
   },
-  
+
   oauth: {
     google: {
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
-  callbackUrl: env.GOOGLE_CALLBACK_URL || `http://localhost:${env.PORT}/api/auth/google/callback`,
     },
-    
     linkedin: {
       clientId: env.LINKEDIN_CLIENT_ID,
       clientSecret: env.LINKEDIN_CLIENT_SECRET,
-  callbackUrl: env.LINKEDIN_CALLBACK_URL || `http://localhost:${env.PORT}/api/auth/linkedin/callback`,
     },
+  },
 
-    digilocker: {
-      clientId: env.DIGILOCKER_CLIENT_ID,
-      clientSecret: env.DIGILOCKER_CLIENT_SECRET,
-  callbackUrl: env.DIGILOCKER_CALLBACK_URL || `http://localhost:${env.PORT}/api/auth/digilocker/callback`,
-    },
-  },
-  
-  email: {
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    user: env.SMTP_USER,
-    pass: env.SMTP_PASS,
-  },
-  
-  sms: {
-    apiKey: env.SMS_API_KEY,
-    apiSecret: env.SMS_API_SECRET,
-  },
-  
   whatsapp: {
-    apiKey: env.WHATSAPP_API_KEY,
-    apiSecret: env.WHATSAPP_API_SECRET,
+    accessToken: env.WHATSAPP_ACCESS_TOKEN,
+    apiUrl: env.WHATSAPP_API_URL,
+    businessAccountId: env.WHATSAPP_BUSINESS_ACCOUNT_ID,
   },
-  
-  aws: {
-    accessKeyId: env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-    region: env.AWS_REGION,
-    s3Bucket: env.AWS_S3_BUCKET || 'vikareta-uploads',
+
+  urls: {
+    frontend: env.FRONTEND_URL,
+    admin: env.ADMIN_DOMAIN,
+    dashboard: env.DASHBOARD_DOMAIN,
   },
-  
-  minio: {
-    endpoint: env.MINIO_ENDPOINT,
-    port: env.MINIO_PORT,
-    useSSL: env.MINIO_USE_SSL,
-    accessKey: env.MINIO_ACCESS_KEY,
-    secretKey: env.MINIO_SECRET_KEY,
-    bucketPrefix: env.MINIO_BUCKET_PREFIX,
-    region: env.MINIO_REGION,
-  },
-  
-  storage: {
-    provider: env.STORAGE_PROVIDER,
-    cdnUrl: env.STORAGE_CDN_URL,
-  },
-  
-  elasticsearch: {
-    url: env.ELASTICSEARCH_URL,
-    auth: env.ELASTICSEARCH_USERNAME && env.ELASTICSEARCH_PASSWORD ? {
-      username: env.ELASTICSEARCH_USERNAME,
-      password: env.ELASTICSEARCH_PASSWORD,
-    } : undefined,
-  },
-  
-  logging: {
-    level: env.LOG_LEVEL,
-  },
-  
-  jaeger: {
-    endpoint: env.JAEGER_ENDPOINT,
-    serviceName: env.JAEGER_SERVICE_NAME,
-  },
-  
-  security: {
-    encryptionKey: env.ENCRYPTION_KEY,
-    sslCertDir: env.SSL_CERT_DIR,
-    httpsPort: env.HTTPS_PORT,
-    rateLimiting: {
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
-      maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
-      authMaxRequests: env.AUTH_RATE_LIMIT_MAX,
-      paymentMaxRequests: env.PAYMENT_RATE_LIMIT_MAX,
-    },
-  },
-  // Express trust proxy value (string form); parsing applied where used
-  trustProxy: env.TRUST_PROXY,
 } as const;
+
+export type Config = typeof config;

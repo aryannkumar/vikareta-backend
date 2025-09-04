@@ -1,437 +1,234 @@
-import { PrismaClient } from '@prisma/client';
-import type { Category } from '@prisma/client';
-import { logger } from '@/utils/logger';
-import { getCategoryIcon } from '@/utils/categoryIcons';
-
-const prisma = new PrismaClient();
+import { PrismaClient, Category, Subcategory } from '@prisma/client';
+import { BaseService } from './base.service';
+import { logger } from '../utils/logger';
 
 export interface CreateCategoryData {
   name: string;
   slug: string;
   description?: string;
+  icon?: string;
   parentId?: string;
-  isActive?: boolean;
+  featured?: boolean;
   sortOrder?: number;
 }
 
-export interface UpdateCategoryData {
-  name?: string;
-  slug?: string;
+export interface UpdateCategoryData extends Partial<CreateCategoryData> {
+  isActive?: boolean;
+}
+
+export interface CreateSubcategoryData {
+  name: string;
+  slug: string;
   description?: string;
-  parentId?: string;
-  isActive?: boolean;
+  icon?: string;
   sortOrder?: number;
 }
 
-export interface CategoryWithChildren extends Category {
-  children: CategoryWithChildren[];
-  parent?: Category | null;
-  _count: {
-    products: number;
-    children: number;
-  };
-  iconName?: string; // Dynamic icon based on slug
-}
-
-export interface CategoryWithSubcategories extends Category {
-  subcategories: Array<{
-    id: string;
-    name: string;
-    slug: string;
-    description: string | null;
-    icon: string | null;
-    iconName?: string; // Dynamic icon based on slug
-    productCount: number;
-    sortOrder: number;
-  }>;
-  iconName?: string; // Dynamic icon based on slug
-}
-
-export class CategoryService {
-  /**
-   * Enhance category with dynamic icon based on slug
-   */
-  private enhanceCategoryWithIcon<T extends Category>(category: T): T & { iconName: string } {
-    return {
-      ...category,
-      iconName: getCategoryIcon(category.slug)
-    };
+export class CategoryService extends BaseService {
+  constructor() {
+    super();
   }
 
-  /**
-   * Enhance categories array with dynamic icons
-   */
-  private enhanceCategoriesWithIcons<T extends Category>(categories: T[]): (T & { iconName: string })[] {
-    return categories.map(category => this.enhanceCategoryWithIcon(category));
-  }
-  /**
-   * Create a new category
-   */
-  async createCategory(data: CreateCategoryData): Promise<CategoryWithChildren> {
+  async createCategory(data: CreateCategoryData): Promise<Category> {
     try {
-      // Validate parent category if provided
-      if (data.parentId) {
-        const parentCategory = await prisma.category.findUnique({
-          where: { id: data.parentId }
-        });
-
-        if (!parentCategory) {
-          throw new Error('Parent category not found');
-        }
-      }
-
-      // Check if slug already exists
-      const existingCategory = await prisma.category.findUnique({
-        where: { slug: data.slug }
-      });
-
-      if (existingCategory) {
-        throw new Error('Category slug already exists');
-      }
-
-      const category = await prisma.category.create({
+      const category = await this.prisma.category.create({
         data: {
-          name: data.name,
-          slug: data.slug,
-          description: data.description || null,
-          parentId: data.parentId || null,
-          isActive: data.isActive ?? true,
-          sortOrder: data.sortOrder ?? 0,
+          ...data,
+          featured: data.featured || false,
+          sortOrder: data.sortOrder || 0,
+        },
+        include: {
+          parent: true,
+          children: true,
+          subcategories: true,
         },
       });
 
-      return await this.getCategoryById(category.id);
+      logger.info(`Category created: ${category.id} - ${category.name}`);
+      return category;
     } catch (error) {
       logger.error('Error creating category:', error);
       throw error;
     }
   }
 
-  /**
-   * Get category by ID with children and counts
-   */
-  async getCategoryById(categoryId: string): Promise<CategoryWithChildren> {
+  async updateCategory(categoryId: string, data: UpdateCategoryData): Promise<Category> {
     try {
-      const category = await prisma.category.findUnique({
-        where: { id: categoryId },
-        include: {
-          children: {
-            where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
-            include: {
-              children: {
-                where: { isActive: true },
-                orderBy: { sortOrder: 'asc' },
-              },
-              _count: {
-                select: {
-                  products: true,
-                  children: true,
-                },
-              },
-            },
-          },
-          parent: true,
-          _count: {
-            select: {
-              products: true,
-              children: true,
-            },
-          },
-        },
-      });
-
-      if (!category) {
-        throw new Error('Category not found');
-      }
-
-      // Enhance category with dynamic icons
-      const enhancedCategory = {
-        ...category,
-        iconName: getCategoryIcon(category.slug),
-        children: category.children.map(child => ({
-          ...child,
-          iconName: getCategoryIcon(child.slug),
-          children: child.children.map(grandChild => ({
-            ...grandChild,
-            iconName: getCategoryIcon(grandChild.slug)
-          }))
-        }))
-      };
-
-      return enhancedCategory as CategoryWithChildren;
-    } catch (error) {
-      logger.error('Error fetching category:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get category by slug with children and counts
-   */
-  async getCategoryBySlug(slug: string): Promise<CategoryWithChildren> {
-    try {
-      const category = await prisma.category.findUnique({
-        where: { slug },
-        include: {
-          children: {
-            where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
-            include: {
-              children: {
-                where: { isActive: true },
-                orderBy: { sortOrder: 'asc' },
-              },
-              _count: {
-                select: {
-                  products: true,
-                  children: true,
-                },
-              },
-            },
-          },
-          parent: true,
-          _count: {
-            select: {
-              products: true,
-              children: true,
-            },
-          },
-        },
-      });
-
-      if (!category) {
-        throw new Error('Category not found');
-      }
-
-      // Enhance category with dynamic icons
-      const enhancedCategory = {
-        ...category,
-        iconName: getCategoryIcon(category.slug),
-        children: category.children.map(child => ({
-          ...child,
-          iconName: getCategoryIcon(child.slug),
-          children: child.children.map(grandChild => ({
-            ...grandChild,
-            iconName: getCategoryIcon(grandChild.slug)
-          }))
-        }))
-      };
-
-      return enhancedCategory as CategoryWithChildren;
-    } catch (error) {
-      logger.error('Error fetching category by slug:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all root categories (categories without parent)
-   */
-  async getRootCategories(): Promise<CategoryWithChildren[]> {
-    try {
-      const categories = await prisma.category.findMany({
-        where: {
-          parentId: null,
-          isActive: true,
-        },
-        include: {
-          children: {
-            where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
-            include: {
-              children: {
-                where: { isActive: true },
-                orderBy: { sortOrder: 'asc' },
-              },
-              _count: {
-                select: {
-                  products: true,
-                  children: true,
-                },
-              },
-            },
-          },
-          _count: {
-            select: {
-              products: true,
-              children: true,
-            },
-          },
-        },
-        orderBy: { sortOrder: 'asc' },
-      });
-
-      // Enhance categories with dynamic icons
-      const enhancedCategories = categories.map(category => ({
-        ...category,
-        iconName: getCategoryIcon(category.slug),
-        children: category.children.map(child => ({
-          ...child,
-          iconName: getCategoryIcon(child.slug),
-          children: child.children.map(grandChild => ({
-            ...grandChild,
-            iconName: getCategoryIcon(grandChild.slug)
-          }))
-        }))
-      }));
-
-      return enhancedCategories as CategoryWithChildren[];
-    } catch (error) {
-      logger.error('Error fetching root categories:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all categories in a flat structure
-   */
-  async getAllCategories(includeInactive: boolean = false): Promise<CategoryWithChildren[]> {
-    try {
-      const where = includeInactive ? {} : { isActive: true };
-
-      const categories = await prisma.category.findMany({
-        where,
-        include: {
-          children: {
-            where: includeInactive ? {} : { isActive: true },
-            orderBy: { sortOrder: 'asc' },
-          },
-          parent: true,
-          _count: {
-            select: {
-              products: true,
-              children: true,
-            },
-          },
-        },
-        orderBy: [
-          { parentId: 'asc' },
-          { sortOrder: 'asc' },
-        ],
-      });
-
-      // Enhance categories with dynamic icons
-      const enhancedCategories = categories.map(category => ({
-        ...category,
-        iconName: getCategoryIcon(category.slug),
-        children: category.children.map(child => ({
-          ...child,
-          iconName: getCategoryIcon(child.slug)
-        }))
-      }));
-
-      return enhancedCategories as CategoryWithChildren[];
-    } catch (error) {
-      logger.error('Error fetching all categories:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get child categories for a parent category
-   */
-  async getChildCategories(parentId: string): Promise<CategoryWithChildren[]> {
-    try {
-      const subcategories = await prisma.category.findMany({
-        where: {
-          parentId,
-          isActive: true,
-        },
-        include: {
-          children: {
-            where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
-          },
-          parent: true,
-          _count: {
-            select: {
-              products: true,
-              children: true,
-            },
-          },
-        },
-        orderBy: { sortOrder: 'asc' },
-      });
-
-      return subcategories as CategoryWithChildren[];
-    } catch (error) {
-      logger.error('Error fetching subcategories:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update category
-   */
-  async updateCategory(categoryId: string, data: UpdateCategoryData): Promise<CategoryWithChildren> {
-    try {
-      // Check if category exists
-      const existingCategory = await prisma.category.findUnique({
-        where: { id: categoryId }
-      });
-
-      if (!existingCategory) {
-        throw new Error('Category not found');
-      }
-
-      // Validate parent category if being updated
-      if (data.parentId) {
-        // Prevent setting self as parent
-        if (data.parentId === categoryId) {
-          throw new Error('Category cannot be its own parent');
-        }
-
-        const parentCategory = await prisma.category.findUnique({
-          where: { id: data.parentId }
-        });
-
-        if (!parentCategory) {
-          throw new Error('Parent category not found');
-        }
-
-        // Prevent circular references by checking if the new parent is a descendant
-        const isDescendant = await this.isDescendant(categoryId, data.parentId);
-        if (isDescendant) {
-          throw new Error('Cannot set a descendant category as parent');
-        }
-      }
-
-      // Check if slug already exists (if being updated)
-      if (data.slug && data.slug !== existingCategory.slug) {
-        const slugExists = await prisma.category.findUnique({
-          where: { slug: data.slug }
-        });
-
-        if (slugExists) {
-          throw new Error('Category slug already exists');
-        }
-      }
-
-      await prisma.category.update({
+      const category = await this.prisma.category.update({
         where: { id: categoryId },
         data,
+        include: {
+          parent: true,
+          children: true,
+          subcategories: true,
+        },
       });
 
-      return await this.getCategoryById(categoryId);
+      logger.info(`Category updated: ${categoryId}`);
+      return category;
     } catch (error) {
       logger.error('Error updating category:', error);
       throw error;
     }
   }
 
-  /**
-   * Delete category (soft delete by setting isActive to false)
-   */
-  async deleteCategory(categoryId: string): Promise<void> {
+  async getCategoryById(categoryId: string): Promise<Category | null> {
     try {
-      const category = await prisma.category.findUnique({
+      return await this.prisma.category.findUnique({
         where: { id: categoryId },
         include: {
-          children: true,
+          parent: true,
+          children: {
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          subcategories: {
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching category:', error);
+      throw error;
+    }
+  }
+
+  async getCategoryBySlug(slug: string): Promise<Category | null> {
+    try {
+      return await this.prisma.category.findUnique({
+        where: { slug },
+        include: {
+          parent: true,
+          children: {
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          subcategories: {
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching category by slug:', error);
+      throw error;
+    }
+  }
+
+  async getCategories(includeInactive = false): Promise<Category[]> {
+    try {
+      const where = includeInactive ? {} : { isActive: true };
+      
+      return await this.prisma.category.findMany({
+        where,
+        include: {
+          parent: true,
+          children: {
+            where: includeInactive ? {} : { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          subcategories: {
+            where: includeInactive ? {} : { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+    } catch (error) {
+      logger.error('Error fetching categories:', error);
+      throw error;
+    }
+  }
+
+  async getRootCategories(includeInactive = false): Promise<Category[]> {
+    try {
+      const where: any = { parentId: null };
+      if (!includeInactive) where.isActive = true;
+
+      return await this.prisma.category.findMany({
+        where,
+        include: {
+          children: {
+            where: includeInactive ? {} : { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          subcategories: {
+            where: includeInactive ? {} : { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+    } catch (error) {
+      logger.error('Error fetching root categories:', error);
+      throw error;
+    }
+  }
+
+  async getFeaturedCategories(): Promise<Category[]> {
+    try {
+      return await this.prisma.category.findMany({
+        where: {
+          featured: true,
+          isActive: true,
+        },
+        include: {
+          subcategories: {
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+            take: 5,
+          },
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+    } catch (error) {
+      logger.error('Error fetching featured categories:', error);
+      throw error;
+    }
+  }
+
+  async deleteCategory(categoryId: string): Promise<void> {
+    try {
+      // Check if category has products or services
+      const category = await this.prisma.category.findUnique({
+        where: { id: categoryId },
+        include: {
           _count: {
             select: {
               products: true,
+              services: true,
+              children: true,
             },
           },
         },
@@ -441,309 +238,191 @@ export class CategoryService {
         throw new Error('Category not found');
       }
 
-      // Check if category has products
-      if (category._count.products > 0) {
-        throw new Error('Cannot delete category with existing products');
+      if (category._count.products > 0 || category._count.services > 0 || category._count.children > 0) {
+        throw new Error('Cannot delete category with associated products, services, or subcategories');
       }
 
-      // Check if category has active children
-      const activeChildren = category.children.filter(child => child.isActive);
-      if (activeChildren.length > 0) {
-        throw new Error('Cannot delete category with active subcategories');
-      }
-
-      // Soft delete by setting isActive to false
-      await prisma.category.update({
+      await this.prisma.category.delete({
         where: { id: categoryId },
-        data: { isActive: false },
       });
 
-      logger.info(`Category ${categoryId} deleted (soft delete)`);
+      logger.info(`Category deleted: ${categoryId}`);
     } catch (error) {
       logger.error('Error deleting category:', error);
       throw error;
     }
   }
 
-  /**
-   * Search categories by name
-   */
-  async searchCategories(query: string, limit: number = 20): Promise<CategoryWithChildren[]> {
+  // Subcategory methods
+  async createSubcategory(categoryId: string, data: CreateSubcategoryData): Promise<Subcategory> {
     try {
-      const categories = await prisma.category.findMany({
-        where: {
-          isActive: true,
-          OR: [
-            { name: { contains: query, mode: 'insensitive' } },
-            { description: { contains: query, mode: 'insensitive' } },
-          ],
-        },
-        include: {
-          children: {
-            where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
-          },
-          parent: true,
-          _count: {
-            select: {
-              products: true,
-              children: true,
-            },
-          },
-        },
-        orderBy: { name: 'asc' },
-        take: limit,
-      });
-
-      return categories as CategoryWithChildren[];
-    } catch (error) {
-      logger.error('Error searching categories:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get category hierarchy path (breadcrumb)
-   */
-  async getCategoryPath(categoryId: string): Promise<Category[]> {
-    try {
-      const path: Category[] = [];
-      let currentCategory = await prisma.category.findUnique({
-        where: { id: categoryId },
-        include: { parent: true },
-      });
-
-      while (currentCategory) {
-        path.unshift(currentCategory);
-        if (currentCategory.parent) {
-          currentCategory = await prisma.category.findUnique({
-            where: { id: currentCategory.parent.id },
-            include: { parent: true },
-          });
-        } else {
-          currentCategory = null;
-        }
-      }
-
-      return path;
-    } catch (error) {
-      logger.error('Error getting category path:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Reorder categories within the same parent
-   */
-  async reorderCategories(categoryIds: string[], parentId?: string): Promise<void> {
-    try {
-      // Verify all categories belong to the same parent
-      const categories = await prisma.category.findMany({
-        where: {
-          id: { in: categoryIds },
-          parentId: parentId || null,
-        },
-      });
-
-      if (categories.length !== categoryIds.length) {
-        throw new Error('Some categories not found or do not belong to the specified parent');
-      }
-
-      // Update sort order for each category
-      const updatePromises = categoryIds.map((categoryId, index) =>
-        prisma.category.update({
-          where: { id: categoryId },
-          data: { sortOrder: index },
-        })
-      );
-
-      await Promise.all(updatePromises);
-
-      logger.info(`Reordered ${categoryIds.length} categories`);
-    } catch (error) {
-      logger.error('Error reordering categories:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check if a category is a descendant of another category
-   */
-  private async isDescendant(ancestorId: string, descendantId: string): Promise<boolean> {
-    try {
-      let currentCategory = await prisma.category.findUnique({
-        where: { id: descendantId },
-        include: { parent: true },
-      });
-
-      while (currentCategory?.parent) {
-        if (currentCategory.parent.id === ancestorId) {
-          return true;
-        }
-        currentCategory = await prisma.category.findUnique({
-          where: { id: currentCategory.parent.id },
-          include: { parent: true },
-        });
-      }
-
-      return false;
-    } catch (error) {
-      logger.error('Error checking descendant relationship:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get popular categories based on product count
-   */
-  async getPopularCategories(limit: number = 10): Promise<CategoryWithChildren[]> {
-    try {
-      const categories = await prisma.category.findMany({
-        where: { isActive: true },
-        include: {
-          children: {
-            where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
-          },
-          parent: true,
-          _count: {
-            select: {
-              products: true,
-              children: true,
-            },
-          },
-        },
-        orderBy: {
-          products: {
-            _count: 'desc',
-          },
-        },
-        take: limit,
-      });
-
-      // Enhance categories with dynamic icons
-      const enhancedCategories = categories.map(category => ({
-        ...category,
-        iconName: getCategoryIcon(category.slug),
-        children: category.children.map(child => ({
-          ...child,
-          iconName: getCategoryIcon(child.slug)
-        }))
-      }));
-
-      return enhancedCategories as CategoryWithChildren[];
-    } catch (error) {
-      logger.error('Error fetching popular categories:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all categories with their subcategories
-   */
-  async getCategoriesWithSubcategories(): Promise<CategoryWithSubcategories[]> {
-    try {
-      const categories = await prisma.category.findMany({
-        where: {
-          isActive: true,
-        },
-        include: {
-          subcategories: {
-            where: { isActive: true },
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              description: true,
-              icon: true,
-              _count: { select: { products: true } },
-              sortOrder: true,
-            },
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
-        orderBy: { sortOrder: 'asc' },
-      });
-
-      return categories.map(category => ({
-        ...category,
-        subcategories: category.subcategories.map(sub => ({
-          id: sub.id,
-          name: sub.name,
-          slug: sub.slug,
-          description: sub.description,
-          icon: sub.icon,
-          productCount: sub._count.products,
-          sortOrder: sub.sortOrder,
-        })),
-      })) as CategoryWithSubcategories[];
-    } catch (error) {
-      logger.error('Error fetching categories with subcategories:', error);
-      throw new Error('Failed to fetch categories with subcategories');
-    }
-  }
-
-  /**
-   * Get category by ID with subcategories
-   */
-  async getCategoryWithSubcategories(categoryId: string): Promise<CategoryWithSubcategories | null> {
-    try {
-      const category = await prisma.category.findUnique({
-        where: {
-          id: categoryId,
-          isActive: true,
-        },
-        include: {
-          subcategories: {
-            where: { isActive: true },
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              description: true,
-              icon: true,
-              _count: { select: { products: true } },
-              sortOrder: true,
-            },
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
-      });
-
-      if (!category) return null;
-      
-      return {
-        ...category,
-        subcategories: category.subcategories.map(sub => ({
-          ...sub,
-          productCount: sub._count.products,
-        }))
-      } as CategoryWithSubcategories;
-    } catch (error) {
-      logger.error('Error fetching category with subcategories:', error);
-      throw new Error('Failed to fetch category with subcategories');
-    }
-  }
-
-  /**
-   * Get subcategories for a category
-   */
-  async getSubcategories(categoryId: string) {
-    try {
-      const subcategories = await prisma.subcategory.findMany({
-        where: {
+      const subcategory = await this.prisma.subcategory.create({
+        data: {
+          ...data,
           categoryId,
+          sortOrder: data.sortOrder || 0,
+        },
+        include: {
+          category: true,
+        },
+      });
+
+      logger.info(`Subcategory created: ${subcategory.id} - ${subcategory.name}`);
+      return subcategory;
+    } catch (error) {
+      logger.error('Error creating subcategory:', error);
+      throw error;
+    }
+  }
+
+  async updateSubcategory(subcategoryId: string, data: Partial<CreateSubcategoryData> & { isActive?: boolean }): Promise<Subcategory> {
+    try {
+      const subcategory = await this.prisma.subcategory.update({
+        where: { id: subcategoryId },
+        data,
+        include: {
+          category: true,
+        },
+      });
+
+      logger.info(`Subcategory updated: ${subcategoryId}`);
+      return subcategory;
+    } catch (error) {
+      logger.error('Error updating subcategory:', error);
+      throw error;
+    }
+  }
+
+  async getSubcategoryById(subcategoryId: string): Promise<Subcategory | null> {
+    try {
+      return await this.prisma.subcategory.findUnique({
+        where: { id: subcategoryId },
+        include: {
+          category: true,
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching subcategory:', error);
+      throw error;
+    }
+  }
+
+  async getSubcategoryBySlug(slug: string): Promise<Subcategory | null> {
+    try {
+      return await this.prisma.subcategory.findUnique({
+        where: { slug },
+        include: {
+          category: true,
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching subcategory by slug:', error);
+      throw error;
+    }
+  }
+
+  async getSubcategoriesByCategory(categoryId: string, includeInactive = false): Promise<Subcategory[]> {
+    try {
+      const where: any = { categoryId };
+      if (!includeInactive) where.isActive = true;
+
+      return await this.prisma.subcategory.findMany({
+        where,
+        include: {
+          category: true,
+          _count: {
+            select: {
+              products: { where: { isActive: true } },
+              services: { where: { isActive: true } },
+            },
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+    } catch (error) {
+      logger.error('Error fetching subcategories by category:', error);
+      throw error;
+    }
+  }
+
+  async deleteSubcategory(subcategoryId: string): Promise<void> {
+    try {
+      // Check if subcategory has products or services
+      const subcategory = await this.prisma.subcategory.findUnique({
+        where: { id: subcategoryId },
+        include: {
+          _count: {
+            select: {
+              products: true,
+              services: true,
+            },
+          },
+        },
+      });
+
+      if (!subcategory) {
+        throw new Error('Subcategory not found');
+      }
+
+      if (subcategory._count.products > 0 || subcategory._count.services > 0) {
+        throw new Error('Cannot delete subcategory with associated products or services');
+      }
+
+      await this.prisma.subcategory.delete({
+        where: { id: subcategoryId },
+      });
+
+      logger.info(`Subcategory deleted: ${subcategoryId}`);
+    } catch (error) {
+      logger.error('Error deleting subcategory:', error);
+      throw error;
+    }
+  }
+
+  async getCategoryHierarchy(): Promise<Category[]> {
+    try {
+      return await this.prisma.category.findMany({
+        where: {
           isActive: true,
+          parentId: null,
+        },
+        include: {
+          children: {
+            where: { isActive: true },
+            include: {
+              children: {
+                where: { isActive: true },
+                orderBy: { sortOrder: 'asc' },
+              },
+              subcategories: {
+                where: { isActive: true },
+                orderBy: { sortOrder: 'asc' },
+              },
+            },
+            orderBy: { sortOrder: 'asc' },
+          },
+          subcategories: {
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
         },
         orderBy: { sortOrder: 'asc' },
       });
-
-      return subcategories;
     } catch (error) {
-      logger.error('Error fetching subcategories:', error);
-      throw new Error('Failed to fetch subcategories');
+      logger.error('Error fetching category hierarchy:', error);
+      throw error;
     }
   }
 }
-
-export const categoryService = new CategoryService();

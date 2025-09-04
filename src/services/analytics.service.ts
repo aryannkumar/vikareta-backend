@@ -1,528 +1,727 @@
-/**
- * Minimal Analytics Service - Simplified version for deployment
- */
-
 import { PrismaClient } from '@prisma/client';
-import { logger } from '@/utils/logger';
+import { redisClient } from '../config/redis';
+import { elasticsearchService } from './elasticsearch.service';
+import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
-// Basic interfaces
-export interface AnalyticsFilter {
-  startDate: Date;
-  endDate: Date;
-  groupBy?: 'day' | 'week' | 'month';
-}
-
-export interface BusinessPerformanceMetrics {
-  totalRevenue: number;
-  totalOrders: number;
-  averageOrderValue: number;
-  conversionRate: number;
-  topCategories: Array<{
-    categoryId: string;
-    name: string;
-    revenue: number;
-    orderCount: number;
-  }>;
-  topProducts: Array<{
-    productId: string;
-    name: string;
-    revenue: number;
-    orderCount: number;
-  }>;
-  revenueByPeriod: Array<{
-    period: string;
-    revenue: number;
-    orderCount: number;
-  }>;
-}
-
-export interface UserBehaviorAnalytics {
-  totalUsers: number;
-  totalSessions: number;
-  newUsers: number;
-  activeUsers: number;
-  sessionDuration: number;
-  bounceRate: number;
-  topPages: Array<{
-    page: string;
-    views: number;
-    uniqueViews: number;
-  }>;
-  topSearchQueries: Array<{
-    query: string;
-    count: number;
-    resultCount: number;
-  }>;
-  userJourney: Array<{
-    step: string;
-    users: number;
-    dropoffRate: number;
-  }>;
-}
-
 export class AnalyticsService {
-  private static readonly ANALYTICS_INDEX = 'vikareta_analytics';
-  private static readonly USER_BEHAVIOR_INDEX = 'vikareta_user_behavior';
+    // User Analytics
+    async getUserAnalytics(userId: string, timeframe: 'day' | 'week' | 'month' | 'year' = 'month') {
+        const cacheKey = `analytics:user:${userId}:${timeframe}`;
+        
+        try {
+            // Try to get from cache first
+            const cached = await redisClient.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        } catch (error) {
+            logger.warn('Redis error in getUserAnalytics:', error);
+        }
 
-  /**
-   * Calculate revenue by period helper method
-   */
-  private static calculateRevenueByPeriod(
-    orders: any[],
-    groupBy: 'day' | 'week' | 'month'
-  ): Array<{ period: string; revenue: number; orderCount: number }> {
-    const periodMap = new Map<string, { revenue: number; orderCount: number }>();
-
-    orders.forEach(order => {
-      const orderDate = new Date(order.createdAt);
-      let periodKey: string;
-
-      switch (groupBy) {
-        case 'day':
-          periodKey = orderDate.toISOString().split('T')[0];
-          break;
-        case 'week':
-          const weekStart = new Date(orderDate);
-          weekStart.setDate(orderDate.getDate() - orderDate.getDay());
-          periodKey = weekStart.toISOString().split('T')[0];
-          break;
-        case 'month':
-          periodKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}`;
-          break;
-        default:
-          periodKey = orderDate.toISOString().split('T')[0];
-      }
-
-      const revenue = Number(order.totalAmount);
-      if (periodMap.has(periodKey)) {
-        const existing = periodMap.get(periodKey)!;
-        existing.revenue += revenue;
-        existing.orderCount += 1;
-      } else {
-        periodMap.set(periodKey, { revenue, orderCount: 1 });
-      }
-    });
-
-    return Array.from(periodMap.entries())
-      .map(([period, data]) => ({
-        period,
-        revenue: data.revenue,
-        orderCount: data.orderCount,
-      }))
-      .sort((a, b) => a.period.localeCompare(b.period));
-  }
-
-  /**
-   * Initialize analytics indices (minimal implementation)
-   */
-  static async initializeAnalyticsIndices(): Promise<void> {
-    try {
-      logger.info('Analytics service initialized (minimal mode)');
-    } catch (error) {
-      logger.error('Failed to initialize analytics indices:', error);
-    }
-  }
-
-  /**
-   * Track user behavior event (minimal implementation)
-   */
-  static async trackUserBehavior(event: any): Promise<void> {
-    try {
-      logger.debug('User behavior tracked (minimal mode):', event.eventType);
-    } catch (error) {
-      logger.error('Failed to track user behavior:', error);
-    }
-  }
-
-  /**
-   * Track business analytics event (minimal implementation)
-   */
-  static async trackBusinessEvent(event: any): Promise<void> {
-    try {
-      logger.debug('Business event tracked (minimal mode):', event.eventType);
-    } catch (error) {
-      logger.error('Failed to track business event:', error);
-    }
-  }
-
-  /**
-   * Get business performance metrics (real implementation)
-   */
-  static async getBusinessPerformanceMetrics(
-    sellerId: string,
-    filters: AnalyticsFilter
-  ): Promise<BusinessPerformanceMetrics> {
-    try {
-      const { startDate, endDate } = filters;
-
-      // Get orders with detailed information
-      const orders = await prisma.order.findMany({
-        where: {
-          sellerId,
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-        include: {
-          items: {
-            include: {
-              product: {
-                include: {
-                  category: true,
+        const dateRange = this.getDateRange(timeframe);
+        
+        const [
+            totalOrders,
+            totalSpent,
+            totalProducts,
+            totalServices,
+            recentActivity,
+            ordersByStatus,
+            spendingTrend
+        ] = await Promise.all([
+            // Total orders
+            prisma.order.count({
+                where: {
+                    buyerId: userId,
+                    createdAt: { gte: dateRange.start }
+                }
+            }),
+            
+            // Total spent
+            prisma.order.aggregate({
+                where: {
+                    buyerId: userId,
+                    createdAt: { gte: dateRange.start },
+                    status: { in: ['DELIVERED', 'COMPLETED'] }
                 },
-              },
+                _sum: { totalAmount: true }
+            }),
+            
+            // Total products purchased
+            prisma.orderItem.count({
+                where: {
+                    order: {
+                        buyerId: userId,
+                        createdAt: { gte: dateRange.start }
+                    },
+                    productId: { not: null }
+                }
+            }),
+            
+            // Total services booked
+            prisma.orderItem.count({
+                where: {
+                    order: {
+                        buyerId: userId,
+                        createdAt: { gte: dateRange.start }
+                    },
+                    serviceId: { not: null }
+                }
+            }),
+            
+            // Recent activity
+            prisma.order.findMany({
+                where: {
+                    buyerId: userId,
+                    createdAt: { gte: dateRange.start }
+                },
+                select: {
+                    id: true,
+                    orderNumber: true,
+                    totalAmount: true,
+                    status: true,
+                    createdAt: true,
+                    items: {
+                        select: {
+                            product: { select: { title: true } },
+                            service: { select: { title: true } },
+                            quantity: true
+                        }
+                    }
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 10
+            }),
+            
+            // Orders by status
+            prisma.order.groupBy({
+                by: ['status'],
+                where: {
+                    buyerId: userId,
+                    createdAt: { gte: dateRange.start }
+                },
+                _count: { id: true }
+            }),
+            
+            // Spending trend
+            this.getSpendingTrend(userId, timeframe)
+        ]);
+
+        const analytics = {
+            summary: {
+                totalOrders,
+                totalSpent: totalSpent._sum.totalAmount || 0,
+                totalProducts,
+                totalServices,
+                averageOrderValue: totalOrders > 0 ? Number(totalSpent._sum.totalAmount || 0) / totalOrders : 0
             },
-          },
-        },
-      });
+            recentActivity,
+            ordersByStatus: ordersByStatus.map(item => ({
+                status: item.status,
+                count: item._count.id
+            })),
+            spendingTrend,
+            timeframe,
+            generatedAt: new Date()
+        };
 
-      // Get RFQ count for conversion rate calculation
-      const rfqCount = await prisma.rfq.count({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      });
+        // Cache for 1 hour
+        try {
+            await redisClient.setex(cacheKey, 3600, JSON.stringify(analytics));
+        } catch (error) {
+            logger.warn('Redis error caching user analytics:', error);
+        }
 
-      const totalRevenue = orders.reduce((sum, order) => sum + Number(order.totalAmount), 0);
-      const totalOrders = orders.length;
-      const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-      const conversionRate = rfqCount > 0 ? (totalOrders / rfqCount) * 100 : 0;
-
-      // Calculate top categories
-      const categoryRevenue = new Map<string, { name: string; revenue: number; orderCount: number }>();
-      orders.forEach(order => {
-        order.items.forEach(item => {
-          const categoryId = item.product.categoryId;
-          const categoryName = item.product.category?.name || 'Uncategorized';
-          const itemRevenue = Number(item.totalPrice);
-          
-          if (categoryRevenue.has(categoryId)) {
-            const existing = categoryRevenue.get(categoryId)!;
-            existing.revenue += itemRevenue;
-            existing.orderCount += 1;
-          } else {
-            categoryRevenue.set(categoryId, {
-              name: categoryName,
-              revenue: itemRevenue,
-              orderCount: 1,
-            });
-          }
-        });
-      });
-
-      const topCategories = Array.from(categoryRevenue.entries())
-        .map(([categoryId, data]) => ({
-          categoryId,
-          name: data.name,
-          revenue: data.revenue,
-          orderCount: data.orderCount,
-        }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 10);
-
-      // Calculate top products
-      const productRevenue = new Map<string, { name: string; revenue: number; orderCount: number }>();
-      orders.forEach(order => {
-        order.items.forEach(item => {
-          const productId = item.productId;
-          const productName = item.product.title;
-          const itemRevenue = Number(item.totalPrice);
-          
-          if (productRevenue.has(productId)) {
-            const existing = productRevenue.get(productId)!;
-            existing.revenue += itemRevenue;
-            existing.orderCount += 1;
-          } else {
-            productRevenue.set(productId, {
-              name: productName,
-              revenue: itemRevenue,
-              orderCount: 1,
-            });
-          }
-        });
-      });
-
-      const topProducts = Array.from(productRevenue.entries())
-        .map(([productId, data]) => ({
-          productId,
-          name: data.name,
-          revenue: data.revenue,
-          orderCount: data.orderCount,
-        }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 10);
-
-      // Calculate revenue by period
-      const revenueByPeriod = this.calculateRevenueByPeriod(orders, filters.groupBy || 'day');
-
-      return {
-        totalRevenue,
-        totalOrders,
-        averageOrderValue,
-        conversionRate,
-        topCategories,
-        topProducts,
-        revenueByPeriod,
-      };
-    } catch (error) {
-      logger.error('Failed to get business performance metrics:', error);
-      throw error;
+        return analytics;
     }
-  }
 
-  /**
-   * Get user behavior analytics (real implementation)
-   */
-  static async getUserBehaviorAnalytics(filters: AnalyticsFilter): Promise<UserBehaviorAnalytics> {
-    try {
-      const { startDate, endDate } = filters;
+    // Business Analytics (for sellers/service providers)
+    async getBusinessAnalytics(userId: string, timeframe: 'day' | 'week' | 'month' | 'year' = 'month') {
+        const cacheKey = `analytics:business:${userId}:${timeframe}`;
+        
+        try {
+            const cached = await redisClient.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        } catch (error) {
+            logger.warn('Redis error in getBusinessAnalytics:', error);
+        }
 
-      // Get user activity data
-      const totalUsers = await prisma.user.count({
-        where: {
-          createdAt: {
-            lte: endDate,
-          },
-        },
-      });
+        const dateRange = this.getDateRange(timeframe);
+        
+        const [
+            totalRevenue,
+            totalOrders,
+            totalProducts,
+            totalServices,
+            topProducts,
+            topServices,
+            revenueByMonth,
+            ordersByStatus,
+            customerAnalytics
+        ] = await Promise.all([
+            // Total revenue
+            prisma.order.aggregate({
+                where: {
+                    sellerId: userId,
+                    createdAt: { gte: dateRange.start },
+                    status: { in: ['DELIVERED', 'COMPLETED'] }
+                },
+                _sum: { totalAmount: true }
+            }),
+            
+            // Total orders
+            prisma.order.count({
+                where: {
+                    sellerId: userId,
+                    createdAt: { gte: dateRange.start }
+                }
+            }),
+            
+            // Total products
+            prisma.product.count({
+                where: {
+                    sellerId: userId,
+                    isActive: true
+                }
+            }),
+            
+            // Total services
+            prisma.service.count({
+                where: {
+                    providerId: userId,
+                    isActive: true
+                }
+            }),
+            
+            // Top products
+            prisma.orderItem.groupBy({
+                by: ['productId'],
+                where: {
+                    order: {
+                        sellerId: userId,
+                        createdAt: { gte: dateRange.start }
+                    },
+                    productId: { not: null }
+                },
+                _sum: { quantity: true, totalPrice: true },
+                _count: { id: true },
+                orderBy: { _sum: { totalPrice: 'desc' } },
+                take: 5
+            }),
+            
+            // Top services
+            prisma.orderItem.groupBy({
+                by: ['serviceId'],
+                where: {
+                    order: {
+                        sellerId: userId,
+                        createdAt: { gte: dateRange.start }
+                    },
+                    serviceId: { not: null }
+                },
+                _sum: { quantity: true, totalPrice: true },
+                _count: { id: true },
+                orderBy: { _sum: { totalPrice: 'desc' } },
+                take: 5
+            }),
+            
+            // Revenue by month
+            this.getRevenueByMonth(userId, timeframe),
+            
+            // Orders by status
+            prisma.order.groupBy({
+                by: ['status'],
+                where: {
+                    sellerId: userId,
+                    createdAt: { gte: dateRange.start }
+                },
+                _count: { id: true },
+                _sum: { totalAmount: true }
+            }),
+            
+            // Customer analytics
+            this.getCustomerAnalytics(userId, dateRange)
+        ]);
 
-      const newUsers = await prisma.user.count({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      });
+        // Get product/service details for top items
+        const topProductDetails = await this.getProductDetails(topProducts);
+        const topServiceDetails = await this.getServiceDetails(topServices);
 
-      // Get active users (users who placed orders or created RFQs in the period)
-      const activeUserIds = new Set();
-      
-      const ordersInPeriod = await prisma.order.findMany({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-        select: {
-          buyerId: true,
-          sellerId: true,
-        },
-      });
-
-      const rfqsInPeriod = await prisma.rfq.findMany({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-        select: {
-          buyerId: true,
-        },
-      });
-
-      ordersInPeriod.forEach(order => {
-        activeUserIds.add(order.buyerId);
-        activeUserIds.add(order.sellerId);
-      });
-
-      rfqsInPeriod.forEach(rfq => {
-        activeUserIds.add(rfq.buyerId);
-      });
-
-      const activeUsers = activeUserIds.size;
-
-      // Mock data for sessions and other metrics (would need session tracking)
-      const totalSessions = Math.floor(activeUsers * 1.5); // Estimate
-      const sessionDuration = 300; // 5 minutes average
-      const bounceRate = totalSessions > 0 ? ((totalSessions - activeUsers) / totalSessions) * 100 : 0;
-
-      // User journey based on actual data
-      const userJourney = [
-        { step: 'Registration', users: totalUsers, dropoffRate: 0 },
-        { step: 'Browse Products', users: Math.floor(totalUsers * 0.8), dropoffRate: 20 },
-        { step: 'Create RFQ', users: rfqsInPeriod.length, dropoffRate: Math.floor(((totalUsers * 0.8 - rfqsInPeriod.length) / (totalUsers * 0.8)) * 100) },
-        { step: 'Place Order', users: ordersInPeriod.length, dropoffRate: Math.floor(((rfqsInPeriod.length - ordersInPeriod.length) / rfqsInPeriod.length) * 100) },
-      ];
-
-      return {
-        totalUsers,
-        totalSessions,
-        newUsers,
-        activeUsers,
-        sessionDuration,
-        bounceRate,
-        topPages: [], // Would need page view tracking
-        topSearchQueries: [], // Would need search tracking
-        userJourney,
-      };
-    } catch (error) {
-      logger.error('Failed to get user behavior analytics:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get real-time dashboard (real implementation)
-   */
-  static async getRealTimeDashboard(): Promise<{
-    activeUsers: number;
-    currentSessions: number;
-    recentOrders: number;
-    recentRevenue: number;
-    topProducts: Array<{ productId: string; productName: string; views: number }>;
-    recentActivity: Array<{ eventType: string; count: number; timestamp: Date }>;
-  }> {
-    try {
-      const now = new Date();
-      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-
-      // Get recent orders
-      const recentOrders = await prisma.order.count({
-        where: {
-          createdAt: {
-            gte: oneDayAgo,
-          },
-        },
-      });
-
-      // Get recent revenue
-      const recentRevenue = await prisma.order.aggregate({
-        where: {
-          createdAt: {
-            gte: oneDayAgo,
-          },
-        },
-        _sum: {
-          totalAmount: true,
-        },
-      });
-
-      // Get active users (users with recent activity)
-      const recentOrderUsers = await prisma.order.findMany({
-        where: {
-          createdAt: {
-            gte: oneHourAgo,
-          },
-        },
-        select: {
-          buyerId: true,
-          sellerId: true,
-        },
-      });
-
-      const recentRfqUsers = await prisma.rfq.findMany({
-        where: {
-          createdAt: {
-            gte: oneHourAgo,
-          },
-        },
-        select: {
-          buyerId: true,
-        },
-      });
-
-      const activeUserIds = new Set();
-      recentOrderUsers.forEach(order => {
-        activeUserIds.add(order.buyerId);
-        activeUserIds.add(order.sellerId);
-      });
-      recentRfqUsers.forEach(rfq => {
-        activeUserIds.add(rfq.buyerId);
-      });
-
-      const activeUsers = activeUserIds.size;
-      const currentSessions = Math.floor(activeUsers * 1.2); // Estimate
-
-      // Get top products by recent order volume
-      const topProductsData = await prisma.orderItem.groupBy({
-        by: ['productId'],
-        where: {
-          order: {
-            createdAt: {
-              gte: oneDayAgo,
+        const analytics = {
+            summary: {
+                totalRevenue: totalRevenue._sum.totalAmount || 0,
+                totalOrders,
+                totalProducts,
+                totalServices,
+                averageOrderValue: totalOrders > 0 ? Number(totalRevenue._sum.totalAmount || 0) / totalOrders : 0
             },
-          },
-        },
-        _count: {
-          productId: true,
-        },
-        orderBy: {
-          _count: {
-            productId: 'desc',
-          },
-        },
-        take: 5,
-      });
+            topProducts: topProductDetails,
+            topServices: topServiceDetails,
+            revenueByMonth,
+            ordersByStatus: ordersByStatus.map(item => ({
+                status: item.status,
+                count: item._count.id,
+                revenue: item._sum.totalAmount || 0
+            })),
+            customerAnalytics,
+            timeframe,
+            generatedAt: new Date()
+        };
 
-      const topProducts = await Promise.all(
-        topProductsData.map(async (item) => {
-          const product = await prisma.product.findUnique({
-            where: { id: item.productId },
-            select: { id: true, title: true },
-          });
-          return {
-            productId: item.productId,
-            productName: product?.title || 'Unknown Product',
-            views: item._count.productId,
-          };
-        })
-      );
+        // Cache for 1 hour
+        try {
+            await redisClient.setex(cacheKey, 3600, JSON.stringify(analytics));
+        } catch (error) {
+            logger.warn('Redis error caching business analytics:', error);
+        }
 
-      // Get recent activity counts
-      const recentOrderCount = await prisma.order.count({
-        where: {
-          createdAt: {
-            gte: oneHourAgo,
-          },
-        },
-      });
-
-      const recentRfqCount = await prisma.rfq.count({
-        where: {
-          createdAt: {
-            gte: oneHourAgo,
-          },
-        },
-      });
-
-      const recentQuoteCount = await prisma.quote.count({
-        where: {
-          createdAt: {
-            gte: oneHourAgo,
-          },
-        },
-      });
-
-      const recentActivity = [
-        { eventType: 'Orders Placed', count: recentOrderCount, timestamp: now },
-        { eventType: 'RFQs Created', count: recentRfqCount, timestamp: now },
-        { eventType: 'Quotes Sent', count: recentQuoteCount, timestamp: now },
-        { eventType: 'Active Users', count: activeUsers, timestamp: now },
-      ];
-
-      return {
-        activeUsers,
-        currentSessions,
-        recentOrders,
-        recentRevenue: Number(recentRevenue._sum.totalAmount || 0),
-        topProducts,
-        recentActivity,
-      };
-    } catch (error) {
-      logger.error('Failed to get real-time dashboard:', error);
-      throw error;
+        return analytics;
     }
-  }
+
+    // Platform Analytics (admin only)
+    async getPlatformAnalytics(timeframe: 'day' | 'week' | 'month' | 'year' = 'month') {
+        const cacheKey = `analytics:platform:${timeframe}`;
+        
+        try {
+            const cached = await redisClient.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        } catch (error) {
+            logger.warn('Redis error in getPlatformAnalytics:', error);
+        }
+
+        const dateRange = this.getDateRange(timeframe);
+        
+        const [
+            totalUsers,
+            newUsers,
+            totalOrders,
+            totalRevenue,
+            totalProducts,
+            totalServices,
+            usersByType,
+            ordersByStatus,
+            revenueByCategory,
+            topCategories,
+            searchAnalytics
+        ] = await Promise.all([
+            // Total users
+            prisma.user.count(),
+            
+            // New users
+            prisma.user.count({
+                where: { createdAt: { gte: dateRange.start } }
+            }),
+            
+            // Total orders
+            prisma.order.count({
+                where: { createdAt: { gte: dateRange.start } }
+            }),
+            
+            // Total revenue
+            prisma.order.aggregate({
+                where: {
+                    createdAt: { gte: dateRange.start },
+                    status: { in: ['DELIVERED', 'COMPLETED'] }
+                },
+                _sum: { totalAmount: true }
+            }),
+            
+            // Total products
+            prisma.product.count({
+                where: { isActive: true }
+            }),
+            
+            // Total services
+            prisma.service.count({
+                where: { isActive: true }
+            }),
+            
+            // Users by type
+            prisma.user.groupBy({
+                by: ['userType'],
+                _count: { id: true }
+            }),
+            
+            // Orders by status
+            prisma.order.groupBy({
+                by: ['status'],
+                where: { createdAt: { gte: dateRange.start } },
+                _count: { id: true },
+                _sum: { totalAmount: true }
+            }),
+            
+            // Revenue by category
+            this.getRevenueByCategory(dateRange),
+            
+            // Top categories
+            this.getTopCategories(dateRange),
+            
+            // Search analytics
+            this.getSearchAnalytics(dateRange)
+        ]);
+
+        const analytics = {
+            summary: {
+                totalUsers,
+                newUsers,
+                totalOrders,
+                totalRevenue: totalRevenue._sum.totalAmount || 0,
+                totalProducts,
+                totalServices,
+                averageOrderValue: totalOrders > 0 ? Number(totalRevenue._sum.totalAmount || 0) / totalOrders : 0
+            },
+            usersByType: usersByType.map(item => ({
+                type: item.userType,
+                count: item._count.id
+            })),
+            ordersByStatus: ordersByStatus.map(item => ({
+                status: item.status,
+                count: item._count.id,
+                revenue: item._sum.totalAmount || 0
+            })),
+            revenueByCategory,
+            topCategories,
+            searchAnalytics,
+            timeframe,
+            generatedAt: new Date()
+        };
+
+        // Cache for 30 minutes
+        try {
+            await redisClient.setex(cacheKey, 1800, JSON.stringify(analytics));
+        } catch (error) {
+            logger.warn('Redis error caching platform analytics:', error);
+        }
+
+        return analytics;
+    }
+
+    // Search Analytics using Elasticsearch
+    async getSearchAnalytics(dateRange: { start: Date; end: Date }) {
+        try {
+            // Get search analytics from database (mock data for now)
+            const searchStats: any[] = [
+                { query: 'electronics', searchCount: 150 },
+                { query: 'machinery', searchCount: 120 },
+                { query: 'textiles', searchCount: 90 },
+            ];
+
+            // Get search trends from Elasticsearch if available
+            let searchTrends = [];
+            try {
+                const esResponse = await elasticsearchService.search('search_logs', {
+                    query: {
+                        range: {
+                            timestamp: {
+                                gte: dateRange.start.toISOString(),
+                                lte: dateRange.end.toISOString()
+                            }
+                        }
+                    },
+                    aggs: {
+                        popular_searches: {
+                            terms: {
+                                field: 'query.keyword',
+                                size: 10
+                            }
+                        },
+                        search_trends: {
+                            date_histogram: {
+                                field: 'timestamp',
+                                calendar_interval: 'day'
+                            }
+                        }
+                    }
+                });
+
+                if (esResponse.aggregations) {
+                    searchTrends = esResponse.aggregations.search_trends.buckets;
+                }
+            } catch (esError) {
+                logger.warn('Elasticsearch error in search analytics:', esError);
+            }
+
+            return {
+                topSearches: searchStats,
+                searchTrends,
+                totalSearches: searchStats.reduce((sum, item) => sum + item.searchCount, 0)
+            };
+        } catch (error) {
+            logger.error('Error getting search analytics:', error);
+            return {
+                topSearches: [],
+                searchTrends: [],
+                totalSearches: 0
+            };
+        }
+    }
+
+    // Helper methods
+    private getDateRange(timeframe: string) {
+        const now = new Date();
+        const start = new Date();
+
+        switch (timeframe) {
+            case 'day':
+                start.setDate(now.getDate() - 1);
+                break;
+            case 'week':
+                start.setDate(now.getDate() - 7);
+                break;
+            case 'month':
+                start.setMonth(now.getMonth() - 1);
+                break;
+            case 'year':
+                start.setFullYear(now.getFullYear() - 1);
+                break;
+        }
+
+        return { start, end: now };
+    }
+
+    private async getSpendingTrend(userId: string, timeframe: string) {
+        // Implementation for spending trend analysis
+        const dateRange = this.getDateRange(timeframe);
+        
+        return prisma.$queryRaw`
+            SELECT 
+                DATE_TRUNC('day', created_at) as date,
+                SUM(total_amount) as amount,
+                COUNT(*) as orders
+            FROM orders 
+            WHERE buyer_id = ${userId} 
+                AND created_at >= ${dateRange.start}
+                AND status IN ('DELIVERED', 'COMPLETED')
+            GROUP BY DATE_TRUNC('day', created_at)
+            ORDER BY date ASC
+        `;
+    }
+
+    private async getRevenueByMonth(userId: string, timeframe: string) {
+        const dateRange = this.getDateRange(timeframe);
+        
+        return prisma.$queryRaw`
+            SELECT 
+                DATE_TRUNC('month', created_at) as month,
+                SUM(total_amount) as revenue,
+                COUNT(*) as orders
+            FROM orders 
+            WHERE seller_id = ${userId} 
+                AND created_at >= ${dateRange.start}
+                AND status IN ('DELIVERED', 'COMPLETED')
+            GROUP BY DATE_TRUNC('month', created_at)
+            ORDER BY month ASC
+        `;
+    }
+
+    private async getCustomerAnalytics(userId: string, dateRange: { start: Date; end: Date }) {
+        const [totalCustomers, newCustomers, repeatCustomers] = await Promise.all([
+            prisma.order.groupBy({
+                by: ['buyerId'],
+                where: {
+                    sellerId: userId,
+                    createdAt: { gte: dateRange.start }
+                },
+                _count: { id: true }
+            }),
+            
+            prisma.order.groupBy({
+                by: ['buyerId'],
+                where: {
+                    sellerId: userId,
+                    createdAt: { gte: dateRange.start }
+                },
+                having: {
+                    buyerId: {
+                        _count: {
+                            equals: 1
+                        }
+                    }
+                },
+                _count: { id: true }
+            }),
+            
+            prisma.order.groupBy({
+                by: ['buyerId'],
+                where: {
+                    sellerId: userId,
+                    createdAt: { gte: dateRange.start }
+                },
+                having: {
+                    buyerId: {
+                        _count: {
+                            gt: 1
+                        }
+                    }
+                },
+                _count: { id: true }
+            })
+        ]);
+
+        return {
+            totalCustomers: totalCustomers.length,
+            newCustomers: newCustomers.length,
+            repeatCustomers: repeatCustomers.length,
+            repeatRate: totalCustomers.length > 0 ? (repeatCustomers.length / totalCustomers.length) * 100 : 0
+        };
+    }
+
+    private async getProductDetails(topProducts: any[]) {
+        if (topProducts.length === 0) return [];
+        
+        const productIds = topProducts.map(item => item.productId).filter(Boolean);
+        const products = await prisma.product.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, title: true, price: true }
+        });
+
+        return topProducts.map(item => {
+            const product = products.find(p => p.id === item.productId);
+            return {
+                ...item,
+                product: product || null
+            };
+        });
+    }
+
+    private async getServiceDetails(topServices: any[]) {
+        if (topServices.length === 0) return [];
+        
+        const serviceIds = topServices.map(item => item.serviceId).filter(Boolean);
+        const services = await prisma.service.findMany({
+            where: { id: { in: serviceIds } },
+            select: { id: true, title: true, price: true }
+        });
+
+        return topServices.map(item => {
+            const service = services.find(s => s.id === item.serviceId);
+            return {
+                ...item,
+                service: service || null
+            };
+        });
+    }
+
+    private async getRevenueByCategory(dateRange: { start: Date; end: Date }) {
+        return prisma.$queryRaw`
+            SELECT 
+                c.name as category_name,
+                SUM(oi.total_price) as revenue,
+                COUNT(oi.id) as items_sold
+            FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            JOIN products p ON oi.product_id = p.id
+            JOIN categories c ON p.category_id = c.id
+            WHERE o.created_at >= ${dateRange.start}
+                AND o.created_at <= ${dateRange.end}
+                AND o.status IN ('DELIVERED', 'COMPLETED')
+            GROUP BY c.id, c.name
+            ORDER BY revenue DESC
+            LIMIT 10
+        `;
+    }
+
+    private async getTopCategories(dateRange: { start: Date; end: Date }) {
+        return prisma.category.findMany({
+            include: {
+                _count: {
+                    select: {
+                        products: {
+                            where: {
+                                orderItems: {
+                                    some: {
+                                        order: {
+                                            createdAt: { gte: dateRange.start, lte: dateRange.end }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                products: {
+                    _count: 'desc'
+                }
+            },
+            take: 10
+        });
+    }
+
+    // Real-time analytics tracking
+    async trackEvent(eventType: string, userId: string, data: any) {
+        try {
+            // Store in Redis for real-time processing
+            const event = {
+                type: eventType,
+                userId,
+                data,
+                timestamp: new Date().toISOString()
+            };
+
+            await redisClient.lpush('analytics:events', JSON.stringify(event));
+            
+            // Keep only last 1000 events
+            await redisClient.ltrim('analytics:events', 0, 999);
+
+            // Index in Elasticsearch for advanced analytics
+            try {
+                // await elasticsearchService.indexDocument('analytics_events', event);
+                logger.info('Analytics event tracked:', event);
+            } catch (esError) {
+                logger.warn('Failed to index analytics event in Elasticsearch:', esError);
+            }
+
+        } catch (error) {
+            logger.error('Error tracking analytics event:', error);
+        }
+    }
+
+    // Get real-time metrics
+    async getRealTimeMetrics() {
+        try {
+            const [
+                activeUsers,
+                recentOrders,
+                recentEvents
+            ] = await Promise.all([
+                // Active users in last hour
+                redisClient.scard('active_users'),
+                
+                // Recent orders
+                prisma.order.count({
+                    where: {
+                        createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }
+                    }
+                }),
+                
+                // Recent events
+                redisClient.lrange('analytics:events', 0, 9)
+            ]);
+
+            return {
+                activeUsers,
+                recentOrders,
+                recentEvents: recentEvents.map(event => JSON.parse(event)),
+                timestamp: new Date()
+            };
+        } catch (error) {
+            logger.error('Error getting real-time metrics:', error);
+            return {
+                activeUsers: 0,
+                recentOrders: 0,
+                recentEvents: [],
+                timestamp: new Date()
+            };
+        }
+    }
 }
 
 export const analyticsService = new AnalyticsService();

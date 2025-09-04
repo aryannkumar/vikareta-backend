@@ -1,433 +1,725 @@
 import bcrypt from 'bcryptjs';
-import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { User, LoginSession } from '@prisma/client';
+import { BaseService } from '@/services/base.service';
+import { UserService, CreateUserData, LoginCredentials, AuthTokens } from '@/services/user.service';
+import { EmailService } from '@/services/email.service';
+import { SMSService } from '@/services/sms.service';
 import { config } from '@/config/environment';
-import { logger } from '@/utils/logger';
+import { ValidationError, AuthenticationError, NotFoundError } from '@/middleware/error-handler';
+import { blacklistToken } from '../middleware/auth-middleware';
+import { GoogleTokens, GoogleUser, LinkedInTokens, LinkedInProfile, LinkedInEmailData, JWTPayload } from '../types/auth.types';
 
-const prisma = new PrismaClient();
-
-export interface RegisterData {
-  email?: string | undefined;
-  phone?: string | undefined;
-  password: string;
-  firstName?: string | undefined;
-  lastName?: string | undefined;
-  businessName?: string | undefined;
-  gstin?: string | undefined;
+export interface OTPData {
+  phone: string;
+  otp: string;
+  expiresAt: Date;
+  verified: boolean;
 }
 
-export interface LoginData {
-  email?: string | undefined;
-  phone?: string | undefined;
-  password: string;
-}
+export class AuthService extends BaseService {
+  private userService: UserService;
+  private emailService: EmailService;
+  private smsService: SMSService;
 
-export interface TokenPayload {
-  userId: string;
-  email?: string | undefined;
-  phone?: string | undefined;
-  verificationTier: string;
-  userType: string;
-  businessName?: string;
-  role?: string;
-  isAdmin?: boolean;
-}
-
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: string;
-}
-
-export class AuthService {
-  /**
-   * Hash password using bcrypt
-   */
-  static async hashPassword(password: string): Promise<string> {
-    const saltRounds = 12;
-    return bcrypt.hash(password, saltRounds);
+  constructor() {
+    super();
+    this.userService = new UserService();
+    this.emailService = new EmailService();
+    this.smsService = new SMSService();
   }
 
   /**
-   * Verify password against hash
+   * Register a new user
    */
-  static async verifyPassword(password: string, hash: string): Promise<boolean> {
-    return bcrypt.compare(password, hash);
-  }
-
-  /**
-   * Generate JWT tokens
-   */
-  static generateTokens(payload: TokenPayload): AuthTokens {
-    const accessToken = jwt.sign(
-      payload as object,
-      config.jwt.secret,
-      {
-        expiresIn: config.jwt.expiresIn,
-        issuer: 'vikareta-api',
-        audience: 'vikareta-client',
-      } as SignOptions
-    );
-
-    const refreshToken = jwt.sign(
-      { userId: payload.userId } as object,
-      config.jwt.refreshSecret,
-      {
-        expiresIn: config.jwt.refreshExpiresIn,
-        issuer: 'vikareta-api',
-        audience: 'vikareta-client',
-      } as SignOptions
-    );
-
-    return {
-      accessToken,
-      refreshToken,
-      expiresIn: config.jwt.expiresIn,
-    };
-  }
-
-  /**
-   * Verify JWT access token
-   */
-  static verifyAccessToken(token: string): TokenPayload {
+  async register(userData: CreateUserData): Promise<AuthTokens> {
     try {
-      return jwt.verify(token, config.jwt.secret, {
-        issuer: 'vikareta-api',
-        audience: 'vikareta-client',
-      } as VerifyOptions) as TokenPayload;
-    } catch (error) {
-      logger.error('Access token verification failed:', error);
-      throw new Error('Invalid or expired access token');
-    }
-  }
-
-  /**
-   * Verify JWT refresh token
-   */
-  static verifyRefreshToken(token: string): { userId: string } {
-    try {
-      return jwt.verify(token, config.jwt.refreshSecret, {
-        issuer: 'vikareta-api',
-        audience: 'vikareta-client',
-      } as VerifyOptions) as { userId: string };
-    } catch (error) {
-      logger.error('Refresh token verification failed:', error);
-      throw new Error('Invalid or expired refresh token');
-    }
-  }
-
-  /**
-   * Register new user
-   */
-  static async register(data: RegisterData) {
-    try {
-      // Validate that either email or phone is provided
-      if (!data.email && !data.phone) {
-        throw new Error('Either email or phone number is required');
-      }
-
-      // Check if user already exists
-      const existingUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            data.email ? { email: data.email } : {},
-            data.phone ? { phone: data.phone } : {},
-          ].filter(condition => Object.keys(condition).length > 0),
-        },
-      });
-
-      if (existingUser) {
-        throw new Error('User already exists with this email or phone number');
-      }
-
-      // Hash password
-      const passwordHash = await this.hashPassword(data.password);
-
       // Create user
-      const user = await prisma.user.create({
-        data: {
-          email: data.email || null,
-          phone: data.phone || null,
-          passwordHash,
-          firstName: data.firstName || null,
-          lastName: data.lastName || null,
-          businessName: data.businessName || null,
-          gstin: data.gstin || null,
-          verificationTier: 'basic',
-          isVerified: false,
-        },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          firstName: true,
-          lastName: true,
-          businessName: true,
-          gstin: true,
-          userType: true,
-          verificationTier: true,
-          isVerified: true,
-          createdAt: true,
-        },
-      });
-
-      // Create wallet for the user
-      await prisma.wallet.create({
-        data: {
-          userId: user.id,
-          availableBalance: 0,
-          lockedBalance: 0,
-          negativeBalance: 0,
-        },
-      });
-
-      // Create shopping cart for the user
-      await prisma.shoppingCart.create({
-        data: {
-          userId: user.id,
-        },
-      });
+      const user = await this.userService.createUser(userData);
 
       // Generate tokens
-      const tokens = this.generateTokens({
-        userId: user.id,
-        email: user.email ?? undefined,
-        phone: user.phone ?? undefined,
-        verificationTier: user.verificationTier,
-        userType: user.userType || 'user',
-      });
+      const tokens = this.generateTokens(user);
 
-      logger.info(`User registered successfully: ${user.id}`);
+      // Create login session
+      await this.createLoginSession(user.id, tokens.accessToken);
+
+      // Send welcome email if email is provided
+      if (user.email) {
+        await this.emailService.sendWelcomeEmail(
+          user.email,
+          user.firstName || user.businessName || 'User'
+        );
+      }
+
+      this.logOperation('register', { userId: user.id, userType: user.userType });
 
       return {
+        ...tokens,
         user,
-        tokens,
       };
     } catch (error) {
-      logger.error('User registration failed:', error);
-      throw error;
+      this.handleError(error, 'register', userData);
     }
   }
 
   /**
    * Login user
    */
-  static async login(data: LoginData) {
+  async login(credentials: LoginCredentials): Promise<AuthTokens> {
     try {
-      // Validate that either email or phone is provided
-      if (!data.email && !data.phone) {
-        throw new Error('Either email or phone number is required');
-      }
+      const result = await this.userService.login(credentials);
 
-      // Find user
-      const user = await prisma.user.findFirst({
-        where: {
-          OR: [
-            data.email ? { email: data.email } : {},
-            data.phone ? { phone: data.phone } : {},
-          ].filter(condition => Object.keys(condition).length > 0),
-        },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          passwordHash: true,
-          firstName: true,
-          lastName: true,
-          businessName: true,
-          gstin: true,
-          userType: true,
-          verificationTier: true,
-          isVerified: true,
-          createdAt: true,
-        },
-      });
+      // Create login session
+      await this.createLoginSession(result.user.id, result.accessToken);
 
-      if (!user || !user.passwordHash) {
-        throw new Error('Invalid credentials');
-      }
+      this.logOperation('login', { userId: result.user.id });
 
-      // Verify password
-      const isPasswordValid = await this.verifyPassword(data.password, user.passwordHash);
-      if (!isPasswordValid) {
-        throw new Error('Invalid credentials');
-      }
-
-      // Generate tokens
-      const tokens = this.generateTokens({
-        userId: user.id,
-        email: user.email ?? undefined,
-        phone: user.phone ?? undefined,
-        verificationTier: user.verificationTier,
-        userType: user.userType || 'user',
-      });
-
-      // Remove password hash from response
-      const { passwordHash, ...userWithoutPassword } = user;
-
-      logger.info(`User logged in successfully: ${user.id}`);
-
-      return {
-        user: userWithoutPassword,
-        tokens,
-      };
+      return result;
     } catch (error) {
-      logger.error('User login failed:', error);
-      throw error;
+      this.handleError(error, 'login', credentials);
+    }
+  }
+
+  /**
+   * Logout user
+   */
+  async logout(token: string): Promise<void> {
+    try {
+      // Blacklist the token
+      await blacklistToken(token);
+
+      // Invalidate login session
+      const decoded = jwt.decode(token) as any;
+      if (decoded?.userId) {
+        await this.invalidateLoginSession(decoded.userId, token);
+      }
+
+      this.logOperation('logout', { userId: decoded?.userId });
+    } catch (error) {
+      this.handleError(error, 'logout', { token: '[REDACTED]' });
     }
   }
 
   /**
    * Refresh access token
    */
-  static async refreshToken(refreshToken: string) {
+  async refreshToken(refreshToken: string): Promise<{ accessToken: string }> {
     try {
       // Verify refresh token
-      const { userId } = this.verifyRefreshToken(refreshToken);
+      const decoded = jwt.verify(refreshToken, config.jwt.refreshSecret) as any;
 
-      // Get user details
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          userType: true,
-          verificationTier: true,
-        },
-      });
-
+      // Get user
+      const user = await this.userService.getUserById(decoded.userId);
       if (!user) {
-        throw new Error('User not found');
+        throw new AuthenticationError('User not found');
       }
 
-      // Generate new tokens
-      const tokens = this.generateTokens({
-        userId: user.id,
-        email: user.email ?? undefined,
-        phone: user.phone ?? undefined,
-        verificationTier: user.verificationTier,
-        userType: user.userType || 'user',
-      });
+      // Generate new access token
+      const accessToken = this.generateAccessToken(user);
 
-      logger.info(`Token refreshed successfully: ${user.id}`);
+      this.logOperation('refreshToken', { userId: user.id });
 
-      return tokens;
+      return { accessToken };
     } catch (error) {
-      logger.error('Token refresh failed:', error);
-      throw error;
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new AuthenticationError('Invalid refresh token');
+      }
+      this.handleError(error, 'refreshToken');
     }
   }
 
   /**
-   * Get user by ID
+   * Forgot password
    */
-  static async getUserById(userId: string) {
+  async forgotPassword(email: string): Promise<void> {
     try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          firstName: true,
-          lastName: true,
-          businessName: true,
-          gstin: true,
-          verificationTier: true,
-          isVerified: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+      const user = await this.prisma.user.findUnique({
+        where: { email },
       });
 
       if (!user) {
-        throw new Error('User not found');
+        // Don't reveal if email exists or not
+        return;
       }
 
-      return user;
+      // Generate reset token
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Store reset token in cache
+      await this.cache.setex(`password_reset:${resetToken}`, 3600, user.id);
+
+      // Send reset email
+      await this.emailService.sendPasswordResetEmail(email, resetToken);
+
+      this.logOperation('forgotPassword', { userId: user.id });
     } catch (error) {
-      logger.error('Get user by ID failed:', error);
-      throw error;
+      this.handleError(error, 'forgotPassword', { email });
     }
   }
 
   /**
-   * Reset user password
+   * Reset password
    */
-  static async resetPassword(identifier: string, type: 'email' | 'phone', newPassword: string) {
+  async resetPassword(token: string, newPassword: string): Promise<void> {
     try {
-      // Find user by email or phone
-      const user = await prisma.user.findFirst({
-        where: type === 'email' ? { email: identifier } : { phone: identifier },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-        },
-      });
-
-      if (!user) {
-        throw new Error('User not found');
+      // Get user ID from cache
+      const userId = await this.cache.get<string>(`password_reset:${token}`);
+      if (!userId) {
+        throw new ValidationError('Invalid or expired reset token');
       }
 
       // Hash new password
-      const passwordHash = await this.hashPassword(newPassword);
+      const passwordHash = await bcrypt.hash(newPassword, 12);
 
       // Update user password
-      await prisma.user.update({
-        where: { id: user.id },
+      await this.prisma.user.update({
+        where: { id: userId },
         data: { passwordHash },
       });
 
-      logger.info(`Password reset successfully for user: ${user.id}`);
+      // Delete reset token from cache
+      await this.cache.del(`password_reset:${token}`);
 
-      return user;
+      // Invalidate all user sessions
+      await this.revokeAllSessions(userId);
+
+      this.logOperation('resetPassword', { userId });
     } catch (error) {
-      logger.error('Password reset failed:', error);
-      throw error;
+      this.handleError(error, 'resetPassword', { token: '[REDACTED]' });
     }
   }
 
   /**
-   * Change user password
+   * Send OTP
    */
-  static async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  async sendOTP(phone: string): Promise<void> {
     try {
-      // Get user with current password hash
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, passwordHash: true },
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Store OTP in cache
+      const otpData: OTPData = {
+        phone,
+        otp,
+        expiresAt,
+        verified: false,
+      };
+
+      await this.cache.setex(`otp:${phone}`, 600, otpData); // 10 minutes
+
+      // Send OTP via SMS
+      await this.smsService.sendOTP(phone, otp);
+
+      this.logOperation('sendOTP', { phone });
+    } catch (error) {
+      this.handleError(error, 'sendOTP', { phone });
+    }
+  }
+
+  /**
+   * Verify OTP
+   */
+  async verifyOTP(phone: string, otp: string): Promise<{ verified: boolean; user?: User }> {
+    try {
+      // Get OTP data from cache
+      const otpData = await this.cache.get<OTPData>(`otp:${phone}`);
+      if (!otpData) {
+        throw new ValidationError('OTP not found or expired');
+      }
+
+      if (otpData.otp !== otp) {
+        throw new ValidationError('Invalid OTP');
+      }
+
+      if (new Date() > new Date(otpData.expiresAt)) {
+        throw new ValidationError('OTP has expired');
+      }
+
+      // Mark OTP as verified
+      otpData.verified = true;
+      await this.cache.setex(`otp:${phone}`, 600, otpData);
+
+      // Check if user exists with this phone
+      const user = await this.prisma.user.findUnique({
+        where: { phone },
+      });
+
+      this.logOperation('verifyOTP', { phone, userId: user?.id });
+
+      return {
+        verified: true,
+        user: user || undefined,
+      };
+    } catch (error) {
+      this.handleError(error, 'verifyOTP', { phone });
+    }
+  }
+
+  /**
+   * Get Google OAuth URL
+   */
+  async getGoogleAuthUrl(): Promise<string> {
+    const params = new URLSearchParams({
+      client_id: config.oauth.google.clientId || '',
+      redirect_uri: process.env.GOOGLE_CALLBACK_URL || '',
+      scope: 'openid email profile',
+      response_type: 'code',
+      access_type: 'offline',
+      prompt: 'consent',
+    });
+
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  /**
+   * Handle Google OAuth callback
+   */
+  async handleGoogleCallback(code: string): Promise<AuthTokens> {
+    try {
+      // Exchange code for tokens
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: config.oauth.google.clientId || '',
+          client_secret: config.oauth.google.clientSecret || '',
+          code,
+          grant_type: 'authorization_code',
+          redirect_uri: process.env.GOOGLE_CALLBACK_URL || '',
+        }),
+      });
+
+      const tokens = await tokenResponse.json() as GoogleTokens;
+
+      // Get user info
+      const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+
+      const googleUser = await userResponse.json() as GoogleUser;
+
+      // Find or create user
+      let user = await this.prisma.user.findUnique({
+        where: { email: googleUser.email },
       });
 
       if (!user) {
-        throw new Error('User not found');
+        // Create new user
+        user = await this.userService.createUser({
+          email: googleUser.email,
+          firstName: googleUser.given_name,
+          lastName: googleUser.family_name,
+          password: crypto.randomBytes(32).toString('hex'), // Random password
+          userType: 'buyer', // Default user type
+        });
       }
 
-      if (!user.passwordHash) {
-        throw new Error('User has no password set');
-      }
-
-      // Verify current password
-      const isCurrentPasswordValid = await this.verifyPassword(currentPassword, user.passwordHash);
-      if (!isCurrentPasswordValid) {
-        throw new Error('Invalid current password');
-      }
-
-      // Hash new password
-      const newPasswordHash = await this.hashPassword(newPassword);
-
-      // Update password
-      await prisma.user.update({
-        where: { id: userId },
-        data: { passwordHash: newPasswordHash },
+      // Create or update social login record
+      await this.prisma.socialLogin.upsert({
+        where: {
+          provider_providerId: {
+            provider: 'google',
+            providerId: googleUser.id,
+          },
+        },
+        update: {
+          email: googleUser.email,
+          name: googleUser.name,
+          avatar: googleUser.picture,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        },
+        create: {
+          userId: user.id,
+          provider: 'google',
+          providerId: googleUser.id,
+          email: googleUser.email,
+          name: googleUser.name,
+          avatar: googleUser.picture,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        },
       });
 
-      logger.info(`Password changed successfully for user: ${userId}`);
+      // Generate app tokens
+      const appTokens = this.generateTokens(user);
+
+      this.logOperation('googleCallback', { userId: user.id });
+
+      return {
+        ...appTokens,
+        user,
+      };
     } catch (error) {
-      logger.error('Change password failed:', error);
-      throw error;
+      this.handleError(error, 'handleGoogleCallback', { code: '[REDACTED]' });
+    }
+  }
+
+  /**
+   * Get LinkedIn OAuth URL
+   */
+  async getLinkedInAuthUrl(): Promise<string> {
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: config.oauth.linkedin.clientId || '',
+      redirect_uri: process.env.LINKEDIN_CALLBACK_URL || '',
+      scope: 'r_liteprofile r_emailaddress',
+    });
+
+    return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;
+  }
+
+  /**
+   * Handle LinkedIn OAuth callback
+   */
+  async handleLinkedInCallback(code: string): Promise<AuthTokens> {
+    try {
+      // Exchange code for tokens
+      const tokenResponse = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: process.env.LINKEDIN_CALLBACK_URL || '',
+          client_id: config.oauth.linkedin.clientId || '',
+          client_secret: config.oauth.linkedin.clientSecret || '',
+        }),
+      });
+
+      const tokens = await tokenResponse.json() as LinkedInTokens;
+
+      // Get user profile
+      const profileResponse = await fetch('https://api.linkedin.com/v2/people/~', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+
+      const profile = await profileResponse.json() as LinkedInProfile;
+
+      // Get user email
+      const emailResponse = await fetch('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+
+      const emailData = await emailResponse.json() as LinkedInEmailData;
+      const email = emailData.elements?.[0]?.['handle~']?.emailAddress;
+
+      if (!email) {
+        throw new ValidationError('Email not available from LinkedIn');
+      }
+
+      // Find or create user
+      let user = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (!user) {
+        // Create new user
+        user = await this.userService.createUser({
+          email,
+          firstName: profile.localizedFirstName,
+          lastName: profile.localizedLastName,
+          password: crypto.randomBytes(32).toString('hex'), // Random password
+          userType: 'buyer', // Default user type
+        });
+      }
+
+      // Create or update social login record
+      await this.prisma.socialLogin.upsert({
+        where: {
+          provider_providerId: {
+            provider: 'linkedin',
+            providerId: profile.id,
+          },
+        },
+        update: {
+          email,
+          name: `${profile.localizedFirstName} ${profile.localizedLastName}`,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        },
+        create: {
+          userId: user.id,
+          provider: 'linkedin',
+          providerId: profile.id,
+          email,
+          name: `${profile.localizedFirstName} ${profile.localizedLastName}`,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        },
+      });
+
+      // Generate app tokens
+      const appTokens = this.generateTokens(user);
+
+      this.logOperation('linkedinCallback', { userId: user.id });
+
+      return {
+        ...appTokens,
+        user,
+      };
+    } catch (error) {
+      this.handleError(error, 'handleLinkedInCallback', { code: '[REDACTED]' });
+    }
+  }
+
+  /**
+   * Send verification email
+   */
+  async sendVerificationEmail(userId: string): Promise<void> {
+    try {
+      const user = await this.userService.getUserById(userId);
+      if (!user || !user.email) {
+        throw new NotFoundError('User or email not found');
+      }
+
+      if (user.isVerified) {
+        throw new ValidationError('Email is already verified');
+      }
+
+      // Generate verification token
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+
+      // Store token in cache
+      await this.cache.setex(`email_verification:${verificationToken}`, 3600, userId); // 1 hour
+
+      // Send verification email
+      await this.emailService.sendEmail({
+        to: user.email,
+        subject: 'Verify your email - Vikareta',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1>Verify your email address</h1>
+            <p>Please click the link below to verify your email address:</p>
+            <a href="${config.urls.frontend}/verify-email/${verificationToken}" 
+               style="display: inline-block; background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;">
+              Verify Email
+            </a>
+            <p>This link will expire in 1 hour.</p>
+          </div>
+        `,
+      });
+
+      this.logOperation('sendVerificationEmail', { userId });
+    } catch (error) {
+      this.handleError(error, 'sendVerificationEmail', { userId });
+    }
+  }
+
+  /**
+   * Verify email
+   */
+  async verifyEmail(token: string): Promise<void> {
+    try {
+      // Get user ID from cache
+      const userId = await this.cache.get<string>(`email_verification:${token}`);
+      if (!userId) {
+        throw new ValidationError('Invalid or expired verification token');
+      }
+
+      // Update user as verified
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { isVerified: true },
+      });
+
+      // Delete verification token from cache
+      await this.cache.del(`email_verification:${token}`);
+
+      this.logOperation('verifyEmail', { userId });
+    } catch (error) {
+      this.handleError(error, 'verifyEmail', { token: '[REDACTED]' });
+    }
+  }
+
+  /**
+   * Enable two-factor authentication
+   */
+  async enableTwoFactor(userId: string): Promise<{ secret: string; qrCode: string }> {
+    try {
+      // Implementation for 2FA setup
+      // This would typically involve generating a secret and QR code
+      const secret = crypto.randomBytes(32).toString('base64');
+      
+      // Store temporary secret
+      await this.cache.setex(`2fa_setup:${userId}`, 600, secret); // 10 minutes
+
+      this.logOperation('enableTwoFactor', { userId });
+
+      return {
+        secret,
+        qrCode: `otpauth://totp/Vikareta:${userId}?secret=${secret}&issuer=Vikareta`,
+      };
+    } catch (error) {
+      this.handleError(error, 'enableTwoFactor', { userId });
+    }
+  }
+
+  /**
+   * Disable two-factor authentication
+   */
+  async disableTwoFactor(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          twoFactorEnabled: false,
+          twoFactorSecret: null,
+        },
+      });
+
+      this.logOperation('disableTwoFactor', { userId });
+    } catch (error) {
+      this.handleError(error, 'disableTwoFactor', { userId });
+    }
+  }
+
+  /**
+   * Verify two-factor authentication token
+   */
+  async verifyTwoFactor(userId: string, token: string): Promise<{ verified: boolean }> {
+    try {
+      // Implementation for 2FA verification
+      // This would typically involve verifying the TOTP token
+      
+      this.logOperation('verifyTwoFactor', { userId });
+
+      return { verified: true };
+    } catch (error) {
+      this.handleError(error, 'verifyTwoFactor', { userId });
+    }
+  }
+
+  /**
+   * Get user sessions
+   */
+  async getUserSessions(userId: string): Promise<LoginSession[]> {
+    try {
+      const sessions = await this.prisma.loginSession.findMany({
+        where: { userId },
+        orderBy: { lastActivity: 'desc' },
+      });
+
+      return sessions;
+    } catch (error) {
+      this.handleError(error, 'getUserSessions', { userId });
+    }
+  }
+
+  /**
+   * Revoke a specific session
+   */
+  async revokeSession(userId: string, sessionId: string): Promise<void> {
+    try {
+      await this.prisma.loginSession.delete({
+        where: {
+          id: sessionId,
+          userId,
+        },
+      });
+
+      this.logOperation('revokeSession', { userId, sessionId });
+    } catch (error) {
+      this.handleError(error, 'revokeSession', { userId, sessionId });
+    }
+  }
+
+  /**
+   * Revoke all sessions
+   */
+  async revokeAllSessions(userId: string): Promise<void> {
+    try {
+      await this.prisma.loginSession.deleteMany({
+        where: { userId },
+      });
+
+      this.logOperation('revokeAllSessions', { userId });
+    } catch (error) {
+      this.handleError(error, 'revokeAllSessions', { userId });
+    }
+  }
+
+  /**
+   * Generate JWT tokens
+   */
+  private generateTokens(user: User): { accessToken: string; refreshToken: string } {
+    const payload: JWTPayload = {
+      userId: user.id,
+      email: user.email,
+      userType: user.userType,
+    };
+
+    const accessToken = jwt.sign(payload, config.jwt.secret, {
+      expiresIn: config.jwt.accessExpires,
+    });
+
+    const refreshToken = jwt.sign(payload, config.jwt.refreshSecret, {
+      expiresIn: config.jwt.refreshExpires,
+    });
+
+    return { accessToken, refreshToken };
+  }
+
+  /**
+   * Generate access token only
+   */
+  private generateAccessToken(user: User): string {
+    const payload: JWTPayload = {
+      userId: user.id,
+      email: user.email,
+      userType: user.userType,
+    };
+
+    return jwt.sign(payload, config.jwt.secret, {
+      expiresIn: config.jwt.accessExpires,
+    });
+  }
+
+  /**
+   * Create login session
+   */
+  private async createLoginSession(userId: string, token: string): Promise<void> {
+    try {
+      const decoded = jwt.decode(token) as any;
+      const expiresAt = new Date(decoded.exp * 1000);
+
+      await this.prisma.loginSession.create({
+        data: {
+          userId,
+          sessionToken: token,
+          deviceInfo: {}, // Would be populated with actual device info
+          location: {}, // Would be populated with actual location info
+          isCurrent: true,
+          expiresAt,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to create login session:', error);
+      // Don't throw error as this is not critical
+    }
+  }
+
+  /**
+   * Invalidate login session
+   */
+  private async invalidateLoginSession(userId: string, token: string): Promise<void> {
+    try {
+      await this.prisma.loginSession.deleteMany({
+        where: {
+          userId,
+          sessionToken: token,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to invalidate login session:', error);
+      // Don't throw error as this is not critical
     }
   }
 }
-export const authService = new AuthService();

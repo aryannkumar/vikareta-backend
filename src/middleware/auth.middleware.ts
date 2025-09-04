@@ -1,0 +1,395 @@
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
+import { redisClient } from '../config/redis';
+import { logger } from '../utils/logger';
+
+const prisma = new PrismaClient();
+
+// Extend Request interface to include user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: string;
+        email?: string;
+        phone?: string;
+        role?: string;
+        userType: string;
+        isVerified: boolean;
+        verificationTier: string;
+      };
+    }
+  }
+}
+
+// JWT payload interface
+interface JWTPayload {
+  userId: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  userType: string;
+  iat: number;
+  exp: number;
+}
+
+// Custom error classes
+export class AuthenticationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthenticationError';
+  }
+}
+
+export class AuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthorizationError';
+  }
+}
+
+// Authentication middleware
+export const authenticateToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token = extractToken(req);
+    
+    if (!token) {
+      res.status(401).json({
+        success: false,
+        error: 'Access token required'
+      });
+      return;
+    }
+
+    // Verify JWT token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+    
+    // Check if token is blacklisted
+    try {
+      const isBlacklisted = await redisClient.exists(`blacklist:${token}`);
+      if (isBlacklisted) {
+        res.status(401).json({
+          success: false,
+          error: 'Token has been revoked'
+        });
+        return;
+      }
+    } catch (redisError) {
+      logger.warn('Redis error checking blacklist:', redisError);
+    }
+
+    // Get user from cache or database
+    let user;
+    try {
+      const cachedUser = await redisClient.get(`user:${decoded.userId}`);
+      if (cachedUser) {
+        user = JSON.parse(cachedUser);
+      }
+    } catch (redisError) {
+      logger.warn('Redis error getting user:', redisError);
+    }
+    
+    if (!user) {
+      user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          role: true,
+          userType: true,
+          isVerified: true,
+          verificationTier: true,
+          isActive: true,
+        },
+      });
+
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          error: 'User not found'
+        });
+        return;
+      }
+
+      // Cache user for 15 minutes
+      try {
+        await redisClient.setex(`user:${decoded.userId}`, 900, JSON.stringify(user));
+      } catch (redisError) {
+        logger.warn('Redis error caching user:', redisError);
+      }
+    }
+
+    if (!user.isActive) {
+      res.status(401).json({
+        success: false,
+        error: 'Account has been deactivated'
+      });
+      return;
+    }
+
+    // Attach user to request
+    req.user = user;
+
+    // Log authentication event
+    logger.info(`User authenticated: ${user.id}`, {
+      userId: user.id,
+      userType: user.userType,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
+    next();
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      res.status(401).json({
+        success: false,
+        error: 'Invalid token'
+      });
+    } else if (error instanceof jwt.TokenExpiredError) {
+      res.status(401).json({
+        success: false,
+        error: 'Token has expired'
+      });
+    } else {
+      logger.error('Authentication error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
+    }
+  }
+};
+
+// Optional authentication middleware (doesn't throw error if no token)
+export const optionalAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token = extractToken(req);
+    
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+      
+      // Check if token is blacklisted
+      try {
+        const isBlacklisted = await redisClient.exists(`blacklist:${token}`);
+        if (!isBlacklisted) {
+          // Get user from cache or database
+          let user;
+          try {
+            const cachedUser = await redisClient.get(`user:${decoded.userId}`);
+            if (cachedUser) {
+              user = JSON.parse(cachedUser);
+            }
+          } catch (redisError) {
+            logger.warn('Redis error getting user:', redisError);
+          }
+          
+          if (!user) {
+            user = await prisma.user.findUnique({
+              where: { id: decoded.userId },
+              select: {
+                id: true,
+                email: true,
+                phone: true,
+                role: true,
+                userType: true,
+                isVerified: true,
+                verificationTier: true,
+                isActive: true,
+              },
+            });
+
+            if (user && user.isActive) {
+              try {
+                await redisClient.setex(`user:${decoded.userId}`, 900, JSON.stringify(user));
+              } catch (redisError) {
+                logger.warn('Redis error caching user:', redisError);
+              }
+              req.user = user;
+            }
+          } else if (user.isActive) {
+            req.user = user;
+          }
+        }
+      } catch (redisError) {
+        logger.warn('Redis error in optional auth:', redisError);
+      }
+    }
+    
+    next();
+  } catch (error) {
+    // Ignore authentication errors in optional middleware
+    next();
+  }
+};
+
+// Role-based authorization middleware
+export const requireRole = (...roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+      return;
+    }
+
+    if (!req.user.role || !roles.includes(req.user.role)) {
+      res.status(403).json({
+        success: false,
+        error: `Access denied. Required roles: ${roles.join(', ')}`
+      });
+      return;
+    }
+
+    next();
+  };
+};
+
+// User type authorization middleware
+export const requireUserType = (...userTypes: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+      return;
+    }
+
+    if (!userTypes.includes(req.user.userType)) {
+      res.status(403).json({
+        success: false,
+        error: `Access denied. Required user types: ${userTypes.join(', ')}`
+      });
+      return;
+    }
+
+    next();
+  };
+};
+
+// Verification tier authorization middleware
+export const requireVerificationTier = (...tiers: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+      return;
+    }
+
+    if (!tiers.includes(req.user.verificationTier)) {
+      res.status(403).json({
+        success: false,
+        error: `Access denied. Required verification tiers: ${tiers.join(', ')}`
+      });
+      return;
+    }
+
+    next();
+  };
+};
+
+// Verified user middleware
+export const requireVerifiedUser = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Authentication required'
+    });
+    return;
+  }
+
+  if (!req.user.isVerified) {
+    res.status(403).json({
+      success: false,
+      error: 'Account verification required'
+    });
+    return;
+  }
+
+  next();
+};
+
+// Admin middleware
+export const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Authentication required'
+    });
+    return;
+  }
+
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+    res.status(403).json({
+      success: false,
+      error: 'Admin access required'
+    });
+    return;
+  }
+
+  next();
+};
+
+// Super admin middleware
+export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Authentication required'
+    });
+    return;
+  }
+
+  if (req.user.role !== 'super_admin') {
+    res.status(403).json({
+      success: false,
+      error: 'Super admin access required'
+    });
+    return;
+  }
+
+  next();
+};
+
+// Extract token from request
+const extractToken = (req: Request): string | null => {
+  // Check Authorization header
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+
+  // Check cookie
+  const cookieToken = req.cookies?.accessToken;
+  if (cookieToken) {
+    return cookieToken;
+  }
+
+  // Check query parameter (not recommended for production)
+  const queryToken = req.query.token as string;
+  if (queryToken) {
+    return queryToken;
+  }
+
+  return null;
+};
+
+// Token blacklist helper
+export const blacklistToken = async (token: string): Promise<void> => {
+  try {
+    const decoded = jwt.decode(token) as JWTPayload;
+    if (decoded && decoded.exp) {
+      const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+      if (ttl > 0) {
+        await redisClient.setex(`blacklist:${token}`, ttl, 'true');
+      }
+    }
+  } catch (error) {
+    logger.error('Failed to blacklist token:', error);
+  }
+};

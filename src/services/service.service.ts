@@ -1,765 +1,456 @@
-import { PrismaClient } from '@prisma/client';
-import { logger } from '@/utils/logger';
+import { PrismaClient, Service, ServiceMedia } from '@prisma/client';
+import { BaseService } from './base.service';
+import { logger } from '../utils/logger';
+import { elasticsearchService } from './elasticsearch.service.simple';
+import { elasticsearchClient } from '@/config/elasticsearch';
 
-const prisma = new PrismaClient();
-
-interface ServiceFilters {
-  categoryId?: string;
-  subcategoryId?: string;
-  providerId?: string;
-  minPrice?: number;
-  maxPrice?: number;
-  location?: string;
-  serviceType?: string;
-  search?: string;
-  serviceArea?: string;
-  page: number;
-  limit: number;
-  sortBy: 'price' | 'createdAt' | 'title' | 'rating';
-  sortOrder: 'asc' | 'desc';
-}
-
-interface CreateServiceData {
+export interface CreateServiceData {
   title: string;
-  description: string;
+  description?: string;
   categoryId: string;
   subcategoryId?: string;
   price: number;
   currency?: string;
-  serviceType: 'one_time' | 'recurring' | 'subscription';
-  duration?: number;
-  location: 'online' | 'on_site' | 'both';
-  serviceArea?: string[];
+  duration?: string;
+  serviceType?: string;
+  images?: string[];
   availability?: any;
+  location?: any;
 }
 
-interface BookingData {
-  scheduledDate: string;
-  scheduledTime: string;
-  duration?: number;
-  location?: string;
-  notes?: string;
+export interface UpdateServiceData extends Partial<CreateServiceData> {
+  isActive?: boolean;
+  status?: string;
 }
 
-class ServiceService {
-  async getServices(filters: ServiceFilters) {
+export interface ServiceFilters {
+  categoryId?: string;
+  subcategoryId?: string;
+  providerId?: string;
+  priceMin?: number;
+  priceMax?: number;
+  serviceType?: string;
+  isActive?: boolean;
+  status?: string;
+  search?: string;
+}
+
+export class ServiceService extends BaseService {
+  constructor() {
+    super();
+  }
+
+  async createService(providerId: string, data: CreateServiceData): Promise<Service> {
     try {
-      const {
-        categoryId,
-        subcategoryId,
-        providerId,
-        minPrice,
-        maxPrice,
-        search,
-        page,
-        limit,
-        sortBy,
-        sortOrder,
-      } = filters;
+      const service = await this.prisma.service.create({
+        data: {
+          ...data,
+          providerId,
+          currency: data.currency || 'INR',
+          serviceType: data.serviceType || 'one-time',
+          status: 'active',
+        },
+        include: {
+          provider: true,
+          category: true,
+          subcategory: true,
+          media: true,
+        },
+      });
 
-      const skip = (page - 1) * limit;
+      // Index in Elasticsearch
+      await this.indexServiceInElasticsearch(service);
 
-      // First check if any services exist at all
-      const [serviceCount, totalProducts] = await Promise.all([
-        prisma.product.count({ where: { isService: true } }),
-        prisma.product.count()
-      ]);
+      logger.info(`Service created: ${service.id} by provider: ${providerId}`);
+      return service;
+    } catch (error) {
+      logger.error('Error creating service:', error);
+      throw error;
+    }
+  }
 
-      logger.info(`Total products in database: ${totalProducts}`);
-      logger.info(`Total services in database: ${serviceCount}`);
+  async updateService(serviceId: string, providerId: string, data: UpdateServiceData): Promise<Service> {
+    try {
+      const service = await this.prisma.service.update({
+        where: {
+          id: serviceId,
+          providerId, // Ensure provider can only update their own services
+        },
+        data,
+        include: {
+          provider: true,
+          category: true,
+          subcategory: true,
+          media: true,
+        },
+      });
 
-      // Build where clause
+      // Update in Elasticsearch
+      await this.indexServiceInElasticsearch(service);
+
+      logger.info(`Service updated: ${serviceId} by provider: ${providerId}`);
+      return service;
+    } catch (error) {
+      logger.error('Error updating service:', error);
+      throw error;
+    }
+  }
+
+  async getServiceById(serviceId: string): Promise<Service | null> {
+    try {
+      return await this.prisma.service.findUnique({
+        where: { id: serviceId },
+        include: {
+          provider: {
+            select: {
+              id: true,
+              businessName: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              verificationTier: true,
+              isVerified: true,
+            },
+          },
+          category: true,
+          subcategory: true,
+          media: {
+            orderBy: { sortOrder: 'asc' },
+          },
+          reviews: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  avatar: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching service:', error);
+      throw error;
+    }
+  }
+
+  async getServices(filters: ServiceFilters = {}, page = 1, limit = 20): Promise<{
+    services: Service[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    try {
       const where: any = {
-        isService: true,
-        status: 'active',
+        isActive: filters.isActive !== undefined ? filters.isActive : true,
       };
 
-      if (categoryId) where.categoryId = categoryId;
-      if (subcategoryId) where.subcategoryId = subcategoryId;
-      if (providerId) where.sellerId = providerId;
-      if (minPrice !== undefined || maxPrice !== undefined) {
+      if (filters.categoryId) where.categoryId = filters.categoryId;
+      if (filters.subcategoryId) where.subcategoryId = filters.subcategoryId;
+      if (filters.providerId) where.providerId = filters.providerId;
+      if (filters.serviceType) where.serviceType = filters.serviceType;
+      if (filters.status) where.status = filters.status;
+      
+      if (filters.priceMin !== undefined || filters.priceMax !== undefined) {
         where.price = {};
-        if (minPrice !== undefined) where.price.gte = minPrice;
-        if (maxPrice !== undefined) where.price.lte = maxPrice;
+        if (filters.priceMin !== undefined) where.price.gte = filters.priceMin;
+        if (filters.priceMax !== undefined) where.price.lte = filters.priceMax;
       }
 
-      if (search) {
+      if (filters.search) {
         where.OR = [
-          { title: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
+          { title: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
         ];
       }
 
-      // Build orderBy clause
-      let orderBy: any = {};
-      if (sortBy === 'rating') {
-        // For rating, we'll need to calculate average rating
-        orderBy = { createdAt: sortOrder };
-      } else {
-        orderBy[sortBy] = sortOrder;
-      }
-
       const [services, total] = await Promise.all([
-        prisma.product.findMany({
+        this.prisma.service.findMany({
           where,
           include: {
-            seller: {
+            provider: {
               select: {
                 id: true,
+                businessName: true,
                 firstName: true,
                 lastName: true,
-                businessName: true,
+                avatar: true,
                 verificationTier: true,
                 isVerified: true,
               },
             },
-            category: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-            },
-            subcategory: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-            },
+            category: true,
+            subcategory: true,
             media: {
               orderBy: { sortOrder: 'asc' },
-              take: 5,
+              take: 1,
             },
           },
-          orderBy,
-          skip,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
           take: limit,
-        }).catch(error => {
-          logger.error('Error querying products:', error);
-          throw error;
         }),
-        prisma.product.count({ where }).catch(error => {
-          logger.error('Error counting products:', error);
-          throw error;
-        }),
+        this.prisma.service.count({ where }),
       ]);
 
-      // Transform services to match frontend Service interface
-      const transformedServices = services.map(service => ({
-        id: service.id,
-        name: service.title,
-        description: service.description || '',
-        basePrice: Number(service.price),
-        originalPrice: undefined, // No originalPrice field in Product model
-        images: service.media?.map(m => m.url) || [],
-        rating: 4.5, // TODO: Calculate from actual reviews
-        reviewCount: 0, // TODO: Calculate from actual reviews
-        provider: {
-          id: service.seller.id,
-          name: service.seller.businessName || `${service.seller.firstName || ''} ${service.seller.lastName || ''}`.trim() || 'Unknown Provider',
-          location: 'India', // TODO: Get from seller profile
-          verified: service.seller.isVerified || false,
-          experience: '2+ years', // TODO: Calculate from seller data
-          avatar: '',
-          responseTime: '2 hours', // TODO: Calculate from seller data
-          completedProjects: 0, // TODO: Calculate from order history
-        },
-        category: service.category?.name || 'General',
-        subcategory: service.subcategory?.name,
-        available: service.status === 'active',
-        deliveryTime: '3-5 days', // TODO: Get from service metadata
-        serviceType: 'one-time' as const, // TODO: Store in service metadata
-        tags: [], // TODO: Implement tags system
-        features: [], // TODO: Implement features system
-        packages: [], // TODO: Implement packages system
-        reviews: [], // TODO: Load actual reviews
-        faqs: [], // TODO: Implement FAQs system
-        specifications: {}, // TODO: Store in service metadata
-        createdAt: service.createdAt.toISOString(),
-        updatedAt: service.updatedAt.toISOString(),
-      }));
+      return {
+        services,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+      };
+    } catch (error) {
+      logger.error('Error fetching services:', error);
+      throw error;
+    }
+  }
 
-      logger.info(`Found ${services.length} services out of ${total} total`);
+  async deleteService(serviceId: string, providerId: string): Promise<void> {
+    try {
+      await this.prisma.service.delete({
+        where: {
+          id: serviceId,
+          providerId, // Ensure provider can only delete their own services
+        },
+      });
+
+      // Remove from Elasticsearch
+      await this.removeServiceFromElasticsearch(serviceId);
+
+      logger.info(`Service deleted: ${serviceId} by provider: ${providerId}`);
+    } catch (error) {
+      logger.error('Error deleting service:', error);
+      throw error;
+    }
+  }
+
+  async addServiceMedia(serviceId: string, mediaData: {
+    mediaType: string;
+    url: string;
+    altText?: string;
+    sortOrder?: number;
+  }): Promise<ServiceMedia> {
+    try {
+      return await this.prisma.serviceMedia.create({
+        data: {
+          ...mediaData,
+          serviceId,
+          sortOrder: mediaData.sortOrder || 0,
+        },
+      });
+    } catch (error) {
+      logger.error('Error adding service media:', error);
+      throw error;
+    }
+  }
+
+  async searchServices(query: string, filters: ServiceFilters = {}, page = 1, limit = 20): Promise<{
+    services: Service[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    try {
+      // Use Elasticsearch for advanced search
+      const searchBody = {
+        query: {
+          bool: {
+            must: [
+              {
+                multi_match: {
+                  query,
+                  fields: ['title^2', 'description'],
+                  type: 'best_fields',
+                  fuzziness: 'AUTO',
+                },
+              },
+            ],
+            filter: [],
+          },
+        },
+        from: (page - 1) * limit,
+        size: limit,
+        sort: [{ _score: { order: 'desc' } }, { createdAt: { order: 'desc' } }],
+      };
+
+      // Add filters
+      if (filters.categoryId) {
+        searchBody.query.bool.filter.push({ term: { categoryId: filters.categoryId } });
+      }
+      if (filters.providerId) {
+        searchBody.query.bool.filter.push({ term: { providerId: filters.providerId } });
+      }
+      if (filters.serviceType) {
+        searchBody.query.bool.filter.push({ term: { serviceType: filters.serviceType } });
+      }
+      if (filters.priceMin !== undefined || filters.priceMax !== undefined) {
+        const priceRange: any = {};
+        if (filters.priceMin !== undefined) priceRange.gte = filters.priceMin;
+        if (filters.priceMax !== undefined) priceRange.lte = filters.priceMax;
+        searchBody.query.bool.filter.push({ range: { price: priceRange } });
+      }
+
+      const response = await elasticsearchService.search(query, 'services');
+
+      const serviceIds = response.hits.map((hit: any) => hit.id);
+      
+      if (serviceIds.length === 0) {
+        return { services: [], total: 0, page, totalPages: 0 };
+      }
+
+      const services = await this.prisma.service.findMany({
+        where: { id: { in: serviceIds } },
+        include: {
+          provider: {
+            select: {
+              id: true,
+              businessName: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              verificationTier: true,
+              isVerified: true,
+            },
+          },
+          category: true,
+          subcategory: true,
+          media: {
+            orderBy: { sortOrder: 'asc' },
+            take: 1,
+          },
+        },
+      });
+
+      // Maintain Elasticsearch order
+      const orderedServices = serviceIds.map((id: string) => 
+        services.find(s => s.id === id)
+      ).filter(Boolean);
 
       return {
-        services: transformedServices,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
-      };
-    } catch (error: any) {
-      logger.error('Error in getServices:', error);
-      logger.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        code: error.code
-      });
-      throw new Error(`Failed to fetch services: ${error.message}`);
-    }
-  }
-
-  async getFeaturedServices(limit: number, categoryId?: string) {
-    const where: any = {
-      isService: true,
-      status: 'active',
-    };
-
-    if (categoryId) {
-      where.categoryId = categoryId;
-    }
-
-    const services = await prisma.product.findMany({
-      where,
-      include: {
-        seller: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            businessName: true,
-            verificationTier: true,
-            isVerified: true,
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        media: {
-          orderBy: { sortOrder: 'asc' },
-          take: 3,
-        },
-      },
-      orderBy: [
-        { createdAt: 'desc' },
-      ],
-      take: limit,
-    });
-
-    return services.map(service => ({
-      ...service,
-      provider: service.seller,
-      serviceType: 'one_time',
-      location: 'both',
-      rating: 4.5,
-      reviewCount: 0,
-    }));
-  }
-
-  async getNearbyServices(_latitude: number, _longitude: number, radius: number, limit: number) {
-    // For now, return all services since we don't have location data in the schema
-    // In a real implementation, you'd use PostGIS or similar for geospatial queries
-    const services = await prisma.product.findMany({
-      where: {
-        isService: true,
-        status: 'active',
-      },
-      include: {
-        seller: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            businessName: true,
-            verificationTier: true,
-            isVerified: true,
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        media: {
-          orderBy: { sortOrder: 'asc' },
-          take: 3,
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    });
-
-    return services.map(service => ({
-      ...service,
-      provider: service.seller,
-      serviceType: 'one_time',
-      location: 'both',
-      rating: 4.5,
-      reviewCount: 0,
-      distance: Math.random() * radius, // Placeholder distance
-    }));
-  }
-
-  async getServiceById(serviceId: string) {
-    const service = await prisma.product.findFirst({
-      where: {
-        id: serviceId,
-        isService: true,
-      },
-      include: {
-        seller: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            businessName: true,
-            verificationTier: true,
-            isVerified: true,
-            createdAt: true,
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        subcategory: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        media: {
-          orderBy: { sortOrder: 'asc' },
-        },
-        variants: true,
-      },
-    });
-
-    if (!service) {
-      throw new Error('Service not found');
-    }
-
-    // Get service statistics
-    const [orderCount, avgRating] = await Promise.all([
-      prisma.order.count({
-        where: {
-          sellerId: service.sellerId,
-          orderType: 'service',
-          status: 'delivered',
-        },
-      }),
-      // Placeholder for average rating calculation
-      Promise.resolve(4.5),
-    ]);
-
-    return {
-      ...service,
-      provider: service.seller,
-      serviceType: 'one_time',
-      location: 'both',
-      rating: avgRating,
-      reviewCount: orderCount,
-      completedOrders: orderCount,
-    };
-  }
-
-  async createService(providerId: string, data: CreateServiceData) {
-    // Resolve category ID (could be UUID/CUID or slug)
-    let categoryId = data.categoryId;
-    const { isValidId } = require('../utils/validation');
-    if (!isValidId(data.categoryId)) {
-      // It's a slug, resolve to ID
-      const categoryBySlug = await prisma.category.findUnique({
-        where: { slug: data.categoryId },
-        select: { id: true }
-      });
-      if (!categoryBySlug) {
-        throw new Error('Category not found');
-      }
-      categoryId = categoryBySlug.id;
-    }
-
-    // Verify category exists or use default
-    let category = await prisma.category.findUnique({
-      where: { id: categoryId },
-    });
-
-    if (!category) {
-      // Try to get or create a default category
-      const { getOrCreateDefaultCategory } = await import('../utils/seed-categories');
-      category = await getOrCreateDefaultCategory();
-      categoryId = category.id;
-      logger.warn(`Category not found, using default category: ${category.name}`);
-    }
-
-    // Resolve subcategory ID (could be UUID/CUID or slug)
-    let subcategoryId = data.subcategoryId;
-    if (data.subcategoryId && !isValidId(data.subcategoryId)) {
-      // It's a slug, resolve to ID
-      const subcategoryBySlug = await prisma.subcategory.findUnique({
-        where: { slug: data.subcategoryId },
-        select: { id: true }
-      });
-      if (!subcategoryBySlug) {
-        throw new Error('Subcategory not found');
-      }
-      subcategoryId = subcategoryBySlug.id;
-    }
-
-    // Verify subcategory if provided (optional and non-blocking)
-    if (subcategoryId) {
-      const subcategory = await prisma.subcategory.findUnique({
-        where: { id: subcategoryId },
-      });
-
-      if (!subcategory) {
-        // Log warning but don't fail - create without subcategory
-        logger.warn(`Subcategory ${subcategoryId} not found`);
-        subcategoryId = undefined; // Reset to undefined if not found
-      }
-    }
-
-    const service = await prisma.product.create({
-      data: {
-        sellerId: providerId,
-        title: data.title,
-        description: data.description,
-        categoryId: categoryId,
-        subcategoryId: subcategoryId,
-        price: data.price,
-        currency: data.currency || 'INR',
-        stockQuantity: 0, // Services don't have stock
-        minOrderQuantity: 1,
-        isService: true,
-        status: 'active',
-      },
-      include: {
-        seller: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            businessName: true,
-            verificationTier: true,
-            isVerified: true,
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        subcategory: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-      },
-    });
-
-    logger.info(`Service created: ${service.id} by provider ${providerId}`);
-
-    return {
-      ...service,
-      provider: service.seller,
-      serviceType: data.serviceType,
-      location: data.location,
-      duration: data.duration,
-      serviceArea: data.serviceArea,
-      availability: data.availability,
-    };
-  }
-
-  async updateService(serviceId: string, providerId: string, data: Partial<CreateServiceData>) {
-    // Verify service exists and belongs to provider
-    const existingService = await prisma.product.findFirst({
-      where: {
-        id: serviceId,
-        sellerId: providerId,
-        isService: true,
-      },
-    });
-
-    if (!existingService) {
-      throw new Error('Service not found or access denied');
-    }
-
-    const updateData: any = {};
-    if (data.title) updateData.title = data.title;
-    if (data.description) updateData.description = data.description;
-    if (data.price !== undefined) updateData.price = data.price;
-    if (data.categoryId) updateData.categoryId = data.categoryId;
-    if (data.subcategoryId) updateData.subcategoryId = data.subcategoryId;
-
-    const service = await prisma.product.update({
-      where: { id: serviceId },
-      data: updateData,
-      include: {
-        seller: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            businessName: true,
-            verificationTier: true,
-            isVerified: true,
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        subcategory: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-      },
-    });
-
-    logger.info(`Service updated: ${serviceId} by provider ${providerId}`);
-
-    return {
-      ...service,
-      provider: service.seller,
-    };
-  }
-
-  async deleteService(serviceId: string, providerId: string) {
-    // Verify service exists and belongs to provider
-    const existingService = await prisma.product.findFirst({
-      where: {
-        id: serviceId,
-        sellerId: providerId,
-        isService: true,
-      },
-    });
-
-    if (!existingService) {
-      throw new Error('Service not found or access denied');
-    }
-
-    // Check if service has active orders
-    const activeOrders = await prisma.order.count({
-      where: {
-        sellerId: providerId,
-        orderType: 'service',
-        status: {
-          in: ['pending', 'confirmed', 'processing'],
-        },
-        items: {
-          some: {
-            productId: serviceId,
-          },
-        },
-      },
-    });
-
-    if (activeOrders > 0) {
-      throw new Error('Cannot delete service with active orders');
-    }
-
-    await prisma.product.delete({
-      where: { id: serviceId },
-    });
-
-    logger.info(`Service deleted: ${serviceId} by provider ${providerId}`);
-  }
-
-  async getServiceAvailability(serviceId: string, date?: string, duration?: number) {
-    // Verify service exists
-    const service = await prisma.product.findFirst({
-      where: {
-        id: serviceId,
-        isService: true,
-        status: 'active',
-      },
-    });
-
-    if (!service) {
-      throw new Error('Service not found');
-    }
-
-    // For now, return mock availability
-    // In a real implementation, you'd check against service appointments
-    const targetDate = date ? new Date(date) : new Date();
-    const timeSlots = [];
-
-    // Generate time slots from 9 AM to 6 PM
-    for (let hour = 9; hour < 18; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        timeSlots.push({
-          time,
-          available: Math.random() > 0.3, // 70% availability
-          duration: duration || 60,
-        });
-      }
-    }
-
-    return {
-      date: targetDate.toISOString().split('T')[0],
-      timeSlots,
-    };
-  }
-
-  async bookService(serviceId: string, userId: string, bookingData: BookingData) {
-    // Verify service exists and is active
-    const service = await prisma.product.findFirst({
-      where: {
-        id: serviceId,
-        isService: true,
-        status: 'active',
-      },
-    });
-
-    if (!service) {
-      throw new Error('Service not found');
-    }
-
-    // Create order for the service
-    const orderNumber = `SRV-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-
-    const order = await prisma.order.create({
-      data: {
-        buyerId: userId,
-        sellerId: service.sellerId,
-        orderNumber,
-        orderType: 'service',
-        subtotal: service.price,
-        taxAmount: Number(service.price) * 0.18, // 18% GST
-        shippingAmount: 0,
-        discountAmount: 0,
-        totalAmount: Number(service.price) * 1.18,
-        status: 'pending',
-        paymentStatus: 'pending',
-        items: {
-          create: {
-            productId: serviceId,
-            quantity: 1,
-            unitPrice: service.price,
-            totalPrice: service.price,
-          },
-        },
-      },
-      include: {
-        items: true,
-      },
-    });
-
-    // Create service order
-    await prisma.serviceOrder.create({
-      data: {
-        orderId: order.id,
-        serviceId: serviceId,
-        quantity: 1,
-        unitPrice: service.price,
-        totalPrice: service.price,
-        scheduledDate: new Date(bookingData.scheduledDate),
-        duration: `${bookingData.duration || 60} minutes`,
-        location: bookingData.location ? JSON.parse(JSON.stringify(bookingData.location)) : null,
-        status: 'pending',
-      },
-    });
-
-    // Create service appointment
-    const appointment = await prisma.serviceAppointment.create({
-      data: {
-        // serviceOrderId: serviceOrder.id, // This field doesn't exist in the schema
-        orderId: order.id,
-        serviceId: serviceId, // Required field
-        scheduledDate: new Date(bookingData.scheduledDate),
-        // appointmentDate field doesn't exist, using scheduledDate
-        duration: `${bookingData.duration || 60} minutes`,
-        status: 'scheduled',
-      },
-    });
-
-    logger.info(`Service booked: ${serviceId} by user ${userId}, order ${order.id}`);
-
-    return {
-      order,
-      appointment,
-      message: 'Service booked successfully',
-    };
-  }
-
-  async getServiceReviews(serviceId: string, page: number, limit: number) {
-    // Verify service exists
-    const service = await prisma.product.findFirst({
-      where: {
-        id: serviceId,
-        isService: true,
-      },
-    });
-
-    if (!service) {
-      throw new Error('Service not found');
-    }
-
-    // For now, return mock reviews
-    // In a real implementation, you'd have a reviews table
-    const mockReviews = [
-      {
-        id: '1',
-        userId: 'user1',
-        userName: 'John Doe',
-        rating: 5,
-        review: 'Excellent service! Very professional and timely.',
-        serviceQuality: 5,
-        timeliness: 5,
-        professionalism: 5,
-        createdAt: new Date('2024-01-15'),
-      },
-      {
-        id: '2',
-        userId: 'user2',
-        userName: 'Jane Smith',
-        rating: 4,
-        review: 'Good service overall, minor delays but quality work.',
-        serviceQuality: 4,
-        timeliness: 3,
-        professionalism: 4,
-        createdAt: new Date('2024-01-10'),
-      },
-    ];
-
-    const skip = (page - 1) * limit;
-    const reviews = mockReviews.slice(skip, skip + limit);
-
-    return {
-      reviews,
-      pagination: {
+        services: orderedServices,
+        total: response.total,
         page,
-        limit,
-        total: mockReviews.length,
-        pages: Math.ceil(mockReviews.length / limit),
-      },
-      summary: {
-        averageRating: 4.5,
-        totalReviews: mockReviews.length,
-        ratingDistribution: {
-          5: 1,
-          4: 1,
-          3: 0,
-          2: 0,
-          1: 0,
+        totalPages: Math.ceil(response.total / limit),
+      };
+    } catch (error) {
+      logger.error('Error searching services:', error);
+      // Fallback to database search
+      return this.getServices({ ...filters, search: query }, page, limit);
+    }
+  }
+
+  async getFeaturedServices(limit = 10): Promise<Service[]> {
+    try {
+      const featuredServices = await this.prisma.featuredService.findMany({
+        where: { isActive: true },
+        include: {
+          service: {
+            include: {
+              provider: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  firstName: true,
+                  lastName: true,
+                  avatar: true,
+                  verificationTier: true,
+                  isVerified: true,
+                },
+              },
+              category: true,
+              media: {
+                orderBy: { sortOrder: 'asc' },
+                take: 1,
+              },
+            },
+          },
         },
-      },
-    };
+        orderBy: { position: 'asc' },
+        take: limit,
+      });
+
+      return featuredServices.map(fs => fs.service);
+    } catch (error) {
+      logger.error('Error fetching featured services:', error);
+      throw error;
+    }
+  }
+
+  async bookService(serviceId: string, customerId: string, bookingData: {
+    scheduledDate?: Date;
+    duration?: string;
+    location?: any;
+    requirements?: string;
+    customerNotes?: string;
+  }): Promise<any> {
+    try {
+      // This would typically create a service order or booking
+      // For now, we'll create a placeholder implementation
+      const service = await this.getServiceById(serviceId);
+      if (!service) {
+        throw new Error('Service not found');
+      }
+
+      // Create service appointment
+      const appointment = await this.prisma.serviceAppointment.create({
+        data: {
+          serviceId,
+          orderId: '', // This would be set when creating an actual order
+          scheduledDate: bookingData.scheduledDate || new Date(),
+          duration: bookingData.duration,
+          notes: bookingData.requirements,
+          status: 'scheduled',
+        },
+      });
+
+      logger.info(`Service booked: ${serviceId} by customer: ${customerId}`);
+      return appointment;
+    } catch (error) {
+      logger.error('Error booking service:', error);
+      throw error;
+    }
+  }
+
+  private async indexServiceInElasticsearch(service: any): Promise<void> {
+    try {
+      await elasticsearchClient.index({
+        index: 'services',
+        id: service.id,
+        document: {
+          id: service.id,
+          title: service.title,
+          description: service.description,
+          categoryId: service.categoryId,
+          subcategoryId: service.subcategoryId,
+          providerId: service.providerId,
+          price: service.price,
+          currency: service.currency,
+          duration: service.duration,
+          serviceType: service.serviceType,
+          isActive: service.isActive,
+          status: service.status,
+          createdAt: service.createdAt,
+          updatedAt: service.updatedAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error indexing service in Elasticsearch:', error);
+    }
+  }
+
+  private async removeServiceFromElasticsearch(serviceId: string): Promise<void> {
+    try {
+      await elasticsearchClient.delete({
+        index: 'services',
+        id: serviceId,
+      });
+    } catch (error) {
+      logger.error('Error removing service from Elasticsearch:', error);
+    }
   }
 }
-
-export const serviceService = new ServiceService();

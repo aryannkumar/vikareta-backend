@@ -1,365 +1,112 @@
-/**
- * MinIO S3 Service for Media Upload and Management
- * Handles file uploads, downloads, and media management
- */
 import { Client as MinioClient } from 'minio';
-import { config } from '@/config/environment';
-import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
-import { processImage, createThumbnail } from '@/utils/sharp-wrapper';
+import { logger } from '../utils/logger';
+import { redisClient } from '../config/redis';
+import * as crypto from 'crypto';
+import * as path from 'path';
 
-export interface UploadResult {
-    success: boolean;
-    url?: string;
-    key?: string;
-    error?: string;
-    metadata?: {
-        size: number;
-        mimetype: string;
-        originalName: string;
-    };
-}
-
-export interface MediaProcessingOptions {
-    resize?: {
-        width?: number;
-        height?: number;
-        quality?: number;
-    };
-    generateThumbnail?: boolean;
-    watermark?: boolean;
-}
-
-export class MinIOService {
+export class MinioService {
     private client: MinioClient;
     private bucketName: string;
-    private region: string;
 
     constructor() {
-        // Prefer validated config values
-    const minioCfg: any = config.minio || {};
-
-        // Support full URL for endpoint (e.g. https://storage.vikareta.com)
-        let endpoint = minioCfg.endpoint || process.env.MINIO_ENDPOINT || 'localhost';
-        let port = minioCfg.port || (process.env.MINIO_PORT ? parseInt(process.env.MINIO_PORT) : 9000);
-        let useSSL = typeof minioCfg.useSSL === 'boolean' ? minioCfg.useSSL : (process.env.MINIO_USE_SSL === 'true');
-    const accessKey = (minioCfg as any).accessKey || process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || 'vikareta_admin';
-    const secretKey = (minioCfg as any).secretKey || process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || 'VkRt_M1n10_2025_Pr0d_S3cur3_P@ssw0rd!';
-    this.bucketName = process.env.MINIO_BUCKET_NAME || `${(minioCfg as any).bucketPrefix || 'vikareta'}-media`;
-    this.region = (minioCfg as any).region || process.env.MINIO_REGION || 'us-east-1';
-
-        try {
-            if (/^https?:\/\//.test(String(endpoint))) {
-                const parsed = new URL(String(endpoint));
-                endpoint = parsed.hostname;
-                if (parsed.port) port = parseInt(parsed.port);
-                useSSL = parsed.protocol === 'https:';
-            }
-
-            this.client = new MinioClient({
-                endPoint: endpoint,
-                port: typeof port === 'number' ? port : parseInt(String(port || 9000)),
-                useSSL: !!useSSL,
-                accessKey: String(accessKey),
-                secretKey: String(secretKey),
-            });
-        } catch (err) {
-            // If MinIO client cannot be constructed, keep client undefined and log
-            // other methods will handle missing client gracefully
-            // eslint-disable-next-line no-console
-            console.error('❌ MinIO: Failed to construct client for endpoint', endpoint, 'port', port, err);
-            // @ts-ignore
-            this.client = null;
-        }
+        this.client = new MinioClient({
+            endPoint: process.env.MINIO_ENDPOINT || 'localhost',
+            port: parseInt(process.env.MINIO_PORT || '9000'),
+            useSSL: process.env.MINIO_USE_SSL === 'true',
+            accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
+            secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+        });
+        this.bucketName = process.env.MINIO_BUCKET_NAME || 'vikareta';
     }
 
     /**
-     * Initialize MinIO service and create buckets
+     * Initialize MinIO service
      */
     async initialize(): Promise<void> {
         try {
-            if (!this.client) {
-                // eslint-disable-next-line no-console
-                                console.warn('⚠️ MinIO: Client not configured, skipping initialization — will check MINIO_PUBLIC_URL fallback');
-
-                                // If a public URL is provided, we can still operate in a degraded mode
-                                const publicOverride = process.env.MINIO_PUBLIC_URL || config.storage.cdnUrl;
-                                if (publicOverride) {
-                                    console.log('ℹ️ MinIO: MINIO_PUBLIC_URL is set, the service will use it for public URLs even if client is not connected:', publicOverride);
-                                }
-                return;
-            }
-
             // Check if bucket exists, create if not
             const bucketExists = await this.client.bucketExists(this.bucketName);
             if (!bucketExists) {
-                await this.client.makeBucket(this.bucketName, this.region);
-                // eslint-disable-next-line no-console
-                console.log(`✅ MinIO: Created bucket ${this.bucketName}`);
-
-                // Set bucket policy for public read access to certain paths
-                await this.setBucketPolicy();
+                await this.client.makeBucket(this.bucketName, 'us-east-1');
+                logger.info(`MinIO bucket created: ${this.bucketName}`);
             }
 
-            // eslint-disable-next-line no-console
-            console.log(`✅ MinIO: Service initialized successfully`);
-        } catch (error) {
-            // Log and continue - do not crash the app if MinIO is unavailable
-            // eslint-disable-next-line no-console
-            console.error('❌ MinIO: Initialization failed:', error && (error as any).message ? (error as any).message : error);
-            // Keep client reference so other callers can return friendly errors
-            // don't rethrow to avoid blocking startup
-        }
-    }
+            // Set bucket policy for public read access to certain folders
+            const policy = {
+                Version: '2012-10-17',
+                Statement: [
+                    {
+                        Effect: 'Allow',
+                        Principal: { AWS: ['*'] },
+                        Action: ['s3:GetObject'],
+                        Resource: [`arn:aws:s3:::${this.bucketName}/public/*`],
+                    },
+                ],
+            };
 
-    /**
-     * Set bucket policy for public access to media files
-     */
-    private async setBucketPolicy(): Promise<void> {
-        const policy = {
-            Version: '2012-10-17',
-            Statement: [
-                {
-                    Effect: 'Allow',
-                    Principal: { AWS: ['*'] },
-                    Action: ['s3:GetObject'],
-                    Resource: [`arn:aws:s3:::${this.bucketName}/public/*`],
-                },
-            ],
-        };
-
-        try {
             await this.client.setBucketPolicy(this.bucketName, JSON.stringify(policy));
-            console.log('✅ MinIO: Bucket policy set for public access');
+            logger.info('MinIO service initialized successfully');
         } catch (error) {
-            console.warn('⚠️ MinIO: Could not set bucket policy:', error);
+            logger.error('Error initializing MinIO service:', error);
+            throw error;
         }
     }
 
     /**
-     * Upload file to MinIO with processing options
+     * Upload file to MinIO
      */
     async uploadFile(
         file: Buffer | string,
-        originalName: string,
-        mimetype: string,
+        fileName: string,
         folder: string = 'uploads',
-        options: MediaProcessingOptions = {}
-    ): Promise<UploadResult> {
+        metadata?: Record<string, string>
+    ): Promise<{
+        fileName: string;
+        url: string;
+        size: number;
+        etag: string;
+    }> {
         try {
-            if (!this.client) {
-                return {
-                    success: false,
-                    error: 'MinIO client not configured or connection failed'
-                } as UploadResult;
-            }
-            const fileExtension = path.extname(originalName);
-            const fileName = `${uuidv4()}${fileExtension}`;
-            const objectKey = `${folder}/${fileName}`;
+            // Generate unique filename
+            const fileExtension = path.extname(fileName);
+            const baseName = path.basename(fileName, fileExtension);
+            const uniqueFileName = `${baseName}-${crypto.randomUUID()}${fileExtension}`;
+            const objectName = `${folder}/${uniqueFileName}`;
 
-            let processedBuffer: Buffer;
-            let finalMimetype = mimetype;
-
-            // Process image if it's an image file
-            if (mimetype.startsWith('image/') && Buffer.isBuffer(file)) {
-                processedBuffer = await this.processImage(file, options);
-                finalMimetype = 'image/jpeg'; // Convert all images to JPEG for consistency
-            } else {
-                processedBuffer = Buffer.isBuffer(file) ? file : Buffer.from(file);
-            }
-
-            // Upload to MinIO
-            await this.client.putObject(
+            // Upload file
+            const uploadResult = await this.client.putObject(
                 this.bucketName,
-                objectKey,
-                processedBuffer,
-                processedBuffer.length,
-                {
-                    'Content-Type': finalMimetype,
-                    'X-Original-Name': originalName,
-                    'X-Upload-Date': new Date().toISOString(),
-                }
+                objectName,
+                file,
+                undefined,
+                metadata
             );
 
-            // Generate public URL
-            const publicUrl = await this.getPublicUrl(objectKey);
+            // Get file stats
+            const stats = await this.client.statObject(this.bucketName, objectName);
 
-            // Generate thumbnail if requested
-            if (options.generateThumbnail && mimetype.startsWith('image/')) {
-                // generateThumbnail will upload and return URL; we don't need to keep it here
-                await this.generateThumbnail(processedBuffer, objectKey);
-            }
+            // Generate URL
+            const url = await this.getFileUrl(objectName);
 
-            return {
-                success: true,
-                url: publicUrl,
-                key: objectKey,
-                metadata: {
-                    size: processedBuffer.length,
-                    mimetype: finalMimetype,
-                    originalName,
-                },
+            const result = {
+                fileName: uniqueFileName,
+                url,
+                size: stats.size,
+                etag: uploadResult.etag,
             };
-        } catch (error) {
-            // eslint-disable-next-line no-console
-            console.error('❌ MinIO: Upload failed:', error && (error as any).message ? (error as any).message : error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Upload failed',
-            };
-        }
-    }
 
-    /**
-     * Process image with Sharp
-     */
-    private async processImage(
-        buffer: Buffer,
-        options: MediaProcessingOptions
-    ): Promise<Buffer> {
-        try {
-            const result = await processImage(buffer, {
-                resize: options.resize ? {
-                    width: options.resize.width,
-                    height: options.resize.height,
-                    fit: 'inside',
-                    quality: options.resize.quality || 85
-                } : undefined,
-                format: 'jpeg',
-                quality: options.resize?.quality || 85
-            });
-            
-            return result.buffer;
-        } catch (error) {
-            throw new Error(`Image processing failed: ${error}`);
-        }
-    }
-
-    /**
-     * Generate thumbnail for image
-     */
-    private async generateThumbnail(
-        originalBuffer: Buffer,
-        originalKey: string
-    ): Promise<string> {
-        try {
-            const thumbnailBuffer = await createThumbnail(originalBuffer, 300, 300);
-
-            const thumbnailKey = originalKey.replace(/(\.[^.]+)$/, '_thumb$1');
-
-            await this.client.putObject(
-                this.bucketName,
-                thumbnailKey,
-                thumbnailBuffer,
-                thumbnailBuffer.length,
-                { 'Content-Type': 'image/jpeg' }
-            );
-
-            return await this.getPublicUrl(thumbnailKey);
-        } catch (error) {
-            console.error('❌ MinIO: Thumbnail generation failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Get public URL for object
-     */
-    async getPublicUrl(objectKey: string): Promise<string> {
-        // Allow an explicit public URL override (CDN or gateway)
-        const publicOverride = process.env.MINIO_PUBLIC_URL || config.storage.cdnUrl;
-        if (publicOverride) {
-            // Trim trailing slash
-            return `${publicOverride.replace(/\/$/, '')}/${this.bucketName}/${objectKey}`;
-        }
-
-        const useSSL = config.minio.useSSL ? true : (process.env.MINIO_USE_SSL === 'true');
-        let endpoint = config.minio.endpoint || process.env.MINIO_ENDPOINT || 'localhost';
-        let port = config.minio.port || (process.env.MINIO_PORT ? String(process.env.MINIO_PORT) : '9000');
-
-        if (/^https?:\/\//.test(String(endpoint))) {
+            // Cache file info for 1 hour
             try {
-                const parsed = new URL(String(endpoint));
-                endpoint = parsed.hostname;
-                if (parsed.port) port = parsed.port;
-            } catch {
-                // ignore and use raw endpoint
-            }
-        }
-
-        const protocol = useSSL ? 'https' : 'http';
-
-        // Omit port for standard ports
-        const portPart = (port === '80' || port === '443' || !port) ? '' : `:${port}`;
-        return `${protocol}://${endpoint}${portPart}/${this.bucketName}/${objectKey}`;
-    }
-
-    /**
-     * Get presigned URL for secure access
-     */
-    async getPresignedUrl(
-        objectKey: string,
-        expiry: number = 24 * 60 * 60 // 24 hours
-    ): Promise<string> {
-        try {
-            return await this.client.presignedGetObject(this.bucketName, objectKey, expiry);
-        } catch (error) {
-            console.error('❌ MinIO: Presigned URL generation failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Delete file from MinIO
-     */
-    async deleteFile(objectKey: string): Promise<boolean> {
-        try {
-            await this.client.removeObject(this.bucketName, objectKey);
-
-            // Also try to delete thumbnail if it exists
-            const thumbnailKey = objectKey.replace(/(\.[^.]+)$/, '_thumb$1');
-            try {
-                await this.client.removeObject(this.bucketName, thumbnailKey);
-            } catch {
-                // Thumbnail might not exist, ignore error
+                await redisClient.setex(`file:${uniqueFileName}`, 3600, JSON.stringify(result));
+            } catch (cacheError) {
+                logger.warn('Failed to cache file info:', cacheError);
             }
 
-            return true;
+            logger.info(`File uploaded successfully: ${objectName}`);
+            return result;
         } catch (error) {
-            console.error('❌ MinIO: Delete failed:', error);
-            return false;
-        }
-    }
-
-    /**
-     * List files in a folder
-     */
-    async listFiles(
-        folder: string = '',
-        limit: number = 100
-    ): Promise<Array<{ key: string; size: number; lastModified: Date }>> {
-        try {
-            const objects: Array<{ key: string; size: number; lastModified: Date }> = [];
-            const stream = this.client.listObjects(this.bucketName, folder, true);
-
-            return new Promise((resolve, reject) => {
-                let count = 0;
-                stream.on('data', (obj) => {
-                    if (count < limit) {
-                        objects.push({
-                            key: obj.name || '',
-                            size: obj.size || 0,
-                            lastModified: obj.lastModified || new Date(),
-                        });
-                        count++;
-                    }
-                });
-                stream.on('end', () => resolve(objects));
-                stream.on('error', reject);
-            });
-        } catch (error) {
-            console.error('❌ MinIO: List files failed:', error);
-            return [];
+            logger.error('Error uploading file to MinIO:', error);
+            throw error;
         }
     }
 
@@ -367,20 +114,398 @@ export class MinIOService {
      * Upload multiple files
      */
     async uploadMultipleFiles(
-        files: Array<{
-            buffer: Buffer;
-            originalName: string;
-            mimetype: string;
-        }>,
+        files: Array<{ buffer: Buffer; fileName: string; metadata?: Record<string, string> }>,
+        folder: string = 'uploads'
+    ): Promise<Array<{
+        fileName: string;
+        url: string;
+        size: number;
+        etag: string;
+    }>> {
+        try {
+            const uploadPromises = files.map(file =>
+                this.uploadFile(file.buffer, file.fileName, folder, file.metadata)
+            );
+
+            const results = await Promise.all(uploadPromises);
+            logger.info(`Multiple files uploaded successfully: ${results.length} files`);
+            return results;
+        } catch (error) {
+            logger.error('Error uploading multiple files:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get file URL
+     */
+    async getFileUrl(objectName: string, expiry: number = 7 * 24 * 60 * 60): Promise<string> {
+        try {
+            // Check if it's a public file
+            if (objectName.startsWith('public/')) {
+                // If a public CDN/base URL is configured prefer it
+                if (process.env.MINIO_PUBLIC_URL) {
+                    return `${process.env.MINIO_PUBLIC_URL.replace(/\/$/, '')}/${objectName}`;
+                }
+                return `${this.getBaseUrl()}/${this.bucketName}/${objectName}`;
+            }
+
+            // Generate presigned URL for private files
+            const url = await this.client.presignedGetObject(this.bucketName, objectName, expiry as any);
+            return url as string;
+        } catch (error) {
+            logger.error('Error getting file URL:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get file info
+     */
+    async getFileInfo(fileName: string): Promise<{
+        fileName: string;
+        size: number;
+        lastModified: Date;
+        etag: string;
+        contentType: string;
+    } | null> {
+        try {
+            // Try to get from cache first
+            try {
+                const cached = await redisClient.get(`file:${fileName}`);
+                if (cached) {
+                    return JSON.parse(cached);
+                }
+            } catch (cacheError) {
+                logger.warn('Redis error getting file info:', cacheError);
+            }
+
+            // Find the file in different folders
+            const folders = ['uploads', 'public', 'products', 'services', 'users', 'documents'];
+            
+            for (const folder of folders) {
+                try {
+                    const objectName = `${folder}/${fileName}`;
+                    const stats = await this.client.statObject(this.bucketName, objectName);
+                    
+                    const fileInfo = {
+                        fileName,
+                        size: stats.size,
+                        lastModified: stats.lastModified,
+                        etag: stats.etag,
+                        contentType: stats.metaData['content-type'] || 'application/octet-stream',
+                    };
+
+                    // Cache for 1 hour
+                    try {
+                        await redisClient.setex(`file:${fileName}`, 3600, JSON.stringify(fileInfo));
+                    } catch (cacheError) {
+                        logger.warn('Failed to cache file info:', cacheError);
+                    }
+
+                    return fileInfo;
+                } catch (error) {
+                    // Continue to next folder
+                    continue;
+                }
+            }
+
+            return null;
+        } catch (error) {
+            logger.error('Error getting file info:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Delete file
+     */
+    async deleteFile(fileName: string, folder: string = 'uploads'): Promise<boolean> {
+        try {
+            const objectName = `${folder}/${fileName}`;
+            await this.client.removeObject(this.bucketName, objectName);
+
+            // Remove from cache
+            try {
+                await redisClient.del(`file:${fileName}`);
+            } catch (cacheError) {
+                logger.warn('Failed to remove file from cache:', cacheError);
+            }
+
+            logger.info(`File deleted successfully: ${objectName}`);
+            return true;
+        } catch (error) {
+            logger.error('Error deleting file:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Delete multiple files
+     */
+    async deleteMultipleFiles(fileNames: string[], folder: string = 'uploads'): Promise<{
+        deleted: string[];
+        failed: string[];
+    }> {
+        const deleted: string[] = [];
+        const failed: string[] = [];
+
+        for (const fileName of fileNames) {
+            try {
+                const success = await this.deleteFile(fileName, folder);
+                if (success) {
+                    deleted.push(fileName);
+                } else {
+                    failed.push(fileName);
+                }
+            } catch (error) {
+                failed.push(fileName);
+            }
+        }
+
+        logger.info(`Bulk delete completed: ${deleted.length} deleted, ${failed.length} failed`);
+        return { deleted, failed };
+    }
+
+    /**
+     * Copy file
+     */
+    async copyFile(
+        sourceFileName: string,
+        targetFileName: string,
+        sourceFolder: string = 'uploads',
+        targetFolder: string = 'uploads'
+    ): Promise<boolean> {
+        try {
+            const sourceObjectName = `${sourceFolder}/${sourceFileName}`;
+            const targetObjectName = `${targetFolder}/${targetFileName}`;
+
+            await this.client.copyObject(
+                this.bucketName,
+                targetObjectName,
+                `/${this.bucketName}/${sourceObjectName}`
+            );
+
+            logger.info(`File copied: ${sourceObjectName} -> ${targetObjectName}`);
+            return true;
+        } catch (error) {
+            logger.error('Error copying file:', error);
+            return false;
+        }
+    }
+
+    /**
+     * List files in folder
+     */
+    async listFiles(
         folder: string = 'uploads',
-        options: MediaProcessingOptions = {}
-    ): Promise<UploadResult[]> {
-        const uploadPromises = files.map((file) =>
-            this.uploadFile(file.buffer, file.originalName, file.mimetype, folder, options)
-        );
-        return await Promise.all(uploadPromises);
+        prefix?: string,
+        limit?: number
+    ): Promise<Array<{
+        name: string;
+        size: number;
+        lastModified: Date;
+        etag: string;
+    }>> {
+        try {
+            const files: Array<{
+                name: string;
+                size: number;
+                lastModified: Date;
+                etag: string;
+            }> = [];
+
+            const objectsStream = this.client.listObjects(
+                this.bucketName,
+                `${folder}/${prefix || ''}`,
+                false
+            );
+
+            return new Promise((resolve, reject) => {
+                let count = 0;
+                
+                objectsStream.on('data', (obj) => {
+                    if (limit && count >= limit) {
+                        return;
+                    }
+
+                    files.push({
+                        name: path.basename(obj.name || ''),
+                        size: obj.size || 0,
+                        lastModified: obj.lastModified || new Date(),
+                        etag: obj.etag || '',
+                    });
+                    count++;
+                });
+
+                objectsStream.on('end', () => {
+                    resolve(files);
+                });
+
+                objectsStream.on('error', (error) => {
+                    reject(error);
+                });
+            });
+        } catch (error) {
+            logger.error('Error listing files:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get file download stream
+     */
+    async getFileStream(fileName: string, folder: string = 'uploads'): Promise<NodeJS.ReadableStream> {
+        try {
+            const objectName = `${folder}/${fileName}`;
+            const stream = await this.client.getObject(this.bucketName, objectName);
+            return stream;
+        } catch (error) {
+            logger.error('Error getting file stream:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Generate upload presigned URL
+     */
+    async generateUploadUrl(
+        fileName: string,
+        folder: string = 'uploads',
+        expiry: number = 60 * 60 // 1 hour
+    ): Promise<string> {
+        try {
+            const objectName = `${folder}/${fileName}`;
+            const url = await this.client.presignedPutObject(this.bucketName, objectName, expiry);
+            return url;
+        } catch (error) {
+            logger.error('Error generating upload URL:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get storage statistics
+     */
+    async getStorageStats(): Promise<{
+        totalFiles: number;
+        totalSize: number;
+        folderStats: Record<string, { files: number; size: number }>;
+    }> {
+        try {
+            const cacheKey = 'minio:storage_stats';
+            
+            // Try to get from cache first
+            try {
+                const cached = await redisClient.get(cacheKey);
+                if (cached) {
+                    return JSON.parse(cached);
+                }
+            } catch (cacheError) {
+                logger.warn('Redis error getting storage stats:', cacheError);
+            }
+
+            const folders = ['uploads', 'public', 'products', 'services', 'users', 'documents'];
+            const folderStats: Record<string, { files: number; size: number }> = {};
+            let totalFiles = 0;
+            let totalSize = 0;
+
+            for (const folder of folders) {
+                const files = await this.listFiles(folder);
+                const folderSize = files.reduce((sum, file) => sum + file.size, 0);
+                
+                folderStats[folder] = {
+                    files: files.length,
+                    size: folderSize,
+                };
+
+                totalFiles += files.length;
+                totalSize += folderSize;
+            }
+
+            const stats = {
+                totalFiles,
+                totalSize,
+                folderStats,
+            };
+
+            // Cache for 30 minutes
+            try {
+                await redisClient.setex(cacheKey, 1800, JSON.stringify(stats));
+            } catch (cacheError) {
+                logger.warn('Failed to cache storage stats:', cacheError);
+            }
+
+            return stats;
+        } catch (error) {
+            logger.error('Error getting storage stats:', error);
+            return {
+                totalFiles: 0,
+                totalSize: 0,
+                folderStats: {},
+            };
+        }
+    }
+
+    /**
+     * Clean up expired files
+     */
+    async cleanupExpiredFiles(folder: string = 'temp', maxAge: number = 24 * 60 * 60 * 1000): Promise<number> {
+        try {
+            const files = await this.listFiles(folder);
+            const now = new Date();
+            let deletedCount = 0;
+
+            for (const file of files) {
+                const fileAge = now.getTime() - file.lastModified.getTime();
+                if (fileAge > maxAge) {
+                    const success = await this.deleteFile(file.name, folder);
+                    if (success) {
+                        deletedCount++;
+                    }
+                }
+            }
+
+            logger.info(`Cleanup completed: ${deletedCount} expired files deleted from ${folder}`);
+            return deletedCount;
+        } catch (error) {
+            logger.error('Error cleaning up expired files:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Get base URL for MinIO
+     */
+    private getBaseUrl(): string {
+        // Prefer MINIO_PUBLIC_URL when set
+        if (process.env.MINIO_PUBLIC_URL) {
+            return process.env.MINIO_PUBLIC_URL.replace(/\/$/, '');
+        }
+
+        const protocol = process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http';
+        const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
+        const port = process.env.MINIO_PORT || '9000';
+
+        if (port === '80' || port === '443') {
+            return `${protocol}://${endpoint}`;
+        }
+
+        return `${protocol}://${endpoint}:${port}`;
+    }
+
+    /**
+     * Health check
+     */
+    async healthCheck(): Promise<boolean> {
+        try {
+            await this.client.bucketExists(this.bucketName);
+            return true;
+        } catch (error) {
+            logger.error('MinIO health check failed:', error);
+            return false;
+        }
     }
 }
 
-// Export singleton instance
-export const minioService = new MinIOService();
+export const minioService = new MinioService();
