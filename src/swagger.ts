@@ -47,7 +47,10 @@ export function setupSwagger(app: Express) {
   const mounts = ['/api-docs', '/docs', '/api/v1/docs', '/api/v1/api-docs', '/api/api-docs', '/api/docs'];
   for (const mountPath of mounts) {
     try {
-      app.use(mountPath, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+      // Configure the UI to load the OpenAPI spec from a stable, absolute path
+      app.use(mountPath, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+        swaggerOptions: { url: '/openapi.json' }
+      } as any));
     } catch (err) {
       // ignore per-mount failures
       console.warn(`Failed to mount Swagger at ${mountPath}:`, err);
@@ -57,7 +60,19 @@ export function setupSwagger(app: Express) {
   // Serve OpenAPI JSON on several common paths
   const openapiPaths = ['/openapi.json', '/api/v1/openapi.json', '/api/openapi.json', '/docs/openapi.json'];
   for (const p of openapiPaths) {
-    app.get(p, (req, res) => res.json(swaggerSpec));
+    try {
+      app.get(p, (req, res) => res.json(swaggerSpec));
+    } catch (err) {
+      console.warn(`Failed to register OpenAPI JSON at ${p}:`, err);
+    }
+  }
+
+  // Also register a catch-all route for any path ending with openapi.json
+  // This covers deployments where a reverse proxy / base path prefixes requests.
+  try {
+    app.get(/openapi\.json$/, (req, res) => res.json(swaggerSpec));
+  } catch (err) {
+    console.warn('Failed to register regex OpenAPI JSON route:', err);
   }
 
   if (usedFallback) {
