@@ -105,8 +105,15 @@ const options: any = {
 const swaggerSpec = swaggerJSDoc(options);
 
 export function setupSwagger(app: Express) {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  // Mount Swagger UI on several common paths to support different deployment prefixes
+  const mounts = ['/api-docs', '/api/v1/docs', '/api/v1/api-docs', '/api/api-docs'];
+  for (const mountPath of mounts) {
+    app.use(mountPath, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  }
+
+  // Serve OpenAPI JSON on both root and API-prefixed paths
   app.get('/openapi.json', (req, res) => res.json(swaggerSpec));
+  app.get('/api/v1/openapi.json', (req, res) => res.json(swaggerSpec));
 }
 
 export default swaggerSpec;
