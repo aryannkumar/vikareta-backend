@@ -31,35 +31,52 @@ const format = winston.format.combine(
   )
 );
 
-// Define which transports the logger must use
-const transports = [
-  // Console transport
-  new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    ),
-  }),
-  
-  // File transport for errors
-  new winston.transports.File({
-    filename: 'logs/error.log',
+// Define which transports the logger must use. File transports are optional
+// because some container environments don't allow creating a 'logs' dir.
+const transports: any[] = [];
+
+// Always add console transport
+transports.push(new winston.transports.Console({
+  format: winston.format.combine(
+    winston.format.colorize(),
+    winston.format.simple()
+  ),
+}));
+
+// If LOG_DIR is set, try to use it; otherwise attempt to create 'logs' but
+// gracefully handle permission errors and skip file transports.
+const logDir = process.env.LOG_DIR || 'logs';
+try {
+  // Attempt to require fs here to perform a quick writable check
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('fs');
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+
+  transports.push(new winston.transports.File({
+    filename: `${logDir}/error.log`,
     level: 'error',
     format: winston.format.combine(
       winston.format.timestamp(),
       winston.format.json()
     ),
-  }),
-  
-  // File transport for all logs
-  new winston.transports.File({
-    filename: 'logs/combined.log',
+  }));
+
+  transports.push(new winston.transports.File({
+    filename: `${logDir}/combined.log`,
     format: winston.format.combine(
       winston.format.timestamp(),
       winston.format.json()
     ),
-  }),
-];
+  }));
+} catch (err: any) {
+  // If we can't create or write to the log directory, fall back to console-only
+  // This avoids container startup failures due to EACCES when creating 'logs'
+  // Prefer to surface a warning so operators know file logging is disabled.
+  // eslint-disable-next-line no-console
+  console.warn('File logging disabled. Could not create or write to log directory:', logDir, err?.message || err);
+}
 
 // Create the logger
 export const logger = winston.createLogger({

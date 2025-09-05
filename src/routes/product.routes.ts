@@ -21,19 +21,7 @@ const productController = new ProductController();
  *         name: q
  *         schema:
  *           type: string
-			200:
-				description: Product list
-				content:
-					application/json:
-						schema:
-							type: object
-							properties:
-								data:
-									type: array
-									items:
-										$ref: '#/components/schemas/Product'
-								pagination:
-									$ref: '#/components/schemas/Pagination'
+ *     responses:
  *       200:
  *         description: Product list
  */
@@ -45,17 +33,8 @@ router.get('/', optionalAuthMiddleware, validatePagination, validateSort(['price
  *   get:
  *     summary: Get featured products
  *     tags:
-			200:
-				description: Featured products
-				content:
-					application/json:
-						schema:
-							type: object
-							properties:
-								data:
-									type: array
-									items:
-										$ref: '#/components/schemas/Product'
+ *       - Products
+ *     responses:
  *       200:
  *         description: Featured products
  */
@@ -73,15 +52,8 @@ router.get('/featured', asyncHandler(productController.getFeaturedProducts.bind(
  *         name: id
  *         required: true
  *         schema:
-			200:
-				description: Product detail
-				content:
-					application/json:
-						schema:
-							type: object
-							properties:
-								data:
-									$ref: '#/components/schemas/Product'
+ *           type: string
+ *     responses:
  *       200:
  *         description: Product detail
  */
