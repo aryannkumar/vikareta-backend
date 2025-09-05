@@ -15,8 +15,65 @@ const defaultDefinition: any = {
   components: {
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
-    }
-  },
+    },
+    schemas: {
+        Product: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            price: { type: 'number' },
+            currency: { type: 'string' },
+            images: { type: 'array', items: { type: 'string', format: 'uri' } },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' }
+          }
+        },
+        Service: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            price: { type: 'number' },
+            currency: { type: 'string' },
+            images: { type: 'array', items: { type: 'string', format: 'uri' } },
+            createdAt: { type: 'string', format: 'date-time' }
+          }
+        },
+        User: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            firstName: { type: 'string' },
+            lastName: { type: 'string' },
+            email: { type: 'string' },
+            phone: { type: 'string' },
+            businessName: { type: 'string' }
+          }
+        },
+        Order: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            totalAmount: { type: 'number' },
+            currency: { type: 'string' },
+            status: { type: 'string' },
+            createdAt: { type: 'string', format: 'date-time' }
+          }
+        },
+        Payment: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            amount: { type: 'number' },
+            currency: { type: 'string' },
+            status: { type: 'string' }
+          }
+        }
+      }
+    },
   security: [{ bearerAuth: [] }],
   paths: {},
 };

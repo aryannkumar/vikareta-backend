@@ -27,11 +27,101 @@ const checkWishlistStatusValidation = [
 ];
 
 // Routes
+/**
+ * @openapi
+ * /api/v1/wishlist:
+ *   get:
+ *     summary: Get current user's wishlist
+ *     tags:
+ *       - Wishlist
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Wishlist
+ */
 router.get('/', authenticateToken, validateRequest(getWishlistValidation), wishlistController.getWishlist.bind(wishlistController));
+/**
+ * @openapi
+ * /api/v1/wishlist:
+ *   post:
+ *     summary: Add an item to wishlist
+ *     tags:
+ *       - Wishlist
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201:
+ *         description: Added
+ */
 router.post('/', authenticateToken, validateRequest(addToWishlistValidation), wishlistController.addToWishlist.bind(wishlistController));
+/**
+ * @openapi
+ * /api/v1/wishlist/clear:
+ *   delete:
+ *     summary: Clear wishlist
+ *     tags:
+ *       - Wishlist
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Cleared
+ */
 router.delete('/clear', authenticateToken, wishlistController.clearWishlist.bind(wishlistController));
+/**
+ * @openapi
+ * /api/v1/wishlist/stats:
+ *   get:
+ *     summary: Get wishlist stats
+ *     tags:
+ *       - Wishlist
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Stats
+ */
 router.get('/stats', authenticateToken, wishlistController.getWishlistStats.bind(wishlistController));
+/**
+ * @openapi
+ * /api/v1/wishlist/check:
+ *   get:
+ *     summary: Check if an item is in wishlist
+ *     tags:
+ *       - Wishlist
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Status
+ */
 router.get('/check', authenticateToken, validateRequest(checkWishlistStatusValidation), wishlistController.checkWishlistStatus.bind(wishlistController));
+/**
+ * @openapi
+ * /api/v1/wishlist/{itemId}:
+ *   delete:
+ *     summary: Remove item from wishlist
+ *     tags:
+ *       - Wishlist
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Removed
+ */
 router.delete('/:itemId', authenticateToken, validateRequest([param('itemId').isUUID()]), wishlistController.removeFromWishlist.bind(wishlistController));
 
 // Legacy routes for backward compatibility

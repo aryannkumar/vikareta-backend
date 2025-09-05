@@ -49,10 +49,65 @@ const popularSearchesValidation = [
 ];
 
 // Routes
+/**
+ * @openapi
+ * /api/v1/search/products:
+ *   get:
+ *     summary: Search products
+ *     tags:
+ *       - Search
+ *     responses:
+ *       200:
+ *         description: Search results
+ */
 router.get('/products', validateRequest(searchProductsValidation), searchController.searchProducts.bind(searchController));
+/**
+ * @openapi
+ * /api/v1/search/services:
+ *   get:
+ *     summary: Search services
+ *     tags:
+ *       - Search
+ *     responses:
+ *       200:
+ *         description: Search results
+ */
 router.get('/services', validateRequest(searchServicesValidation), searchController.searchServices.bind(searchController));
+/**
+ * @openapi
+ * /api/v1/search/global:
+ *   get:
+ *     summary: Global search across products, services, and businesses
+ *     tags:
+ *       - Search
+ *     responses:
+ *       200:
+ *         description: Search results
+ */
 router.get('/global', validateRequest(globalSearchValidation), searchController.globalSearch.bind(searchController));
+/**
+ * @openapi
+ * /api/v1/search/suggestions:
+ *   get:
+ *     summary: Get search suggestions
+ *     tags:
+ *       - Search
+ *     responses:
+ *       200:
+ *         description: Suggestions
+ */
 router.get('/suggestions', validateRequest(searchSuggestionsValidation), searchController.searchSuggestions.bind(searchController));
+/**
+ * @openapi
+ * /api/v1/search/popular:
+ *   get:
+ *     summary: Get popular searches
+ *     tags:
+ *       - Search
+ *     responses:
+ *       200:
+ *         description: Popular terms
+ */
 router.get('/popular', validateRequest(popularSearchesValidation), searchController.getPopularSearches.bind(searchController));
 
 export default router;

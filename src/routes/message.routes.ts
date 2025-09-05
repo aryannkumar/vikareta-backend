@@ -34,12 +34,133 @@ const getConversationValidation = [
 ];
 
 // Routes
+/**
+ * @openapi
+ * /api/v1/messages:
+ *   get:
+ *     summary: Get messages for current user
+ *     tags:
+ *       - Messages
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Message list
+ */
 router.get('/', authenticateToken, validateRequest(getMessagesValidation), messageController.getMessages.bind(messageController));
+/**
+ * @openapi
+ * /api/v1/messages:
+ *   post:
+ *     summary: Send a message
+ *     tags:
+ *       - Messages
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201:
+ *         description: Message sent
+ */
 router.post('/', authenticateToken, validateRequest(sendMessageValidation), messageController.sendMessage.bind(messageController));
+/**
+ * @openapi
+ * /api/v1/messages/unread-count:
+ *   get:
+ *     summary: Get unread message count
+ *     tags:
+ *       - Messages
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Unread count
+ */
 router.get('/unread-count', authenticateToken, messageController.getUnreadCount.bind(messageController));
+/**
+ * @openapi
+ * /api/v1/messages/conversation/{otherUserId}:
+ *   get:
+ *     summary: Get conversation with another user
+ *     tags:
+ *       - Messages
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: otherUserId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Conversation messages
+ */
 router.get('/conversation/:otherUserId', authenticateToken, validateRequest(getConversationValidation), messageController.getConversation.bind(messageController));
+/**
+ * @openapi
+ * /api/v1/messages/{id}:
+ *   get:
+ *     summary: Get message by id
+ *     tags:
+ *       - Messages
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Message detail
+ */
 router.get('/:id', authenticateToken, validateRequest([param('id').isUUID()]), messageController.getMessageById.bind(messageController));
+/**
+ * @openapi
+ * /api/v1/messages/{id}/read:
+ *   put:
+ *     summary: Mark message as read
+ *     tags:
+ *       - Messages
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Marked as read
+ */
 router.put('/:id/read', authenticateToken, validateRequest([param('id').isUUID()]), messageController.markAsRead.bind(messageController));
+/**
+ * @openapi
+ * /api/v1/messages/{id}:
+ *   delete:
+ *     summary: Delete a message
+ *     tags:
+ *       - Messages
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Deleted
+ */
 router.delete('/:id', authenticateToken, validateRequest([param('id').isUUID()]), messageController.deleteMessage.bind(messageController));
 
 export default router;
