@@ -141,8 +141,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       return;
     }
 
-    // Attach user to request
-    req.user = user;
+  // Attach user to request (cast to any to satisfy typing normalization)
+  req.user = user as any;
 
     // Log authentication event
     logger.info(`User authenticated: ${user.id}`, {
@@ -218,10 +218,10 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
               } catch (redisError) {
                 logger.warn('Redis error caching user:', redisError);
               }
-              req.user = user;
+              req.user = user as any;
             }
           } else if (user.isActive) {
-            req.user = user;
+            req.user = user as any;
           }
         }
       } catch (redisError) {

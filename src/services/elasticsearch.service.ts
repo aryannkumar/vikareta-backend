@@ -1,19 +1,10 @@
-import { Client } from '@elastic/elasticsearch';
 import { logger } from '../utils/logger';
 import elasticsearchClient, { elasticsearchHelper, INDICES } from '@/config/elasticsearch';
 import { prisma } from '@/config/database';
 import { ESSearchResponse } from '@/types/elasticsearch.types';
 
 export class ElasticsearchService {
-    private client: Client;
-
-    constructor() {
-        this.client = new Client({
-            node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
-            requestTimeout: 30000,
-            pingTimeout: 3000,
-        });
-    }
+    private client = elasticsearchClient;
 
     async initializeIndices(): Promise<void> {
         try {
@@ -31,7 +22,7 @@ export class ElasticsearchService {
     }
 
     private async createProductsIndex(): Promise<void> {
-        const indexName = 'products';
+    const indexName = INDICES.PRODUCTS;
         try {
             const exists = await this.client.indices.exists({ index: indexName }) as any;
             const existsFlag = typeof exists === 'boolean' ? exists : exists.body;
@@ -100,7 +91,7 @@ export class ElasticsearchService {
                         },
                     },
                 }) as any);
-                logger.info('Products index created successfully');
+                logger.info(`Elasticsearch index created: ${indexName}`);
             }
         } catch (error) {
             logger.error('Error creating products index:', error);
@@ -109,7 +100,7 @@ export class ElasticsearchService {
     }
 
     private async createServicesIndex(): Promise<void> {
-        const indexName = 'services';
+    const indexName = INDICES.SERVICES;
         try {
             const exists = await this.client.indices.exists({ index: indexName }) as any;
             const existsFlag = typeof exists === 'boolean' ? exists : exists.body;
@@ -178,7 +169,7 @@ export class ElasticsearchService {
                         },
                     },
                 }) as any);
-                logger.info('Services index created successfully');
+                logger.info(`Elasticsearch index created: ${indexName}`);
             }
         } catch (error) {
             logger.error('Error creating services index:', error);
@@ -187,7 +178,7 @@ export class ElasticsearchService {
     }
 
     private async createUsersIndex(): Promise<void> {
-        const indexName = 'users';
+    const indexName = INDICES.USERS;
         try {
             const exists = await this.client.indices.exists({ index: indexName }) as any;
             const existsFlag = typeof exists === 'boolean' ? exists : exists.body;
@@ -232,7 +223,7 @@ export class ElasticsearchService {
                         },
                     },
                 }) as any);
-                logger.info('Users index created successfully');
+                logger.info(`Elasticsearch index created: ${indexName}`);
             }
         } catch (error) {
             logger.error('Error creating users index:', error);
@@ -243,7 +234,7 @@ export class ElasticsearchService {
     async indexProduct(product: any): Promise<void> {
         try {
             await this.client.index({
-                index: 'products',
+                index: INDICES.PRODUCTS,
                 id: product.id,
                 body: product,
             });
@@ -257,7 +248,7 @@ export class ElasticsearchService {
     async indexService(service: any): Promise<void> {
         try {
             await this.client.index({
-                index: 'services',
+                index: INDICES.SERVICES,
                 id: service.id,
                 body: service,
             });
@@ -271,7 +262,7 @@ export class ElasticsearchService {
     async indexUser(user: any): Promise<void> {
         try {
             await this.client.index({
-                index: 'users',
+                index: INDICES.USERS,
                 id: user.id,
                 body: user,
             });
@@ -285,7 +276,7 @@ export class ElasticsearchService {
     async deleteProduct(productId: string): Promise<void> {
         try {
             await this.client.delete({
-                index: 'products',
+                index: INDICES.PRODUCTS,
                 id: productId,
             });
             logger.debug(`Product ${productId} deleted from index`);
@@ -300,7 +291,7 @@ export class ElasticsearchService {
     async deleteService(serviceId: string): Promise<void> {
         try {
             await this.client.delete({
-                index: 'services',
+                index: INDICES.SERVICES,
                 id: serviceId,
             });
             logger.debug(`Service ${serviceId} deleted from index`);
@@ -315,7 +306,7 @@ export class ElasticsearchService {
     async deleteUser(userId: string): Promise<void> {
         try {
             await this.client.delete({
-                index: 'users',
+                index: INDICES.USERS,
                 id: userId,
             });
             logger.debug(`User ${userId} deleted from index`);
@@ -367,7 +358,7 @@ export class ElasticsearchService {
             }
 
             const body = products.flatMap(product => [
-                { index: { _index: 'products', _id: product.id } },
+                { index: { _index: INDICES.PRODUCTS, _id: product.id } },
                 product,
             ]);
 
@@ -424,7 +415,7 @@ export class ElasticsearchService {
             }
 
             const body = services.flatMap(service => [
-                { index: { _index: 'services', _id: service.id } },
+                { index: { _index: INDICES.SERVICES, _id: service.id } },
                 service,
             ]);
 
@@ -470,7 +461,7 @@ export class ElasticsearchService {
             }
 
             const body = users.flatMap(user => [
-                { index: { _index: 'users', _id: user.id } },
+                { index: { _index: INDICES.USERS, _id: user.id } },
                 user,
             ]);
 

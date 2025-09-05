@@ -31,9 +31,10 @@ export class QuoteController {
         message: 'Quote created successfully',
         data: quote,
       });
-    } catch (error) {
-      logger.error('Error creating quote:', error);
-      if (error.message.includes('already submitted')) {
+    } catch (err) {
+      logger.error('Error creating quote:', err);
+      const error = err as any;
+      if (error && typeof error.message === 'string' && error.message.includes('already submitted')) {
         res.status(400).json({ error: error.message });
         return;
       }
@@ -121,9 +122,10 @@ export class QuoteController {
         message: 'Quote updated successfully',
         data: quote,
       });
-    } catch (error) {
-      logger.error('Error updating quote:', error);
-      if (error.code === 'P2025') {
+    } catch (err) {
+      logger.error('Error updating quote:', err);
+      const error = err as any;
+      if (error && error.code === 'P2025') {
         res.status(404).json({ error: 'Quote not found or unauthorized' });
         return;
       }
@@ -148,9 +150,10 @@ export class QuoteController {
         message: 'Quote cancelled successfully',
         data: quote,
       });
-    } catch (error) {
-      logger.error('Error cancelling quote:', error);
-      if (error.code === 'P2025') {
+    } catch (err) {
+      logger.error('Error cancelling quote:', err);
+      const error = err as any;
+      if (error && error.code === 'P2025') {
         res.status(404).json({ error: 'Quote not found or unauthorized' });
         return;
       }

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '@/utils/logger';
 
 // Create Prisma client with logging configuration
@@ -82,9 +82,10 @@ export const disconnectDatabase = async (): Promise<void> => {
 
 // Transaction helper
 export const withTransaction = async <T>(
-  callback: (tx: PrismaClient) => Promise<T>
+  callback: (tx: Prisma.TransactionClient) => Promise<T>
 ): Promise<T> => {
-  return await prisma.$transaction(callback);
+  // Use any cast to call the overload accepting a callback
+  return await (prisma.$transaction as any)(callback);
 };
 
 export default prisma;

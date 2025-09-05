@@ -151,9 +151,10 @@ export class WalletController {
         message: 'Money withdrawn successfully',
         data: transaction,
       });
-    } catch (error) {
-      logger.error('Error withdrawing money:', error);
-      if (error.message === 'Insufficient balance') {
+    } catch (err) {
+      logger.error('Error withdrawing money:', err);
+      const error = err as any;
+      if (error && error.message === 'Insufficient balance') {
         res.status(400).json({ error: 'Insufficient balance' });
         return;
       }
@@ -189,9 +190,10 @@ export class WalletController {
         message: 'Funds transferred successfully',
         data: result,
       });
-    } catch (error) {
-      logger.error('Error transferring funds:', error);
-      if (error.message === 'Insufficient balance') {
+    } catch (err) {
+      logger.error('Error transferring funds:', err);
+      const error = err as any;
+      if (error && error.message === 'Insufficient balance') {
         res.status(400).json({ error: 'Insufficient balance' });
         return;
       }
@@ -228,9 +230,10 @@ export class WalletController {
         message: 'Amount locked successfully',
         data: lockedAmount,
       });
-    } catch (error) {
-      logger.error('Error locking amount:', error);
-      if (error.message === 'Insufficient balance to lock') {
+    } catch (err) {
+      logger.error('Error locking amount:', err);
+      const error = err as any;
+      if (error && error.message === 'Insufficient balance to lock') {
         res.status(400).json({ error: 'Insufficient balance to lock' });
         return;
       }

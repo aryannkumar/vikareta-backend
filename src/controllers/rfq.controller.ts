@@ -118,9 +118,10 @@ export class RfqController {
         message: 'RFQ updated successfully',
         data: rfq,
       });
-    } catch (error) {
-      logger.error('Error updating RFQ:', error);
-      if (error.code === 'P2025') {
+    } catch (err) {
+      logger.error('Error updating RFQ:', err);
+      const error = err as any;
+      if (error && error.code === 'P2025') {
         res.status(404).json({ error: 'RFQ not found or unauthorized' });
         return;
       }

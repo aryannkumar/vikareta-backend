@@ -1,23 +1,13 @@
-import { Client as MinioClient } from 'minio';
 import { logger } from '../utils/logger';
 import { redisClient } from '../config/redis';
 import * as crypto from 'crypto';
 import * as path from 'path';
+import minioClient from '@/config/minio';
+import { config } from '@/config/environment';
 
 export class MinioService {
-    private client: MinioClient;
-    private bucketName: string;
-
-    constructor() {
-        this.client = new MinioClient({
-            endPoint: process.env.MINIO_ENDPOINT || 'localhost',
-            port: parseInt(process.env.MINIO_PORT || '9000'),
-            useSSL: process.env.MINIO_USE_SSL === 'true',
-            accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-            secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-        });
-        this.bucketName = process.env.MINIO_BUCKET_NAME || 'vikareta';
-    }
+    private client = minioClient;
+    private bucketName = config.minio.bucketName;
 
     /**
      * Initialize MinIO service
@@ -480,14 +470,13 @@ export class MinioService {
      * Get base URL for MinIO
      */
     private getBaseUrl(): string {
-        // Prefer MINIO_PUBLIC_URL when set
-        if (process.env.MINIO_PUBLIC_URL) {
-            return process.env.MINIO_PUBLIC_URL.replace(/\/$/, '');
+        if (config.minio.publicUrl) {
+            return config.minio.publicUrl.replace(/\/$/, '');
         }
 
-        const protocol = process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http';
-        const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
-        const port = process.env.MINIO_PORT || '9000';
+        const protocol = config.minio.useSSL ? 'https' : 'http';
+        const endpoint = config.minio.endpoint || 'localhost';
+        const port = String(config.minio.port || '9000');
 
         if (port === '80' || port === '443') {
             return `${protocol}://${endpoint}`;
