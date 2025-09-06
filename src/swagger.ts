@@ -104,8 +104,28 @@ export function setupSwagger(app: Express) {
   const mounts = ['/api-docs', '/docs', '/api/v1/docs', '/api/v1/api-docs', '/api/api-docs', '/api/docs'];
   for (const mountPath of mounts) {
     try {
-      // Configure the UI to load the OpenAPI spec from a stable, absolute path
-      app.use(mountPath, swaggerUi.serve, swaggerUi.setup(undefined as any, {
+      // Configure the UI to load the OpenAPI spec from a stable, absolute path.
+      // Add a small middleware to set a Content-Security-Policy that allows
+      // Swagger UI's inline initialization script and permits connect-src to
+      // the resolved API origin (request host or API_URL). This avoids CSP
+      // blocking in environments where a strict global CSP is applied.
+      app.use(mountPath, (req: any, res: any, next: any) => {
+        try {
+          const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+          const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+          const reqOrigin = host ? `${proto}://${host}` : undefined;
+          const connectSrc = [`'self'`];
+          if (reqOrigin && !connectSrc.includes(reqOrigin)) connectSrc.push(reqOrigin);
+          if (process.env.API_URL && !connectSrc.includes(process.env.API_URL)) connectSrc.push(process.env.API_URL);
+          const csp = `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc.join(' ')}; img-src 'self' data:;`;
+          res.setHeader('Content-Security-Policy', csp);
+        } catch (err) {
+          // If CSP header building fails, continue without setting it and let any global
+          // CSP take effect (we don't want to crash the docs).
+          console.warn('Failed to set CSP header for Swagger UI mount:', err);
+        }
+        next();
+      }, swaggerUi.serve, swaggerUi.setup(undefined as any, {
         swaggerOptions: { url: '/openapi.json' }
       } as any));
     } catch (err) {
