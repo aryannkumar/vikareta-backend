@@ -104,32 +104,74 @@ export function setupSwagger(app: Express) {
   const mounts = ['/api-docs', '/docs', '/api/v1/docs', '/api/v1/api-docs', '/api/api-docs', '/api/docs'];
   for (const mountPath of mounts) {
     try {
-      // Configure the UI to load the OpenAPI spec from a stable, absolute path.
-      // Add a small middleware to set a Content-Security-Policy that allows
-      // Swagger UI's inline initialization script and permits connect-src to
-      // the resolved API origin (request host or API_URL). This avoids CSP
-      // blocking in environments where a strict global CSP is applied.
-      app.use(mountPath, (req: any, res: any, next: any) => {
+      // CSP middleware: allow scripts/styles from 'self' only, and allow connect
+      // to the resolved API origin. We avoid 'unsafe-inline' by serving an
+      // external initializer JS file instead of inlining initialization.
+      const cspMiddleware = (req: any, res: any, next: any) => {
         try {
           const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
           const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
           const reqOrigin = host ? `${proto}://${host}` : undefined;
           const connectSrc = [`'self'`];
-          if (reqOrigin && !connectSrc.includes(reqOrigin)) connectSrc.push(reqOrigin);
-          if (process.env.API_URL && !connectSrc.includes(process.env.API_URL)) connectSrc.push(process.env.API_URL);
-          const csp = `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc.join(' ')}; img-src 'self' data:;`;
+          if (reqOrigin && !connectSrc.includes(reqOrigin))
+            connectSrc.push(reqOrigin);
+          if (process.env.API_URL && !connectSrc.includes(process.env.API_URL))
+            connectSrc.push(process.env.API_URL);
+
+          // Allow additional script/style sources via env var (comma-separated),
+          // e.g. ADDITIONAL_SCRIPT_SRC="https://static.cloudflareinsights.com"
+          const extraSources = (process.env.ADDITIONAL_SCRIPT_SRC || '').split(',').map(s => s.trim()).filter(Boolean);
+          const scriptSrc = ["'self'", ...extraSources];
+          const styleSrc = ["'self'", ...extraSources];
+
+          const csp = `default-src 'self'; script-src ${scriptSrc.join(' ')}; style-src ${styleSrc.join(' ')}; connect-src ${connectSrc.join(' ')}; img-src 'self' data:;`;
           res.setHeader('Content-Security-Policy', csp);
         } catch (err) {
-          // If CSP header building fails, continue without setting it and let any global
-          // CSP take effect (we don't want to crash the docs).
           console.warn('Failed to set CSP header for Swagger UI mount:', err);
         }
         next();
-      }, swaggerUi.serve, swaggerUi.setup(undefined as any, {
-        swaggerOptions: { url: '/openapi.json' }
-      } as any));
+      };
+
+      // Serve the static swagger-ui assets
+      app.use(mountPath, cspMiddleware, swaggerUi.serve);
+
+      // Serve a non-inline HTML page that references an external initializer JS
+      app.get(mountPath, cspMiddleware, (req: any, res: any) => {
+        const basePath = mountPath.replace(/\/\/$/, '');
+        const html = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>API Docs</title>
+    <link rel="stylesheet" type="text/css" href="${basePath}/swagger-ui.css" />
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="${basePath}/swagger-ui-bundle.js"></script>
+    <script src="${basePath}/swagger-ui-standalone-preset.js"></script>
+    <script src="${basePath}/swagger-init.js"></script>
+  </body>
+</html>`;
+        res.type('text/html').send(html);
+      });
+
+      // External initializer JS (no inline scripts) — initializes Swagger UI and
+      // points it at the runtime-openapi.json so servers is resolved dynamically.
+      app.get(`${mountPath}/swagger-init.js`, cspMiddleware, (req: any, res: any) => {
+        const js = `window.onload = function() {
+  const ui = SwaggerUIBundle({
+    url: '/openapi.json',
+    dom_id: '#swagger-ui',
+    presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+    layout: 'BaseLayout',
+    deepLinking: true
+  });
+  window.ui = ui;
+};`;
+        res.type('application/javascript').send(js);
+      });
     } catch (err) {
-      // ignore per-mount failures
       console.warn(`Failed to mount Swagger at ${mountPath}:`, err);
     }
   }

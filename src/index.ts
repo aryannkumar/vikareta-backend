@@ -37,6 +37,8 @@ class Application {
 
   constructor() {
     this.app = express();
+    // Trust proxy headers when running behind a reverse proxy (load balancer, Coolify, etc.)
+    this.app.set('trust proxy', true);
     this.server = createServer(this.app);
     this.io = new (SocketIOServer as any)(this.server, {
       cors: {
@@ -58,6 +60,11 @@ class Application {
         },
       },
     }));
+
+    // HSTS for production to force HTTPS (only if behind TLS termination that preserves scheme)
+    if (process.env.NODE_ENV === 'production') {
+      this.app.use(helmet.hsts({ maxAge: 63072000, includeSubDomains: true, preload: true }));
+    }
 
     // CORS configuration
     this.app.use(cors({
@@ -246,8 +253,37 @@ class Application {
 
       // Setup Swagger UI
       try {
-  setupSwagger(this.app as any);
-        logger.info('Swagger UI mounted at /api-docs');
+        // Determine whether to expose API docs in production
+        const docsEnabled = process.env.SHOW_API_DOCS ? process.env.SHOW_API_DOCS === 'true' : (process.env.NODE_ENV !== 'production');
+        if (!docsEnabled) {
+          logger.info('API docs disabled by configuration');
+        } else {
+          // If credentials are provided, protect docs with basic auth in production
+          const docsUser = process.env.DOCS_USERNAME;
+          const docsPass = process.env.DOCS_PASSWORD;
+          if (process.env.NODE_ENV === 'production' && docsUser && docsPass) {
+            // Mount swagger behind simple basic auth middleware
+            this.app.use((req, res, next) => {
+              const auth = req.headers.authorization;
+              if (!auth || !auth.startsWith('Basic ')) {
+                res.setHeader('WWW-Authenticate', 'Basic realm="API Docs"');
+                return res.status(401).send('Authentication required');
+              }
+              try {
+                const creds = Buffer.from(auth.split(' ')[1], 'base64').toString('utf8');
+                const [user, pass] = creds.split(':');
+                if (user === docsUser && pass === docsPass) return next();
+              } catch (err) {
+                // fall through to unauthorized
+              }
+              res.setHeader('WWW-Authenticate', 'Basic realm="API Docs"');
+              return res.status(401).send('Authentication required');
+            });
+          }
+
+          setupSwagger(this.app as any);
+          logger.info('Swagger UI mounted at /api-docs');
+        }
       } catch (err) {
         logger.warn('Failed to mount Swagger UI:', err);
       }
