@@ -105,7 +105,7 @@ export function setupSwagger(app: Express) {
   for (const mountPath of mounts) {
     try {
       // Configure the UI to load the OpenAPI spec from a stable, absolute path
-      app.use(mountPath, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+      app.use(mountPath, swaggerUi.serve, swaggerUi.setup(undefined as any, {
         swaggerOptions: { url: '/openapi.json' }
       } as any));
     } catch (err) {
@@ -118,7 +118,23 @@ export function setupSwagger(app: Express) {
   const openapiPaths = ['/openapi.json', '/api/v1/openapi.json', '/api/openapi.json', '/docs/openapi.json'];
   for (const p of openapiPaths) {
     try {
-      app.get(p, (req, res) => res.json(swaggerSpec));
+      app.get(p, (req, res) => {
+        try {
+          const spec = JSON.parse(JSON.stringify(swaggerSpec || defaultDefinition));
+          // Prefer the request origin (respecting reverse proxy headers) so the UI
+          // uses the same host/scheme as the browser. Fall back to API_URL or '/'.
+          const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+          const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+          const reqOrigin = host ? `${proto}://${host}` : undefined;
+          spec.servers = [
+            { url: reqOrigin || process.env.API_URL || '/', description: 'Resolved server URL' }
+          ];
+          return res.json(spec);
+        } catch (err) {
+          console.warn('Failed to prepare dynamic OpenAPI JSON, falling back to static spec:', err);
+          return res.json(swaggerSpec);
+        }
+      });
     } catch (err) {
       console.warn(`Failed to register OpenAPI JSON at ${p}:`, err);
     }
@@ -127,7 +143,21 @@ export function setupSwagger(app: Express) {
   // Also register a catch-all route for any path ending with openapi.json
   // This covers deployments where a reverse proxy / base path prefixes requests.
   try {
-    app.get(/openapi\.json$/, (req, res) => res.json(swaggerSpec));
+    app.get(/openapi\.json$/, (req, res) => {
+      try {
+        const spec = JSON.parse(JSON.stringify(swaggerSpec || defaultDefinition));
+        const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+        const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+        const reqOrigin = host ? `${proto}://${host}` : undefined;
+        spec.servers = [
+          { url: reqOrigin || process.env.API_URL || '/', description: 'Resolved server URL' }
+        ];
+        return res.json(spec);
+      } catch (err) {
+        console.warn('Failed to prepare dynamic OpenAPI JSON for regex route, falling back to static spec:', err);
+        return res.json(swaggerSpec);
+      }
+    });
   } catch (err) {
     console.warn('Failed to register regex OpenAPI JSON route:', err);
   }
