@@ -10,7 +10,7 @@ const defaultDefinition: any = {
     description: 'Vikareta B2B Marketplace backend API documentation',
   },
   servers: [
-    { url: process.env.API_URL || '/', description: 'Default server (current origin or API_URL)' }
+    { url: '/', description: 'Default server (current origin)' }
   ],
   components: {
     securitySchemes: {
@@ -113,11 +113,9 @@ export function setupSwagger(app: Express) {
           const reqOrigin = host ? `${proto}://${host}` : undefined;
           const connectSrc = [`'self'`];
           if (reqOrigin && !connectSrc.includes(reqOrigin)) connectSrc.push(reqOrigin);
-          if (process.env.API_URL && !connectSrc.includes(process.env.API_URL)) connectSrc.push(process.env.API_URL);
 
-          const extra = (process.env.ADDITIONAL_SCRIPT_SRC || '').split(',').map(s => s.trim()).filter(Boolean);
-          const scriptSrc = [`'self'`, ...extra];
-          const styleSrc = [`'self'`, ...extra];
+          const scriptSrc = [`'self'`];
+          const styleSrc = [`'self'`];
 
           const csp = `default-src 'self'; script-src ${scriptSrc.join(' ')}; style-src ${styleSrc.join(' ')}; connect-src ${connectSrc.join(' ')}; img-src 'self' data:;`;
           res.setHeader('Content-Security-Policy', csp);
@@ -173,7 +171,7 @@ export function setupSwagger(app: Express) {
           const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
           const reqOrigin = host ? `${proto}://${host}` : undefined;
           spec.servers = [
-            { url: reqOrigin || process.env.API_URL || '/', description: 'Resolved server URL' }
+            { url: reqOrigin || '/', description: 'Resolved server URL' }
           ];
           return res.json(spec);
         } catch (err) {
@@ -193,7 +191,7 @@ export function setupSwagger(app: Express) {
         const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
         const reqOrigin = host ? `${proto}://${host}` : undefined;
         spec.servers = [
-          { url: reqOrigin || process.env.API_URL || '/', description: 'Resolved server URL' }
+          { url: reqOrigin || '/', description: 'Resolved server URL' }
         ];
         return res.json(spec);
       } catch (err) {
