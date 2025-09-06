@@ -10,7 +10,7 @@ const defaultDefinition: any = {
     description: 'Vikareta B2B Marketplace backend API documentation',
   },
   servers: [
-    { url: process.env.API_URL || 'http://localhost:5001', description: 'Local server' }
+    { url: process.env.API_URL || '/', description: 'Default server (current origin or API_URL)' }
   ],
   components: {
     securitySchemes: {
