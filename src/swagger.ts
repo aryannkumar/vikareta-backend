@@ -100,16 +100,13 @@ try {
 }
 
 export function setupSwagger(app: Express) {
-  // Mount Swagger UI on several common paths to support different deployment prefixes
-  const mounts = ['/api-docs', '/docs', '/api/v1/docs', '/api/v1/api-docs', '/api/api-docs', '/api/docs'];
+  // Mount Swagger UI only at the canonical production path
+  const mounts = ['/api-docs'];
   for (const mountPath of mounts) {
     try {
-      // Configure the UI to load the OpenAPI spec from a stable, absolute path.
-      // Add a small middleware to set a Content-Security-Policy that allows
-      // Swagger UI's inline initialization script and permits connect-src to
-      // the resolved API origin (request host or API_URL). This avoids CSP
-      // blocking in environments where a strict global CSP is applied.
-      app.use(mountPath, (req: any, res: any, next: any) => {
+      // CSP middleware: do not allow inline scripts/styles. Allow connect-src to
+      // the request origin and any additional allowed hosts via env var.
+      const cspMiddleware = (req: any, res: any, next: any) => {
         try {
           const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
           const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
@@ -117,32 +114,61 @@ export function setupSwagger(app: Express) {
           const connectSrc = [`'self'`];
           if (reqOrigin && !connectSrc.includes(reqOrigin)) connectSrc.push(reqOrigin);
           if (process.env.API_URL && !connectSrc.includes(process.env.API_URL)) connectSrc.push(process.env.API_URL);
-          const csp = `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc.join(' ')}; img-src 'self' data:;`;
+
+          const extra = (process.env.ADDITIONAL_SCRIPT_SRC || '').split(',').map(s => s.trim()).filter(Boolean);
+          const scriptSrc = [`'self'`, ...extra];
+          const styleSrc = [`'self'`, ...extra];
+
+          const csp = `default-src 'self'; script-src ${scriptSrc.join(' ')}; style-src ${styleSrc.join(' ')}; connect-src ${connectSrc.join(' ')}; img-src 'self' data:;`;
           res.setHeader('Content-Security-Policy', csp);
         } catch (err) {
-          // If CSP header building fails, continue without setting it and let any global
-          // CSP take effect (we don't want to crash the docs).
           console.warn('Failed to set CSP header for Swagger UI mount:', err);
         }
         next();
-      }, swaggerUi.serve, swaggerUi.setup(undefined as any, {
-        swaggerOptions: { url: '/openapi.json' }
-      } as any));
+      };
+
+      // Serve swagger static assets from the mount path
+      app.use(mountPath, cspMiddleware, swaggerUi.serve);
+
+      // Serve a non-inline HTML page that references an external initializer JS
+      app.get(mountPath, cspMiddleware, (req: any, res: any) => {
+        const basePath = mountPath.replace(/\/$/, '');
+        const html = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vikareta API Docs</title>
+    <link rel="stylesheet" type="text/css" href="${basePath}/swagger-ui.css" />
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="${basePath}/swagger-ui-bundle.js"></script>
+    <script src="${basePath}/swagger-ui-standalone-preset.js"></script>
+    <script src="${basePath}/swagger-init.js"></script>
+  </body>
+</html>`;
+        res.type('text/html').send(html);
+      });
+
+      // External initializer JS — points at the namespaced openapi.json
+      app.get(`${mountPath}/swagger-init.js`, cspMiddleware, (req: any, res: any) => {
+        const initUrl = `${mountPath}/openapi.json`;
+        const js = `window.onload = function() {\n  const ui = SwaggerUIBundle({\n    url: '${initUrl}',\n    dom_id: '#swagger-ui',\n    presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],\n    layout: 'BaseLayout',\n    deepLinking: true\n  });\n  window.ui = ui;\n};`;
+        res.type('application/javascript').send(js);
+      });
     } catch (err) {
-      // ignore per-mount failures
       console.warn(`Failed to mount Swagger at ${mountPath}:`, err);
     }
   }
 
-  // Serve OpenAPI JSON on several common paths
-  const openapiPaths = ['/openapi.json', '/api/v1/openapi.json', '/api/openapi.json', '/docs/openapi.json'];
+  // Serve OpenAPI JSON under the /api-docs namespace only
+  const openapiPaths = ['/api-docs/openapi.json'];
   for (const p of openapiPaths) {
     try {
       app.get(p, (req, res) => {
         try {
           const spec = JSON.parse(JSON.stringify(swaggerSpec || defaultDefinition));
-          // Prefer the request origin (respecting reverse proxy headers) so the UI
-          // uses the same host/scheme as the browser. Fall back to API_URL or '/'.
           const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
           const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
           const reqOrigin = host ? `${proto}://${host}` : undefined;
@@ -159,11 +185,8 @@ export function setupSwagger(app: Express) {
       console.warn(`Failed to register OpenAPI JSON at ${p}:`, err);
     }
   }
-
-  // Also register a catch-all route for any path ending with openapi.json
-  // This covers deployments where a reverse proxy / base path prefixes requests.
   try {
-    app.get(/openapi\.json$/, (req, res) => {
+    app.get(/api-docs\/openapi\.json$/, (req, res) => {
       try {
         const spec = JSON.parse(JSON.stringify(swaggerSpec || defaultDefinition));
         const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
@@ -183,7 +206,6 @@ export function setupSwagger(app: Express) {
   }
 
   if (usedFallback) {
-    // warn that the spec is minimal and recommend building/generating openapi.json during CI
     console.warn('Using fallback OpenAPI spec — consider generating full spec during build for production');
   }
 }
