@@ -35,6 +35,11 @@ export interface ServiceFilters {
   search?: string;
 }
 
+export interface ServiceSortOptions {
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
 export class ServiceService extends BaseService {
   constructor() {
     super();
@@ -149,7 +154,7 @@ export class ServiceService extends BaseService {
     }
   }
 
-  async getServices(filters: ServiceFilters = {}, page = 1, limit = 20): Promise<{
+  async getServices(filters: ServiceFilters = {}, sortOptions: ServiceSortOptions = {}, page = 1, limit = 20): Promise<{
     services: Service[];
     total: number;
     page: number;
@@ -179,6 +184,25 @@ export class ServiceService extends BaseService {
         ];
       }
 
+      // Determine sort order
+      let orderBy: any = { createdAt: 'desc' };
+      if (sortOptions.sortBy) {
+        const sortField = sortOptions.sortBy;
+        const sortOrder = sortOptions.sortOrder || 'desc';
+        
+        if (sortField === 'rating') {
+          // For rating sort, we need to join with reviews and calculate average
+          // For now, we'll sort by createdAt as a fallback
+          orderBy = { createdAt: sortOrder };
+        } else if (sortField === 'price') {
+          orderBy = { price: sortOrder };
+        } else if (sortField === 'title') {
+          orderBy = { title: sortOrder };
+        } else {
+          orderBy = { createdAt: sortOrder };
+        }
+      }
+
       const [services, total] = await Promise.all([
         this.prisma.service.findMany({
           where,
@@ -201,7 +225,7 @@ export class ServiceService extends BaseService {
               take: 1,
             },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy,
           skip: (page - 1) * limit,
           take: limit,
         }),
@@ -357,7 +381,7 @@ export class ServiceService extends BaseService {
     } catch (error) {
       logger.error('Error searching services:', error);
       // Fallback to database search
-      return this.getServices({ ...filters, search: query }, page, limit);
+      return this.getServices({ ...filters, search: query }, {}, page, limit);
     }
   }
 

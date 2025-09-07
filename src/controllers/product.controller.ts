@@ -56,6 +56,7 @@ export class ProductController {
         search,
         isActive,
         status,
+        featured,
       } = req.query;
 
       const filters = {
@@ -67,6 +68,7 @@ export class ProductController {
         search: search as string,
         isActive: isActive ? isActive === 'true' : undefined,
         status: status as string,
+        featured: featured ? featured === 'true' : undefined,
       };
 
       const result = await productService.getProducts(

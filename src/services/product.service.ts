@@ -37,6 +37,7 @@ export interface ProductFilters {
   isActive?: boolean;
   status?: string;
   search?: string;
+  featured?: boolean;
 }
 
 export class ProductService extends BaseService {
@@ -190,6 +191,15 @@ export class ProductService extends BaseService {
           { description: { contains: filters.search, mode: 'insensitive' } },
           { sku: { contains: filters.search, mode: 'insensitive' } },
         ];
+      }
+
+      // Handle featured filter
+      if (filters.featured === true) {
+        where.featuredProducts = {
+          some: {
+            isActive: true,
+          },
+        };
       }
 
       const [products, total] = await Promise.all([

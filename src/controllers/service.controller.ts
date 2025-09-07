@@ -57,6 +57,8 @@ export class ServiceController {
         search,
         isActive,
         status,
+        sortBy,
+        sortOrder = 'desc',
       } = req.query;
 
       const filters = {
@@ -71,8 +73,14 @@ export class ServiceController {
         status: status as string,
       };
 
+      const sortOptions = {
+        sortBy: sortBy as string,
+        sortOrder: sortOrder as 'asc' | 'desc',
+      };
+
       const result = await serviceService.getServices(
         filters,
+        sortOptions,
         parseInt(page as string),
         parseInt(limit as string)
       );
@@ -312,6 +320,7 @@ export class ServiceController {
 
       const result = await serviceService.getServices(
         filters,
+        {},
         parseInt(page as string),
         parseInt(limit as string)
       );

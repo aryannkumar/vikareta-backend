@@ -264,6 +264,7 @@ export class SearchController {
         // Service suggestions
         serviceService.getServices(
           { search: query as string },
+          {},
           1,
           parseInt(limit as string) / 2
         ),

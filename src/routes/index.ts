@@ -27,6 +27,7 @@ import { shippingRoutes } from './shipping.routes';
 import { webhookRoutes } from './webhook.routes';
 import { dashboardRoutes } from './dashboard.routes';
 import { adminRoutes } from './admin.routes';
+import { statsRoutes } from './stats.routes';
 // Omitted explicit imports for less frequently changed routes; they will be auto-registered.
 import couponRoutes from './coupon.routes';
 import notificationTemplateRoutes from './notification-template.routes';
@@ -92,6 +93,7 @@ export const setupRoutes = (app: Application): void => {
   app.use(`${API_PREFIX}/webhooks`, webhookRoutes);
   app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
   app.use(`${API_PREFIX}/admin`, adminRoutes);
+  app.use(`${API_PREFIX}/stats`, statsRoutes);
   app.use(`${API_PREFIX}/coupons`, couponRoutes);
   app.use(`${API_PREFIX}/notification-templates`, notificationTemplateRoutes);
   app.use(`${API_PREFIX}/logistics-providers`, logisticsProviderRoutes);
