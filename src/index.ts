@@ -133,6 +133,50 @@ class Application {
     // this.app.use(requestLogger);
   }
 
+  private setupPublicRoutes(): void {
+    // Public stats endpoint for homepage
+    this.app.get('/api/stats', async (req, res) => {
+      try {
+        // Return mock stats for now - in production this would come from database/cache
+        const stats = {
+          successfulDeals: 25000,
+          totalCategories: 20,
+          totalProducts: 45000,
+          totalSuppliers: 5000,
+        };
+
+        res.status(200).json({
+          success: true,
+          data: stats,
+        });
+      } catch (error) {
+        logger.error('Stats endpoint failed:', error);
+        res.status(500).json({
+          success: false,
+          error: 'Failed to retrieve stats',
+        });
+      }
+    });
+
+    // CSRF token endpoint
+    this.app.get('/csrf-token', (req, res) => {
+      // Generate a simple CSRF token
+      const token = require('crypto').randomBytes(32).toString('hex');
+      
+      res.cookie('XSRF-TOKEN', token, {
+        httpOnly: false, // Allow JavaScript access
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 1000, // 1 hour
+      });
+
+      res.json({
+        success: true,
+        csrfToken: token,
+      });
+    });
+  }
+
   private setupHealthChecks(): void {
     this.app.get('/health', async (req, res) => {
       // Report service readiness but always return 200 so orchestrators
@@ -293,6 +337,9 @@ class Application {
 
       // Setup health checks
       this.setupHealthChecks();
+
+      // Setup public routes (before API routes)
+      this.setupPublicRoutes();
 
       // Setup routes
       setupRoutes(this.app);

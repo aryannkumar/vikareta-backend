@@ -60,7 +60,7 @@ export const authRegisterSchema = z.object({
   firstName: z.string().min(2).max(50).optional(),
   lastName: z.string().min(2).max(50).optional(),
   businessName: z.string().min(2).max(100).optional(),
-  userType: z.enum(['buyer', 'seller', 'both']),
+  userType: z.enum(['buyer', 'seller', 'business', 'both']),
   gstin: z.string().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).optional(),
 });
 export const authLoginSchema = z.object({

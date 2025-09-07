@@ -478,6 +478,25 @@ export class AuthController {
   }
 
   /**
+   * Revoke all sessions
+   */
+  async revokeAllSessions(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.id;
+
+      await this.authService.revokeAllSessions(userId);
+
+      res.json({
+        success: true,
+        message: 'All sessions revoked successfully',
+      });
+    } catch (error) {
+      logger.error('Revoke all sessions error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Revoke a specific session
    */
   async revokeSession(req: Request, res: Response): Promise<void> {
@@ -498,20 +517,34 @@ export class AuthController {
   }
 
   /**
-   * Revoke all sessions
+   * OAuth token exchange
    */
-  async revokeAllSessions(req: Request, res: Response): Promise<void> {
+  async oauthTokenExchange(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user!.id;
+      const { grant_type, code, redirect_uri, client_id } = req.body;
 
-      await this.authService.revokeAllSessions(userId);
+      if (grant_type !== 'authorization_code') {
+        throw new ValidationError('Unsupported grant type');
+      }
+
+      if (!code || !redirect_uri || !client_id) {
+        throw new ValidationError('Missing required parameters');
+      }
+
+      // For now, we'll handle Google OAuth callback
+      // In a real implementation, you'd validate the code with the OAuth provider
+      const result = await this.authService.handleGoogleCallback(code);
 
       res.json({
         success: true,
-        message: 'All sessions revoked successfully',
+        access_token: result.accessToken,
+        refresh_token: result.refreshToken,
+        token_type: 'Bearer',
+        expires_in: 3600, // 1 hour
+        user: result.user,
       });
     } catch (error) {
-      logger.error('Revoke all sessions error:', error);
+      logger.error('OAuth token exchange error:', error);
       throw error;
     }
   }
