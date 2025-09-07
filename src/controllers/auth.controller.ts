@@ -1,16 +1,19 @@
 import { Request, Response } from 'express';
 import { AuthService } from '@/services/auth.service';
 import { UserService } from '@/services/user.service';
+import { SubscriptionService } from '@/services/subscription.service';
 import { logger } from '@/utils/logger';
 import { ValidationError, AuthenticationError } from '@/middleware/error-handler';
 
 export class AuthController {
   private authService: AuthService;
   private userService: UserService;
+  private subscriptionService: SubscriptionService;
 
   constructor() {
     this.authService = new AuthService();
     this.userService = new UserService();
+    this.subscriptionService = new SubscriptionService();
   }
 
   /**
@@ -187,9 +190,21 @@ export class AuthController {
       const userId = req.user!.id;
       const user = await this.userService.getUserById(userId);
 
+      // Get current subscription for dashboard access validation
+      let currentSubscription = null;
+      try {
+        currentSubscription = await this.subscriptionService.getCurrent(userId);
+      } catch (error) {
+        // Log error but don't fail the request
+        logger.warn('Failed to fetch subscription for user profile:', error);
+      }
+
       res.json({
         success: true,
-        data: user,
+        data: {
+          user,
+          subscription: currentSubscription
+        },
       });
     } catch (error) {
       logger.error('Get profile error:', error);

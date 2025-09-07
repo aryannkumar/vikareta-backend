@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { ServiceController } from '@/controllers/service.controller';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth-middleware';
-import { validatePagination, validateSort } from '../middleware/validation-middleware';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware';
+import { validateQuery } from '@/middleware/zod-validate';
+import { paginationQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -35,7 +36,7 @@ const serviceController = new ServiceController();
  *                   items:
  *                     $ref: '#/components/schemas/Service'
  */
-router.get('/', optionalAuthMiddleware, validatePagination, validateSort(['price', 'createdAt', 'title']), asyncHandler(serviceController.getServices.bind(serviceController)));
+router.get('/', optionalAuthMiddleware, validateQuery(paginationQuerySchema), asyncHandler(serviceController.getServices.bind(serviceController)));
 
 /**
  * @openapi

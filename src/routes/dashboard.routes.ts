@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { DashboardController } from '@/controllers/dashboard.controller';
-import { authMiddleware } from '@/middleware/auth-middleware';
+import { requireDashboardAccess } from '@/middleware/auth.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
 const dashboardController = new DashboardController();
 
-router.use(authMiddleware);
+router.use(requireDashboardAccess);
 
 /**
  * @openapi

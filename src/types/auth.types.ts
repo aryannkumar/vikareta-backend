@@ -39,6 +39,7 @@ export interface JWTPayload {
   userId: string;
   email?: string | null;
   userType: string;
+  aud?: string; // audience: web | dashboard | admin | service
   iat?: number;
   exp?: number;
 }

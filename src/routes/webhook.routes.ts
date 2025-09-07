@@ -1,9 +1,19 @@
 import { Router } from 'express';
 import { WebhookController } from '@/controllers/webhook.controller';
+import { burstyTestWebhookLimiter, retryWebhookLimiter } from '@/middleware/rate-limit';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
 const webhookController = new WebhookController();
+
+// CRUD for stored webhooks
+router.get('/', asyncHandler(webhookController.list.bind(webhookController)));
+router.post('/', asyncHandler(webhookController.create.bind(webhookController)));
+router.patch('/:id', asyncHandler(webhookController.update.bind(webhookController)));
+router.post('/:id/secret', asyncHandler(webhookController.regenerateSecret.bind(webhookController)));
+router.post('/:id/test', burstyTestWebhookLimiter, asyncHandler(webhookController.testFire.bind(webhookController)));
+router.post('/:id/retry', retryWebhookLimiter, asyncHandler(webhookController.retryLast.bind(webhookController)));
+router.get('/:id/attempts', asyncHandler(webhookController.attempts.bind(webhookController)));
 
 // Webhook routes (no authentication required)
 /**
@@ -61,4 +71,5 @@ router.post('/whatsapp', asyncHandler(webhookController.handleWhatsAppWebhook.bi
  */
 router.post('/shipping', asyncHandler(webhookController.handleShippingWebhook.bind(webhookController)));
 
-export { router as webhookRoutes };
+export const webhookRoutes = router;
+export default router;

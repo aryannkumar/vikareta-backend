@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { WalletController } from '@/controllers/wallet.controller';
-import { authMiddleware } from '../middleware/auth-middleware';
-import { validatePagination } from '../middleware/validation-middleware';
+import { authMiddleware } from '../middleware/auth.middleware';
+import { validateQuery } from '@/middleware/zod-validate';
+import { paginationQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -36,7 +37,7 @@ router.get('/', asyncHandler(walletController.getWallet.bind(walletController)))
  *       200:
  *         description: Transactions
  */
-router.get('/transactions', validatePagination, asyncHandler(walletController.getTransactions.bind(walletController)));
+router.get('/transactions', validateQuery(paginationQuerySchema), asyncHandler(walletController.getTransactions.bind(walletController)));
 /**
  * @openapi
  * /api/v1/wallet/add-money:

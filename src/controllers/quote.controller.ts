@@ -1,18 +1,12 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { RfqService } from '../services/rfq.service';
-import { validationResult } from 'express-validator';
 
 const rfqService = new RfqService();
 
 export class QuoteController {
   async createQuote(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const sellerId = req.user?.id;
       if (!sellerId) {
@@ -102,11 +96,6 @@ export class QuoteController {
 
   async updateQuote(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { id } = req.params;
       const sellerId = req.user?.id;

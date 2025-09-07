@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { UploadController } from '@/controllers/upload.controller';
-import { authMiddleware } from '@/middleware/auth-middleware';
+import { authMiddleware } from '@/middleware/auth.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -105,5 +105,6 @@ router.post('/avatar', upload.single('file'), asyncHandler(uploadController.uplo
  *         description: Deleted
  */
 router.delete('/:fileId', asyncHandler(uploadController.deleteFile.bind(uploadController)));
+router.get('/presign', asyncHandler(uploadController.presign.bind(uploadController)));
 
 export { router as uploadRoutes };

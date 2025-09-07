@@ -126,6 +126,30 @@ export class OrderService extends BaseService {
           },
         });
 
+        // Order history audit
+        await tx.orderHistory.create({
+          data: {
+            orderId: order.id,
+            action: 'ORDER_CREATED',
+            details: `Order created with ${order.items.length} item(s)`
+          }
+        });
+
+        // Create service order rows if service items exist
+        const serviceItems = order.items.filter(i => i.serviceId);
+        for (const sItem of serviceItems) {
+          await tx.serviceOrder.create({
+            data: {
+              orderId: order.id,
+              serviceId: sItem.serviceId!,
+              quantity: sItem.quantity,
+              unitPrice: sItem.unitPrice,
+              totalPrice: sItem.totalPrice,
+              status: 'pending'
+            }
+          });
+        }
+
         // Send notifications
         await this.notificationService.sendOrderNotification(order, 'created');
 
@@ -166,6 +190,16 @@ export class OrderService extends BaseService {
           },
         });
 
+        // Order history audit
+        await tx.orderHistory.create({
+          data: {
+            orderId,
+            action: 'STATUS_UPDATE',
+            details: `Status changed to ${status}${notes ? ' - ' + notes : ''}`,
+            userId: updatedBy
+          }
+        });
+
         // Send notification
         await this.notificationService.sendOrderNotification(order, 'status_updated');
 
@@ -199,6 +233,15 @@ export class OrderService extends BaseService {
       if (paymentStatus === 'paid' && order.status === 'pending') {
         await this.updateOrderStatus(orderId, 'confirmed', 'Payment received');
       }
+
+      // Order history audit
+      await this.prisma.orderHistory.create({
+        data: {
+          orderId,
+          action: 'PAYMENT_STATUS',
+          details: `Payment status set to ${paymentStatus}`
+        }
+      });
 
       // Send notification
       await this.notificationService.sendOrderNotification(order, 'payment_updated');
@@ -256,6 +299,9 @@ export class OrderService extends BaseService {
           },
           deliveryTracking: {
             orderBy: { createdAt: 'desc' },
+          },
+          trackingHistory: {
+            orderBy: { timestamp: 'desc' },
           },
           reviews: true,
           shipment: true,
@@ -415,6 +461,15 @@ export class OrderService extends BaseService {
           },
         });
 
+        await tx.orderHistory.create({
+          data: {
+            orderId,
+            action: 'ORDER_CANCELLED',
+            details: reason || 'Cancelled',
+            userId: cancelledBy
+          }
+        });
+
         // Restore inventory for products
         for (const item of order.items) {
           if (item.productId) {
@@ -439,6 +494,62 @@ export class OrderService extends BaseService {
       logger.error('Error cancelling order:', error);
       throw error;
     }
+  }
+
+  async addTrackingEvent(orderId: string, data: { status: string; location?: string; description?: string; provider?: string; providerTrackingId?: string; metadata?: any; userId?: string; }): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId } });
+      if (!order) throw new Error('Order not found');
+
+      await tx.orderTrackingHistory.create({
+        data: {
+          orderId,
+          status: data.status,
+            location: data.location,
+            description: data.description,
+            provider: data.provider,
+            providerTrackingId: data.providerTrackingId,
+            metadata: data.metadata
+        }
+      });
+
+      // If first shipping related status, create/update deliveryTracking record
+      if (['shipped','in_transit','out_for_delivery','delivered'].includes(data.status)) {
+        const existingDelivery = await tx.deliveryTracking.findFirst({ where: { orderId } });
+        if (!existingDelivery) {
+          await tx.deliveryTracking.create({
+            data: {
+              orderId,
+              trackingNumber: data.providerTrackingId || order.trackingNumber,
+              carrier: data.provider,
+              status: data.status,
+              notes: data.description,
+            }
+          });
+        } else {
+          await tx.deliveryTracking.update({
+            where: { id: existingDelivery.id },
+            data: { status: data.status, notes: data.description, carrier: data.provider }
+          });
+        }
+      }
+
+      await tx.orderHistory.create({
+        data: {
+          orderId,
+          action: 'TRACKING_EVENT',
+          details: `${data.status}${data.description ? ' - ' + data.description : ''}`,
+          userId: data.userId
+        }
+      });
+
+      // Optional: if status influences overall order status for shipping milestones
+      const shippingStatuses = ['shipped','delivered'];
+      if (shippingStatuses.includes(data.status) && order.status !== data.status) {
+        // Fire and forget; rely on existing status update for history
+        try { await this.updateOrderStatus(orderId, data.status, 'Tracking event update'); } catch (e) { /* swallow */ }
+      }
+    });
   }
 
   async getOrderAnalytics(sellerId?: string, dateFrom?: Date, dateTo?: Date): Promise<{

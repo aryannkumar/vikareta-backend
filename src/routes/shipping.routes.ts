@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { ShippingController } from '@/controllers/shipping.controller';
-import { authMiddleware } from '@/middleware/auth-middleware';
+import { validateBody } from '@/middleware/zod-validate';
+import { shippingAddressCreateSchema, shippingAddressUpdateSchema, deliveryTrackingCreateSchema } from '@/validation/schemas';
+import { authMiddleware } from '@/middleware/auth.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -74,5 +76,19 @@ router.post('/create-shipment', asyncHandler(shippingController.createShipment.b
  *         description: Tracking info
  */
 router.get('/track/:trackingNumber', asyncHandler(shippingController.trackShipment.bind(shippingController)));
+
+// Shipping Addresses
+router.get('/addresses', asyncHandler(shippingController.listAddresses.bind(shippingController)));
+router.post('/addresses', validateBody(shippingAddressCreateSchema), asyncHandler(shippingController.createAddress.bind(shippingController)));
+router.patch('/addresses/:id', validateBody(shippingAddressUpdateSchema), asyncHandler(shippingController.updateAddress.bind(shippingController)));
+router.delete('/addresses/:id', asyncHandler(shippingController.deleteAddress.bind(shippingController)));
+router.post('/addresses/:id/default', asyncHandler(shippingController.setDefaultAddress.bind(shippingController)));
+
+// Delivery Tracking events
+router.post('/tracking/events', validateBody(deliveryTrackingCreateSchema), asyncHandler(shippingController.addTrackingEvent.bind(shippingController)));
+router.get('/tracking/events', asyncHandler(shippingController.listTracking.bind(shippingController)));
+
+// Test shipping webhook trigger
+router.post('/webhooks/test', asyncHandler(shippingController.triggerTestShippingWebhook.bind(shippingController)));
 
 export { router as shippingRoutes };

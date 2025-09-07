@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { WalletService } from '../services/wallet.service';
-import { validationResult } from 'express-validator';
 
 const walletService = new WalletService();
 
@@ -90,11 +89,6 @@ export class WalletController {
 
   async addMoney(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const userId = req.user?.id;
       if (!userId) {
@@ -125,11 +119,6 @@ export class WalletController {
 
   async withdrawMoney(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const userId = req.user?.id;
       if (!userId) {
@@ -164,11 +153,6 @@ export class WalletController {
 
   async transferFunds(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const fromUserId = req.user?.id;
       if (!fromUserId) {
@@ -203,11 +187,6 @@ export class WalletController {
 
   async lockAmount(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const userId = req.user?.id;
       if (!userId) {

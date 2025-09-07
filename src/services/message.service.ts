@@ -21,18 +21,18 @@ export class MessageService {
     const recipient = await prisma.user.findUnique({ where: { id: payload.recipientId }, select: { id: true, firstName: true, lastName: true, businessName: true } });
     if (!recipient) throw new Error('Recipient not found');
 
-    const message = await prisma.message.create({ data: { subject: payload.subject, content: payload.content, senderId, recipientId: payload.recipientId, messageType: payload.messageType ?? 'email', priority: payload.priority ?? 'normal', type: payload.type ?? 'email', relatedType: payload.relatedType, relatedId: payload.relatedId, status: 'unread', isRead: false }, include: { sender: { select: { id: true, firstName: true, lastName: true, businessName: true, avatar: true } }, recipient: { select: { id: true, firstName: true, lastName: true, businessName: true, avatar: true } } } });
+  const message = await prisma.message.create({ data: { subject: payload.subject, content: payload.content, senderId, recipientId: payload.recipientId, messageType: payload.messageType ?? 'email', priority: payload.priority ?? 'normal', type: payload.type ?? 'email', relatedType: payload.relatedType, relatedId: payload.relatedId, status: 'unread' }, include: { sender: { select: { id: true, firstName: true, lastName: true, businessName: true, avatar: true } }, recipient: { select: { id: true, firstName: true, lastName: true, businessName: true, avatar: true } } } });
 
     return message;
   }
 
   async markAsRead(messageId: string, userId: string) {
-    const existing = await prisma.message.findUnique({ where: { id: messageId }, select: { recipientId: true, isRead: true } });
+  const existing = await prisma.message.findUnique({ where: { id: messageId }, select: { recipientId: true, status: true } });
     if (!existing) throw new Error('Message not found');
     if (existing.recipientId !== userId) throw new Error('Access denied');
-    if (existing.isRead) return;
+  if (existing.status === 'read') return;
 
-    await prisma.message.update({ where: { id: messageId }, data: { isRead: true, status: 'read', updatedAt: new Date() } });
+  await prisma.message.update({ where: { id: messageId }, data: { status: 'read', updatedAt: new Date() } });
     return;
   }
 
@@ -46,7 +46,7 @@ export class MessageService {
   }
 
   async getUnreadCount(userId: string) {
-    return prisma.message.count({ where: { recipientId: userId, isRead: false } });
+  return prisma.message.count({ where: { recipientId: userId, status: 'unread' } });
   }
 
   async getConversation(userId: string, otherUserId: string, page: number, limit: number) {
@@ -57,7 +57,7 @@ export class MessageService {
     ]);
 
     // Mark messages from other user as read
-    await prisma.message.updateMany({ where: { senderId: otherUserId, recipientId: userId, isRead: false }, data: { isRead: true, status: 'read', updatedAt: new Date() } });
+  await prisma.message.updateMany({ where: { senderId: otherUserId, recipientId: userId, status: 'unread' }, data: { status: 'read', updatedAt: new Date() } });
 
     return { messages: messages.reverse(), total };
   }

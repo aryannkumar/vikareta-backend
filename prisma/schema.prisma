@@ -116,8 +116,6 @@ model User {
   shoppingCart              ShoppingCart?
   notifications             Notification[]
   subscriptions             Subscription[]
-  follows                   Follow[] @relation("UserFollows")
-  followers                 Follow[] @relation("UserFollowers")
   userFollows               UserFollow[] @relation("UserFollowsFollower")
   userFollowers             UserFollow[] @relation("UserFollowsFollowing")
   adCampaigns               AdCampaign[]
@@ -138,6 +136,7 @@ model User {
   receivedMessages          Message[] @relation("MessageRecipient")
   adApprovalReviews         AdApproval[] @relation("AdApprovalReviewer")
   wishlist                  Wishlist[]
+  notificationBatchRecipients NotificationBatchRecipient[]
   businessWishlist          Wishlist[] @relation("BusinessWishlist")
   
   // New relations for dashboard models
@@ -222,7 +221,6 @@ model Product {
   stockQuantity    Int       @default(0) @map("stock_quantity")
   minOrderQuantity Int       @default(1) @map("min_order_quantity")
   sku              String?   @db.VarChar(100)
-  stock            Int?      @default(0)
   isActive         Boolean   @default(true) @map("is_active")
   images           String[]  @default([])
   weight           Float?
@@ -255,7 +253,6 @@ model ProductVariant {
   sku              String? @db.VarChar(100)
   price            Decimal @db.Decimal(10, 2)
   priceAdjustment  Decimal @default(0) @map("price_adjustment") @db.Decimal(10, 2)
-  stock            Int     @default(0)
   stockQuantity    Int     @default(0) @map("stock_quantity")
   isActive         Boolean @default(true) @map("is_active")
 
@@ -467,7 +464,6 @@ model Order {
   quoteId          String?   @map("quote_id") @db.Uuid
   orderNumber      String    @unique @map("order_number") @db.VarChar(50)
   orderType        String    @default("product") @map("order_type") @db.VarChar(20) // "product" or "service"
-  type             String?   @db.VarChar(20) // Additional type field
   deliveryDate     DateTime? @map("delivery_date")
   subtotal         Decimal   @db.Decimal(10, 2)
   taxAmount        Decimal   @map("tax_amount") @db.Decimal(10, 2)
@@ -598,7 +594,6 @@ model Payment {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId           String    @map("order_id") @db.Uuid
   paymentMethod     String    @map("payment_method") @db.VarChar(50)
-  method            String?   @db.VarChar(50)
   paymentGateway    String    @map("payment_gateway") @db.VarChar(50)
   gatewayTransactionId String? @map("gateway_transaction_id") @db.VarChar(255)
   amount            Decimal   @db.Decimal(10, 2)
@@ -837,7 +832,6 @@ model Message {
   senderId    String   @map("sender_id") @db.Uuid
   recipientId String   @map("recipient_id") @db.Uuid
   status      String   @default("unread") @db.VarChar(20) // unread, read, replied, archived
-  isRead      Boolean  @default(false) @map("is_read")
   messageType String?  @map("message_type") @db.VarChar(50)
   priority    String   @default("normal") @db.VarChar(20) // low, normal, high, urgent
   type        String   @default("email") @db.VarChar(20) // email, sms, notification, system
@@ -891,18 +885,6 @@ model UserFollow {
   @@map("user_follows")
 }
 
-model Follow {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  followerId  String   @map("follower_id") @db.Uuid
-  followingId String   @map("following_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  follower  User @relation("UserFollows", fields: [followerId], references: [id], onDelete: Cascade)
-  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
-
-  @@unique([followerId, followingId])
-  @@map("follows")
-}
 
 model Subscription {
   id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -938,7 +920,6 @@ model Notification {
   priority    String   @default("normal") @db.VarChar(20) // "low", "normal", "high", "urgent"
   status      String   @default("pending") @db.VarChar(20) // "pending", "sent", "delivered", "failed", "read"
   templateId  String?  @map("template_id") @db.Uuid
-  isRead      Boolean  @default(false) @map("is_read")
   readAt      DateTime? @map("read_at")
   data        Json?
   variables   Json?    // Template variables
@@ -954,8 +935,8 @@ model Notification {
 
   user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   template NotificationTemplate? @relation(fields: [templateId], references: [id])
-
-  @@index([userId, isRead])
+  
+  @@index([userId, status])
   @@index([createdAt])
   @@index([status, channel])
   @@index([priority, createdAt])
@@ -981,8 +962,28 @@ model NotificationBatch {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  recipients  NotificationBatchRecipient[]
+
   @@index([status, scheduledAt])
   @@map("notification_batches")
+}
+
+model NotificationBatchRecipient {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId       String   @map("batch_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  status        String   @default("pending") @db.VarChar(20) // pending | sent | failed | skipped | cancelled
+  attempts      Int      @default(0)
+  lastError     String?  @map("last_error") @db.Text
+  lastAttemptAt DateTime? @map("last_attempt_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  batch NotificationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, userId])
+  @@index([batchId, status])
+  @@map("notification_batch_recipients")
 }
 
 model NotificationPreference {
@@ -991,16 +992,6 @@ model NotificationPreference {
   channel   String   @db.VarChar(50) // "email", "sms", "push", "in_app"
   type      String   @db.VarChar(50) // notification type
   enabled   Boolean  @default(true)
-  // Legacy fields for backward compatibility
-  emailEnabled Boolean @default(true) @map("email_enabled")
-  smsEnabled Boolean @default(true) @map("sms_enabled")
-  pushEnabled Boolean @default(true) @map("push_enabled")
-  whatsappEnabled Boolean @default(true) @map("whatsapp_enabled")
-  rfqNotifications Boolean @default(true) @map("rfq_notifications")
-  quoteNotifications Boolean @default(true) @map("quote_notifications")
-  orderNotifications Boolean @default(true) @map("order_notifications")
-  paymentNotifications Boolean @default(true) @map("payment_notifications")
-  marketingEmails Boolean @default(false) @map("marketing_emails")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1229,7 +1220,6 @@ model AdCampaign {
   targetAudience    Json?    @map("target_audience") // Demographics, interests, etc.
   targetingConfig   Json?    @map("targeting_config") // Targeting configuration
   bidStrategy       String   @default("cpc") @map("bid_strategy") @db.VarChar(20) // "cpc", "cpm", "cpa"
-  biddingStrategy   String   @default("cpc") @map("bidding_strategy") @db.VarChar(20) // Alternative field name
   bidAmount         Decimal? @map("bid_amount") @db.Decimal(10, 4) // Current bid amount
   maxBid            Decimal? @map("max_bid") @db.Decimal(10, 4)
   impressions       Int      @default(0)
@@ -1265,7 +1255,6 @@ model Advertisement {
   adFormat      String?  @map("ad_format") @db.VarChar(50) // Ad format specification
   content       Json?    // Ad content (images, videos, text, etc.)
   targetUrl     String?  @map("target_url") @db.VarChar(500)
-  destinationUrl String? @map("destination_url") @db.VarChar(500)
   callToAction  String?  @map("call_to_action") @db.VarChar(100)
   status        String   @default("draft") @db.VarChar(20) // "draft", "active", "paused", "rejected"
   priority      Int      @default(0) // Ad priority for ordering
@@ -1571,7 +1560,25 @@ model Webhook {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  attempts     WebhookAttempt[]
+
   @@map("webhooks")
+}
+
+model WebhookAttempt {
+  id          String   @id @default(cuid())
+  webhookId   String   @db.Uuid
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event       String
+  status      String   // success | failure
+  statusCode  Int?
+  durationMs  Int
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([webhookId, createdAt])
+  @@index([status])
+  @@map("webhook_attempts")
 }
 
 model ApiKey {

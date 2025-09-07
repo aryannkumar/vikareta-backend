@@ -28,6 +28,7 @@ interface JWTPayload {
   phone?: string;
   role?: string;
   userType: string;
+  aud?: string;
   iat: number;
   exp: number;
 }
@@ -62,6 +63,21 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
 
     // Verify JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+
+    // Audience guard (best-effort): map host to expected audience
+    try {
+      const host = req.hostname || '';
+      let expectedAud: string | null = null;
+      if (host.includes('dashboard')) expectedAud = 'dashboard';
+      else if (host.includes('admin')) expectedAud = 'admin';
+      else if (host.includes('api') || host.includes('vikareta')) expectedAud = null; // accept any for primary API/web
+      if (expectedAud && decoded.aud && decoded.aud !== expectedAud) {
+        res.status(401).json({ success: false, error: 'Token audience mismatch' });
+        return; 
+      }
+    } catch (audErr) {
+      logger.warn('Audience validation warning:', audErr);
+    }
     
     // Check if token is blacklisted
     try {
@@ -181,6 +197,19 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
     
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+      // Optional audience check (non-fatal here)
+      try {
+        const host = req.hostname || '';
+        let expectedAud: string | null = null;
+        if (host.includes('dashboard')) expectedAud = 'dashboard';
+        else if (host.includes('admin')) expectedAud = 'admin';
+        if (expectedAud && decoded.aud && decoded.aud !== expectedAud) {
+          // Skip attaching user if audience mismatch
+          return next();
+        }
+      } catch (e) {
+        logger.warn('Optional audience check failed', e);
+      }
       
       // Check if token is blacklisted
       try {
@@ -401,7 +430,89 @@ export const blacklistToken = async (token: string): Promise<void> => {
         await redisClient.setex(`blacklist:${token}`, ttl, 'true');
       }
     }
+  } catch (blacklistError) {
+    logger.error('Failed to blacklist token:', blacklistError);
+    throw blacklistError; // Re-throw to maintain error handling
+  }
+};
+
+// Alias exports for backward compatibility
+export const authMiddleware = authenticateToken;
+export const optionalAuthMiddleware = optionalAuth;
+
+// Dashboard access middleware - requires business user with active subscription
+export const requireDashboardAccess = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    // First authenticate the user
+    await authenticateToken(req, res, () => {});
+
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+      return;
+    }
+
+    // Check if user is a business (seller)
+    if (req.user.userType !== 'seller' && req.user.userType !== 'both') {
+      res.status(403).json({
+        success: false,
+        error: 'Access denied: Only business users can access the dashboard'
+      });
+      return;
+    }
+
+    // Check if user is verified
+    if (!req.user.isVerified) {
+      res.status(403).json({
+        success: false,
+        error: 'Access denied: Email verification required'
+      });
+      return;
+    }
+
+    // Check if user has an active subscription
+    try {
+      const { prisma } = await import('@/config/database');
+      const currentSubscription = await prisma.subscription.findFirst({
+        where: {
+          userId: req.user.id,
+          status: 'active',
+          endDate: {
+            gte: new Date()
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      if (!currentSubscription) {
+        res.status(403).json({
+          success: false,
+          error: 'Access denied: Active subscription required to access dashboard'
+        });
+        return;
+      }
+
+      // Attach subscription info to request for dashboard use
+      (req as any).subscription = currentSubscription;
+    } catch (error) {
+      logger.error('Error checking subscription:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
+      return;
+    }
+
+    next();
   } catch (error) {
-    logger.error('Failed to blacklist token:', error);
+    logger.error('Dashboard access middleware error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
   }
 };

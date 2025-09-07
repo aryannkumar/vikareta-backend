@@ -3,18 +3,12 @@ import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { ServiceService } from '../services/service.service';
 import { minioService } from '@/services/minio.service';
-import { validationResult } from 'express-validator';
 
 const serviceService = new ServiceService();
 
 export class ServiceController {
   async createService(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const providerId = req.user?.id;
       if (!providerId) {
@@ -133,11 +127,6 @@ export class ServiceController {
 
   async updateService(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { id } = req.params;
       const providerId = req.user?.id;

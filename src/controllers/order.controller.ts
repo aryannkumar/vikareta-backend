@@ -1,18 +1,12 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { OrderService } from '../services/order.service';
-import { validationResult } from 'express-validator';
 
 const orderService = new OrderService();
 
 export class OrderController {
   async createOrder(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const buyerId = req.user?.id;
       if (!buyerId) {
@@ -101,11 +95,6 @@ export class OrderController {
 
   async updateOrder(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { id } = req.params;
       const { status, notes } = req.body;
@@ -125,11 +114,6 @@ export class OrderController {
 
   async updateOrderStatus(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { id } = req.params;
       const { status, notes } = req.body;
@@ -179,6 +163,20 @@ export class OrderController {
       });
     } catch (error) {
       logger.error('Error getting order tracking:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  async addTrackingEvent(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      const { status, location, description, provider, providerTrackingId, metadata } = req.body;
+      if (!status) return void res.status(400).json({ error: 'status required' });
+      await orderService.addTrackingEvent(id, { status, location, description, provider, providerTrackingId, metadata, userId });
+      res.status(201).json({ success: true });
+    } catch (error) {
+      logger.error('Error adding tracking event:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

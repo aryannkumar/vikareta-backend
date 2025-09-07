@@ -8,10 +8,14 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import slowDown from 'express-slow-down';
 import { createServer } from 'http';
+import { ensureKafkaTopics } from './config/kafka';
+import { kafkaConsumer } from './services/kafka-consumer.service';
 import { Server as SocketIOServer } from 'socket.io';
 import { prisma } from '@/config/database';
 
 import { logger } from './utils/logger';
+import { startTracing, shutdownTracing } from '@/observability/tracing';
+import { httpRequestsCounter, httpRequestDurationHistogram } from '@/observability/metrics';
 import { redisClient, initializeRedis } from './config/redis';
 import { elasticsearchService } from './services/elasticsearch.service';
 import { minioService } from './services/minio.service';
@@ -20,6 +24,7 @@ import { analyticsService } from './services/analytics.service';
 import { jobScheduler } from './jobs/scheduler';
 import { setupRoutes } from './routes';
 import { setupSwagger } from './swagger';
+import { metricsExporter, registry } from '@/observability/metrics';
 
 // use shared prisma from config/database
 
@@ -110,6 +115,20 @@ class Application {
     });
     this.app.use('/api/', speedLimiter);
 
+    // HTTP metrics middleware (after rate limiting but before routes)
+    this.app.use((req, res, next) => {
+      const startHr = process.hrtime();
+      const routePath = (req.route && (req.route.path as string)) || req.path.split('?')[0];
+      res.on('finish', () => {
+        const diff = process.hrtime(startHr);
+        const durationSec = diff[0] + diff[1] / 1e9;
+        const labels = { method: req.method, route: routePath, status_code: String(res.statusCode) } as const;
+        httpRequestsCounter.inc(labels);
+        httpRequestDurationHistogram.observe(labels, durationSec);
+      });
+      next();
+    });
+
     // Custom middleware
     // this.app.use(requestLogger);
   }
@@ -170,6 +189,18 @@ class Application {
         res.status(500).json({
           error: 'Failed to retrieve metrics',
         });
+      }
+    });
+
+    // Prometheus scrape endpoint
+    this.app.get('/prom-metrics', async (req, res) => {
+      try {
+        res.set('Content-Type', registry.contentType);
+        const out = await metricsExporter();
+        res.send(out);
+      } catch (err) {
+        logger.error('prom-metrics export failed', err);
+        res.status(500).send('# metrics export error');
       }
     });
   }
@@ -236,10 +267,18 @@ class Application {
 
   public async start(): Promise<void> {
     try {
-      // Initialize services asynchronously so the server can start
-      // quickly and pass container healthchecks even if external
-      // dependencies are temporarily unavailable.
-      void this.initializeServices();
+      // Start tracing asynchronously (non-blocking)
+      void startTracing();
+      void this.initializeServices().then(async () => {
+        // Kafka optional init (non-fatal)
+        try {
+          await ensureKafkaTopics();
+          await kafkaConsumer.start();
+          logger.info('Kafka initialized');
+        } catch (err) {
+          logger.warn('Kafka initialization skipped/failed:', err);
+        }
+      });
 
       // Setup middleware
       this.setupMiddleware();
@@ -367,6 +406,7 @@ class Application {
             logger.warn('Redis disconnect error:', error);
           }
 
+          await shutdownTracing().catch(() => {});
           logger.info('Application shut down gracefully');
           process.exit(0);
         } catch (error) {

@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { RfqController } from '@/controllers/rfq.controller';
-import { authMiddleware } from '@/middleware/auth-middleware';
-import { validatePagination, validateSort } from '@/middleware/validation-middleware';
+import { authMiddleware } from '@/middleware/auth.middleware';
+import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
+import { rfqCreateSchema, rfqUpdateSchema, rfqIdParamsSchema, rfqListQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -23,7 +24,7 @@ router.use(authMiddleware);
  *       200:
  *         description: RFQs list
  */
-router.get('/', validatePagination, validateSort(['createdAt', 'budgetMax', 'expiresAt']), asyncHandler(rfqController.getRfqs.bind(rfqController)));
+router.get('/', validateQuery(rfqListQuerySchema), asyncHandler(rfqController.getRfqs.bind(rfqController)));
 /**
  * @openapi
  * /api/v1/rfqs:
@@ -43,7 +44,7 @@ router.get('/', validatePagination, validateSort(['createdAt', 'budgetMax', 'exp
  *       201:
  *         description: RFQ created
  */
-router.post('/', asyncHandler(rfqController.createRfq.bind(rfqController)));
+router.post('/', validateBody(rfqCreateSchema), asyncHandler(rfqController.createRfq.bind(rfqController)));
 /**
  * @openapi
  * /api/v1/rfqs/{id}:
@@ -63,7 +64,7 @@ router.post('/', asyncHandler(rfqController.createRfq.bind(rfqController)));
  *       200:
  *         description: RFQ detail
  */
-router.get('/:id', asyncHandler(rfqController.getRfqById.bind(rfqController)));
+router.get('/:id', validateParams(rfqIdParamsSchema), asyncHandler(rfqController.getRfqById.bind(rfqController)));
 /**
  * @openapi
  * /api/v1/rfqs/{id}:
@@ -83,7 +84,7 @@ router.get('/:id', asyncHandler(rfqController.getRfqById.bind(rfqController)));
  *       200:
  *         description: Updated
  */
-router.put('/:id', asyncHandler(rfqController.updateRfq.bind(rfqController)));
+router.put('/:id', validateParams(rfqIdParamsSchema), validateBody(rfqUpdateSchema), asyncHandler(rfqController.updateRfq.bind(rfqController)));
 /**
  * @openapi
  * /api/v1/rfqs/{id}:
@@ -103,6 +104,6 @@ router.put('/:id', asyncHandler(rfqController.updateRfq.bind(rfqController)));
  *       200:
  *         description: Deleted
  */
-router.delete('/:id', asyncHandler(rfqController.deleteRfq.bind(rfqController)));
+router.delete('/:id', validateParams(rfqIdParamsSchema), asyncHandler(rfqController.deleteRfq.bind(rfqController)));
 
 export { router as rfqRoutes };

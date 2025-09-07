@@ -1,7 +1,13 @@
 import { Request, Response } from 'express';
 import { UserService } from '@/services/user.service';
 import { logger } from '@/utils/logger';
+import { userDocumentService } from '../services/user-document.service';
+import { notificationSettingsService } from '@/services/notification-settings.service';
+import { businessProfileService } from '../services/business-profile.service';
+import { userStatsService } from '@/services/user-stats.service';
+import { followService } from '@/services/follow.service';
 import { minioService } from '@/services/minio.service';
+import { userAdminService } from '@/services/user-admin.service';
 
 export class UserController {
   private userService: UserService;
@@ -72,51 +78,60 @@ export class UserController {
   }
 
   async uploadVerificationDocuments(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, message: 'Document verification functionality to be implemented' });
+    const userId = req.user!.id;
+    const { documents } = req.body as any;
+    if (!Array.isArray(documents) || !documents.length) { res.status(400).json({ success: false, error: 'documents array required' }); return; }
+    const created = await userDocumentService.bulkCreate(userId, documents);
+    res.json({ success: true, message: 'Documents submitted', data: { count: created.count } });
   }
 
   async getVerificationStatus(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, data: { status: 'pending' } });
+    const userId = req.user!.id;
+    const docs = await userDocumentService.list(userId);
+    res.json({ success: true, data: { documents: docs } });
   }
 
   async getPreferences(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, data: {} });
+    const userId = req.user!.id;
+    const prefs = await notificationSettingsService.get(userId);
+    res.json({ success: true, data: prefs || {} });
   }
 
   async updatePreferences(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, message: 'Preferences updated successfully' });
+    const userId = req.user!.id;
+    const saved = await notificationSettingsService.upsert(userId, req.body);
+    res.json({ success: true, message: 'Preferences updated successfully', data: saved });
   }
 
-  async getAddresses(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, data: [] });
-  }
-
-  async createAddress(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, message: 'Address created successfully' });
-  }
-
-  async updateAddress(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, message: 'Address updated successfully' });
-  }
-
-  async deleteAddress(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, message: 'Address deleted successfully' });
-  }
+  // Address CRUD removed – use shipping controller endpoints instead.
 
   async getBusinessProfile(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, data: {} });
+    const userId = req.user!.id;
+    const profile = await businessProfileService.get(userId);
+    res.json({ success: true, data: profile || null });
   }
 
   async updateBusinessProfile(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, message: 'Business profile updated successfully' });
+    const userId = req.user!.id;
+    const saved = await businessProfileService.upsert(userId, { ...req.body, userEmail: req.user!.email, userPhone: req.user!.phone });
+    res.json({ success: true, message: 'Business profile updated successfully', data: saved });
   }
 
   async getUserStats(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, data: {} });
+    const userId = req.user!.id;
+    const stats = await userStatsService.get(userId);
+    res.json({ success: true, data: stats });
   }
 
   async getUserActivity(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, data: [] });
+    const userId = req.user!.id;
+    const stats = await userStatsService.get(userId);
+    const activity = [
+      ...stats.recentProducts.map(r => ({ type: 'product', id: r.id, title: r.title, createdAt: r.createdAt })),
+      ...stats.recentQuotes.map(r => ({ type: 'quote', id: r.id, totalPrice: r.totalPrice, status: r.status, createdAt: r.createdAt })),
+      ...stats.recentOrders.map(r => ({ type: 'order', id: r.id, orderNumber: r.orderNumber, status: r.status, createdAt: r.createdAt })),
+    ].sort((a,b) => (b.createdAt as any) - (a.createdAt as any));
+    res.json({ success: true, data: activity });
   }
 
   async getFollowing(req: Request, res: Response): Promise<void> {
@@ -124,7 +139,7 @@ export class UserController {
       const userId = req.user!.id;
       const page = parseInt((req.query.page as string) || '1');
       const limit = parseInt((req.query.limit as string) || '20');
-      const result = await this.userService.getFollowing(userId, page, limit);
+  const result = await followService.following(userId, page, limit);
       res.status(200).json({ success: true, data: result });
     } catch (error) {
       logger.error('Error getting following:', error);
@@ -137,7 +152,7 @@ export class UserController {
       const userId = req.user!.id;
       const page = parseInt((req.query.page as string) || '1');
       const limit = parseInt((req.query.limit as string) || '20');
-      const result = await this.userService.getFollowers(userId, page, limit);
+  const result = await followService.followers(userId, page, limit);
       res.status(200).json({ success: true, data: result });
     } catch (error) {
       logger.error('Error getting followers:', error);
@@ -149,7 +164,7 @@ export class UserController {
     try {
       const followerId = req.user!.id;
       const followingId = req.params.userId;
-      await this.userService.followUser(followerId, followingId);
+  await followService.follow(followerId, followingId);
       res.status(200).json({ success: true, message: 'User followed successfully' });
     } catch (error) {
       logger.error('Error following user:', error);
@@ -161,7 +176,7 @@ export class UserController {
     try {
       const followerId = req.user!.id;
       const followingId = req.params.userId;
-      await this.userService.unfollowUser(followerId, followingId);
+  await followService.unfollow(followerId, followingId);
       res.status(200).json({ success: true, message: 'User unfollowed successfully' });
     } catch (error) {
       logger.error('Error unfollowing user:', error);
@@ -194,7 +209,10 @@ export class UserController {
   }
 
   async verifyUser(req: Request, res: Response): Promise<void> {
-    res.json({ success: true, message: 'User verification functionality to be implemented' });
+    const { id } = req.params;
+    const { verificationTier, notes } = req.body as any;
+    const result = await userAdminService.verifyUser(id, verificationTier, req.user!.id, notes);
+    res.json({ success: true, message: 'User verified', data: result });
   }
 
   async deactivateUser(req: Request, res: Response): Promise<void> {
@@ -204,6 +222,8 @@ export class UserController {
   }
 
   async activateUser(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    await userAdminService.activateUser(id, req.user!.id);
     res.json({ success: true, message: 'User activated successfully' });
   }
 }

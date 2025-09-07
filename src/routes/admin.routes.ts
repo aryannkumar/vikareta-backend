@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { AdminController } from '@/controllers/admin.controller';
-import { authMiddleware, requireAdmin } from '@/middleware/auth-middleware';
-import { validatePagination, validateSort } from '@/middleware/validation-middleware';
+import { authMiddleware, requireAdmin } from '@/middleware/auth.middleware';
+import { validateQuery } from '@/middleware/zod-validate';
+import { paginationQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -36,7 +37,7 @@ router.get('/dashboard', asyncHandler(adminController.getDashboard.bind(adminCon
  *       200:
  *         description: Users list
  */
-router.get('/users', validatePagination, validateSort(['createdAt', 'businessName']), asyncHandler(adminController.getUsers.bind(adminController)));
+router.get('/users', validateQuery(paginationQuerySchema), asyncHandler(adminController.getUsers.bind(adminController)));
 /**
  * @openapi
  * /api/v1/admin/orders:
@@ -50,7 +51,7 @@ router.get('/users', validatePagination, validateSort(['createdAt', 'businessNam
  *       200:
  *         description: Orders list
  */
-router.get('/orders', validatePagination, validateSort(['createdAt', 'totalAmount']), asyncHandler(adminController.getOrders.bind(adminController)));
+router.get('/orders', validateQuery(paginationQuerySchema), asyncHandler(adminController.getOrders.bind(adminController)));
 /**
  * @openapi
  * /api/v1/admin/products:
@@ -64,7 +65,7 @@ router.get('/orders', validatePagination, validateSort(['createdAt', 'totalAmoun
  *       200:
  *         description: Products list
  */
-router.get('/products', validatePagination, validateSort(['createdAt', 'title']), asyncHandler(adminController.getProducts.bind(adminController)));
+router.get('/products', validateQuery(paginationQuerySchema), asyncHandler(adminController.getProducts.bind(adminController)));
 /**
  * @openapi
  * /api/v1/admin/rfqs:
@@ -78,6 +79,6 @@ router.get('/products', validatePagination, validateSort(['createdAt', 'title'])
  *       200:
  *         description: RFQs list
  */
-router.get('/rfqs', validatePagination, validateSort(['createdAt', 'title']), asyncHandler(adminController.getRfqs.bind(adminController)));
+router.get('/rfqs', validateQuery(paginationQuerySchema), asyncHandler(adminController.getRfqs.bind(adminController)));
 
 export { router as adminRoutes };

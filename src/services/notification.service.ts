@@ -2,9 +2,13 @@ import { prisma } from '@/config/database';
 import { logger } from '../utils/logger';
 import { redisClient } from '../config/redis';
 import { WebSocketService } from '@/websocket';
+import nodemailer from 'nodemailer';
+import { kafkaProducer } from '@/services/kafka-producer.service';
+import { kafkaTopics } from '@/config/kafka';
+import { notificationSentCounter } from '@/observability/metrics';
 // import { EmailService } from './email.service';
 // import { SMSService } from './sms.service';
-// import { WhatsAppService } from './whatsapp.service';
+import { WhatsAppService } from './whatsapp.service';
 
 
 export interface CreateNotificationData {
@@ -34,6 +38,29 @@ export class NotificationService {
     // Initialize service
   }
 
+  private whatsapp = new WhatsAppService();
+
+  private async isPreferenceEnabled(userId: string, channel: string, type: string): Promise<boolean> {
+    const cacheKey = `notif_pref:${userId}:${channel}:${type}`;
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached !== null) return cached === '1';
+      const pref = await prisma.notificationPreference.findUnique({ where: { userId_channel_type: { userId, channel, type } } });
+      const enabled = !pref || pref.enabled !== false;
+      await redisClient.setex(cacheKey, 300, enabled ? '1' : '0');
+      return enabled;
+    } catch {
+      return true; // fail-open
+    }
+  }
+
+  private mailer = process.env.SMTP_HOST ? nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+  }) : null;
+
   /**
    * Create a new notification
    */
@@ -60,6 +87,13 @@ export class NotificationService {
         }
       }
 
+      // Preference gating (default allow if no explicit preference)
+      const channel = data.channel || 'in_app';
+      const allowed = await this.isPreferenceEnabled(data.userId, channel, data.type);
+      if (!allowed) {
+        return { skipped: true, reason: 'preference_disabled', userId: data.userId, type: data.type, channel };
+      }
+
       // Create notification
       const notification = await prisma.notification.create({
         data: {
@@ -67,7 +101,7 @@ export class NotificationService {
           title: data.title,
           message: data.message,
           type: data.type,
-          channel: data.channel || 'in_app',
+          channel,
           priority: data.priority || 'normal',
           templateId: data.templateId,
           data: data.data,
@@ -89,7 +123,10 @@ export class NotificationService {
         await this.sendNotification(notification.id);
       }
 
-      logger.info(`Notification created: ${notification.id} for user: ${data.userId}`);
+  logger.info(`Notification created: ${notification.id} for user: ${data.userId}`);
+  notificationSentCounter.labels({ channel, type: data.type, status: 'pending' }).inc();
+  // Fire async event
+  kafkaProducer.emit(kafkaTopics.NOTIFICATION_EVENT, { notificationId: notification.id, userId: data.userId, type: data.type, channel });
       return notification;
     } catch (error) {
       logger.error('Error creating notification:', error);
@@ -153,6 +190,7 @@ export class NotificationService {
             sentAt: new Date(),
           },
         });
+        notificationSentCounter.labels({ channel: notification.channel || 'in_app', type: notification.type, status: 'sent' }).inc();
 
         // Update cache
         try {
@@ -175,6 +213,7 @@ export class NotificationService {
             errorMessage: error instanceof Error ? error.message : 'Unknown error',
           },
         });
+        notificationSentCounter.labels({ channel: notification.channel || 'in_app', type: notification.type, status: 'failed' }).inc();
 
         throw error;
       }
@@ -209,7 +248,15 @@ export class NotificationService {
     //   html: content,
     //   data: notification.data,
     // });
-    logger.info(`Email notification sent to ${notification.user.email}`);
+    if (this.mailer) {
+      await this.mailer.sendMail({
+        from: process.env.FROM_EMAIL || 'no-reply@vikareta.com',
+        to: notification.user.email,
+        subject,
+        html: content,
+      }).catch(err => { throw err; });
+    }
+    logger.info(`Email notification processed for ${notification.user.email}`);
   }
 
   /**
@@ -251,11 +298,11 @@ export class NotificationService {
     }
     logger.debug('Prepared WhatsApp content', { message });
 
-    // await whatsappService.sendMessage({
-    //   to: notification.user.phone,
-    //   message,
-    //   type: 'text',
-    // });
+    if (this.whatsapp.isConfigured()) {
+      await this.whatsapp.sendMessage({ to: notification.user.phone, message, type: 'text' });
+    } else {
+      logger.debug('WhatsApp not configured, skipping actual send');
+    }
     logger.info(`WhatsApp notification sent to ${notification.user.phone}`);
   }
 
@@ -338,7 +385,7 @@ export class NotificationService {
       await prisma.notification.update({
         where: { id: notificationId },
         data: {
-          isRead: true,
+          status: 'read',
           readAt: new Date(),
         },
       });
@@ -385,7 +432,11 @@ export class NotificationService {
       }
 
       if (options.isRead !== undefined) {
-        where.isRead = options.isRead;
+        if (options.isRead) {
+          where.status = 'read';
+        } else {
+          where.status = { not: 'read' };
+        }
       }
 
       // Try to get from cache first
@@ -414,7 +465,7 @@ export class NotificationService {
       const unreadCount = await prisma.notification.count({
         where: {
           userId,
-          isRead: false,
+          status: { not: 'read' },
         },
       });
 
@@ -462,7 +513,7 @@ export class NotificationService {
         prisma.notification.count({ where: { ...where, status: 'delivered' } }),
         prisma.notification.count({ where: { ...where, status: 'failed' } }),
         prisma.notification.count({ where: { ...where, status: 'pending' } }),
-        prisma.notification.count({ where: { ...where, isRead: true } }),
+        prisma.notification.count({ where: { ...where, status: 'read' } }),
       ]);
 
       const stats = {
@@ -606,14 +657,32 @@ export class NotificationService {
           message = `Your order ${order.orderNumber} has been updated.`;
       }
 
-      // Send to buyer
-      const buyerNotif = await this.createNotification({
-        userId: order.buyerId,
-        title,
-        message,
-        type: `order_${type}`,
-        data: { orderId: order.id, orderNumber: order.orderNumber },
-      });
+      const notifType = `order_${type}`;
+
+      // Helper to check preference
+      const isEnabled = async (userId: string, channel: string) => {
+        try {
+          const pref = await prisma.notificationPreference.findUnique({
+            where: { userId_channel_type: { userId, channel, type: notifType } },
+          });
+          if (!pref) return true; // default allow
+          return pref.enabled !== false;
+        } catch {
+          return true;
+        }
+      };
+
+      // Send to buyer (in_app only here; other channels would replicate with channel override)
+      let buyerNotif: any = null;
+      if (await isEnabled(order.buyerId, 'in_app')) {
+        buyerNotif = await this.createNotification({
+          userId: order.buyerId,
+          title,
+          message,
+          type: notifType,
+          data: { orderId: order.id, orderNumber: order.orderNumber },
+        });
+      }
 
       try {
         WebSocketService.emitNotification(order.buyerId, buyerNotif);
@@ -622,13 +691,16 @@ export class NotificationService {
       }
 
       // Send to seller
-      const sellerNotif = await this.createNotification({
-        userId: order.sellerId,
-        title,
-        message: message.replace('Your order', 'Order'),
-        type: `order_${type}`,
-        data: { orderId: order.id, orderNumber: order.orderNumber },
-      });
+      let sellerNotif: any = null;
+      if (await isEnabled(order.sellerId, 'in_app')) {
+        sellerNotif = await this.createNotification({
+          userId: order.sellerId,
+          title,
+          message: message.replace('Your order', 'Order'),
+          type: notifType,
+          data: { orderId: order.id, orderNumber: order.orderNumber },
+        });
+      }
 
       try {
         WebSocketService.emitNotification(order.sellerId, sellerNotif);

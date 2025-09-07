@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { PaymentController } from '@/controllers/payment.controller';
-import { authMiddleware } from '@/middleware/auth-middleware';
+import { authMiddleware } from '@/middleware/auth.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
+import { validateBody, validateParams } from '@/middleware/zod-validate';
+import { paymentCreateSchema, paymentVerifySchema, paymentIdParamsSchema } from '@/validation/schemas';
 
 const router = Router();
 const paymentController = new PaymentController();
@@ -27,7 +29,7 @@ router.use(authMiddleware);
  *       200:
  *         description: Payment created
  */
-router.post('/create', asyncHandler(paymentController.createPayment.bind(paymentController)));
+router.post('/create', validateBody(paymentCreateSchema), asyncHandler(paymentController.createPayment.bind(paymentController)));
 
 /**
  * @openapi
@@ -48,7 +50,7 @@ router.post('/create', asyncHandler(paymentController.createPayment.bind(payment
  *       200:
  *         description: Payment detail
  */
-router.get('/:id', asyncHandler(paymentController.getPayment.bind(paymentController)));
+router.get('/:id', validateParams(paymentIdParamsSchema), asyncHandler(paymentController.getPayment.bind(paymentController)));
 
 /**
  * @openapi
@@ -69,6 +71,6 @@ router.get('/:id', asyncHandler(paymentController.getPayment.bind(paymentControl
  *       200:
  *         description: Payment verified
  */
-router.post('/verify', asyncHandler(paymentController.verifyPayment.bind(paymentController)));
+router.post('/verify', validateBody(paymentVerifySchema), asyncHandler(paymentController.verifyPayment.bind(paymentController)));
 
 export { router as paymentRoutes };

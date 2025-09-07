@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AnalyticsController } from '@/controllers/analytics.controller';
-import { authMiddleware, requireAdmin } from '@/middleware/auth-middleware';
+import { authMiddleware, requireAdmin } from '@/middleware/auth.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();

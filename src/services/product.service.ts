@@ -5,6 +5,8 @@ import { logger } from '../utils/logger';
 import { elasticsearchService } from './elasticsearch.service';
 import elasticsearchClient, { INDICES } from '@/config/elasticsearch';
 import { ESSearchResponse } from '@/types/elasticsearch.types';
+import { kafkaProducer } from '@/services/kafka-producer.service';
+import { kafkaTopics } from '@/config/kafka';
 
 export interface CreateProductData {
   title: string;
@@ -67,6 +69,7 @@ export class ProductService extends BaseService {
       await this.indexProductInElasticsearch(product);
 
       logger.info(`Product created: ${product.id} by seller: ${sellerId}`);
+  kafkaProducer.emit(kafkaTopics.NOTIFICATION_EVENT, { kind: 'product_created', productId: product.id, sellerId });
       return product;
     } catch (error) {
       logger.error('Error creating product:', error);
@@ -104,6 +107,7 @@ export class ProductService extends BaseService {
       await this.indexProductInElasticsearch(product);
 
       logger.info(`Product updated: ${productId} by seller: ${sellerId}`);
+  kafkaProducer.emit(kafkaTopics.NOTIFICATION_EVENT, { kind: 'product_updated', productId, sellerId });
       return product;
     } catch (error) {
       logger.error('Error updating product:', error);
@@ -279,6 +283,7 @@ export class ProductService extends BaseService {
       await this.removeProductFromElasticsearch(productId);
 
       logger.info(`Product deleted: ${productId} by seller: ${sellerId}`);
+      kafkaProducer.emit(kafkaTopics.NOTIFICATION_EVENT, { kind: 'product_deleted', productId, sellerId });
     } catch (error) {
       logger.error('Error deleting product:', error);
       throw error;
@@ -320,7 +325,6 @@ export class ProductService extends BaseService {
           ...variantData,
           productId,
           priceAdjustment: variantData.priceAdjustment || 0,
-          stock: variantData.stock || 0,
           stockQuantity: variantData.stockQuantity || 0,
         },
       });

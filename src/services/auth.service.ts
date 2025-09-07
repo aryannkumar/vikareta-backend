@@ -6,9 +6,10 @@ import { BaseService } from '@/services/base.service';
 import { UserService, CreateUserData, LoginCredentials, AuthTokens } from '@/services/user.service';
 import { EmailService } from '@/services/email.service';
 import { SMSService } from '@/services/sms.service';
+import { SubscriptionService } from '@/services/subscription.service';
 import { config } from '@/config/environment';
 import { ValidationError, AuthenticationError, NotFoundError } from '@/middleware/error-handler';
-import { blacklistToken } from '../middleware/auth-middleware';
+import { blacklistToken } from '../middleware/auth.middleware';
 import { GoogleTokens, GoogleUser, LinkedInTokens, LinkedInProfile, LinkedInEmailData, JWTPayload } from '../types/auth.types';
 
 export interface OTPData {
@@ -22,12 +23,14 @@ export class AuthService extends BaseService {
   private userService: UserService;
   private emailService: EmailService;
   private smsService: SMSService;
+  private subscriptionService: SubscriptionService;
 
   constructor() {
     super();
     this.userService = new UserService();
     this.emailService = new EmailService();
     this.smsService = new SMSService();
+    this.subscriptionService = new SubscriptionService();
   }
 
   /**
@@ -527,6 +530,12 @@ export class AuthService extends BaseService {
         throw new ValidationError('Invalid or expired verification token');
       }
 
+      // Get user before verification to check user type
+      const user = await this.userService.getUserById(userId);
+      if (!user) {
+        throw new NotFoundError('User not found');
+      }
+
       // Update user as verified
       await this.prisma.user.update({
         where: { id: userId },
@@ -536,7 +545,28 @@ export class AuthService extends BaseService {
       // Delete verification token from cache
       await this.cache.del(`email_verification:${token}`);
 
-      this.logOperation('verifyEmail', { userId });
+      // Automatically create free tier subscription for business users (sellers)
+      if (user.userType === 'seller') {
+        try {
+          await this.subscriptionService.create({
+            userId: user.id,
+            type: 'free',
+            planName: 'Free Tier',
+            durationMonths: 1, // Free tier for 1 month
+          });
+
+          this.logOperation('verifyEmail', { userId, subscriptionCreated: true });
+        } catch (subscriptionError) {
+          // Log the error but don't fail the email verification
+          this.logger.error('Failed to create free subscription for user:', {
+            userId,
+            error: subscriptionError,
+          });
+          this.logOperation('verifyEmail', { userId, subscriptionError: true });
+        }
+      } else {
+        this.logOperation('verifyEmail', { userId });
+      }
     } catch (error) {
       this.handleError(error, 'verifyEmail', { token: '[REDACTED]' });
     }
@@ -659,6 +689,7 @@ export class AuthService extends BaseService {
       userId: user.id,
       email: user.email,
       userType: user.userType,
+      aud: 'web',
     };
 
     const accessToken = jwt.sign(payload, config.jwt.secret, {
@@ -680,11 +711,33 @@ export class AuthService extends BaseService {
       userId: user.id,
       email: user.email,
       userType: user.userType,
+      aud: 'web',
     };
 
     return jwt.sign(payload, config.jwt.secret, {
       expiresIn: config.jwt.accessExpires,
     });
+  }
+
+  /**
+   * Public helper for SSO or cross-application token issuing with custom audience
+   */
+  public issueTokensForAudience(user: User, audience: string) {
+    const basePayload: JWTPayload = {
+      userId: user.id,
+      email: user.email,
+      userType: user.userType,
+      aud: audience,
+    };
+    const accessToken = jwt.sign(basePayload, config.jwt.secret, {
+      expiresIn: config.jwt.accessExpires,
+      audience,
+    });
+    const refreshToken = jwt.sign(basePayload, config.jwt.refreshSecret, {
+      expiresIn: config.jwt.refreshExpires,
+      audience,
+    });
+    return { accessToken, refreshToken };
   }
 
   /**

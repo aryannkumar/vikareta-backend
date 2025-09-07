@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
 import { logger } from '@/utils/logger';
-import { prisma } from '@/config/database';
-import { OrderService } from '../services/order.service';
+import { paymentService } from '@/services/payment.service';
 
-const orderService = new OrderService();
 
 export class PaymentController {
   /**
@@ -39,16 +37,7 @@ export class PaymentController {
         return;
       }
 
-      const payment = await prisma.payment.create({
-        data: {
-          orderId,
-          amount: Number(amount),
-          paymentMethod,
-          paymentGateway,
-          gatewayTransactionId,
-          status: 'pending',
-        },
-      });
+      const payment = await paymentService.create({ orderId, amount: Number(amount), paymentMethod, paymentGateway, gatewayTransactionId });
 
       res.status(201).json({ success: true, message: 'Payment created successfully', data: payment });
     } catch (error) {
@@ -77,11 +66,7 @@ export class PaymentController {
    */
     try {
       const { id } = req.params;
-      const payment = await prisma.payment.findUnique({ where: { id } });
-      if (!payment) {
-        res.status(404).json({ error: 'Payment not found' });
-        return;
-      }
+      const payment = await paymentService.get(id);
       res.json({ success: true, data: payment });
     } catch (error) {
       logger.error('Error fetching payment:', error);
@@ -125,12 +110,7 @@ export class PaymentController {
         return;
       }
 
-      const payment = await prisma.payment.update({ where: { id }, data: { status: status || 'processing', gatewayTransactionId } });
-
-      // Update order payment status if payment is paid
-      if (payment && payment.orderId && payment.status === 'paid') {
-        await orderService.updatePaymentStatus(payment.orderId, 'paid');
-      }
+      const payment = await paymentService.verify(id, status, gatewayTransactionId);
 
       res.json({ success: true, message: 'Payment verified successfully', data: payment });
     } catch (error) {

@@ -70,10 +70,20 @@ const envSchema = z.object({
   WHATSAPP_API_URL: z.string().optional(),
   WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
 
+  // SMS (optional)
+  SMS_API_URL: z.string().optional(),
+  SMS_API_KEY: z.string().optional(),
+
   // URLs
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   ADMIN_DOMAIN: z.string().optional(),
   DASHBOARD_DOMAIN: z.string().optional(),
+  // Kafka (optional)
+  KAFKA_BROKERS: z.string().optional(),
+  KAFKA_SSL: z.string().optional(),
+  KAFKA_SASL_USERNAME: z.string().optional(),
+  KAFKA_SASL_PASSWORD: z.string().optional(),
+  KAFKA_SASL_MECHANISM: z.string().optional(),
 });
 
 // Validate environment variables

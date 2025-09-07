@@ -1,4 +1,6 @@
 import { prisma } from '@/config/database';
+import { inventoryMovementsCounter } from '@/observability/metrics';
+import { trace } from '@opentelemetry/api';
 // logger intentionally unused in this service for now
 
 export class InventoryService {
@@ -97,6 +99,8 @@ export class InventoryService {
   }
 
   async adjustInventory(sellerId: string, payload: any) {
+    const tracer = trace.getTracer('vikareta-inventory');
+    return await tracer.startActiveSpan('inventory.adjust', async (span) => {
     const { productId, warehouseId, movementType, quantity, reason } = payload;
 
     const product = await prisma.product.findFirst({ where: { id: productId, sellerId } });
@@ -141,10 +145,17 @@ export class InventoryService {
         },
       });
 
-      return { inventory, movement };
+  inventoryMovementsCounter.inc({ type: movementType });
+  return { inventory, movement };
     });
 
+    span.setAttribute('inventory.productId', productId);
+    span.setAttribute('inventory.warehouseId', warehouseId);
+    span.setAttribute('inventory.movementType', movementType);
+    span.setAttribute('inventory.quantity', quantity);
+    span.end();
     return result;
+    });
   }
 
   async getAnalytics(sellerId: string) {

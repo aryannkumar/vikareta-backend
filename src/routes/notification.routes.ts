@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { NotificationController } from '@/controllers/notification.controller';
-import { authMiddleware } from '@/middleware/auth-middleware';
-import { validatePagination } from '@/middleware/validation-middleware';
+import { authMiddleware } from '@/middleware/auth.middleware';
+import { validateQuery } from '@/middleware/zod-validate';
+import { paginationQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -22,7 +23,7 @@ router.use(authMiddleware);
  *       200:
  *         description: Notifications list
  */
-router.get('/', validatePagination, asyncHandler(notificationController.getNotifications.bind(notificationController)));
+router.get('/', validateQuery(paginationQuerySchema), asyncHandler(notificationController.getNotifications.bind(notificationController)));
 /**
  * @openapi
  * /api/v1/notifications/{id}/read:

@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { OrderController } from '@/controllers/order.controller';
-import { authMiddleware } from '@/middleware/auth-middleware';
-import { validatePagination, validateSort } from '@/middleware/validation-middleware';
+import { authMiddleware } from '@/middleware/auth.middleware';
+import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
+import { orderCreateSchema, orderUpdateSchema, orderStatusUpdateSchema, orderIdParamsSchema, orderListQuerySchema, orderTrackingEventSchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -22,7 +23,7 @@ router.use(authMiddleware);
  *       200:
  *         description: Orders list
  */
-router.get('/', validatePagination, validateSort(['createdAt', 'totalAmount', 'status']), asyncHandler(orderController.getOrders.bind(orderController)));
+router.get('/', validateQuery(orderListQuerySchema), asyncHandler(orderController.getOrders.bind(orderController)));
 /**
  * @openapi
  * /api/v1/orders:
@@ -42,8 +43,7 @@ router.get('/', validatePagination, validateSort(['createdAt', 'totalAmount', 's
  *       201:
  *         description: Order created
  */
-router.post('/', asyncHandler(orderController.createOrder.bind(orderController)));
-router.post('/', asyncHandler(orderController.createOrder.bind(orderController)));
+router.post('/', validateBody(orderCreateSchema), asyncHandler(orderController.createOrder.bind(orderController)));
 /**
  * @openapi
  * /api/v1/orders/{id}:
@@ -63,9 +63,10 @@ router.post('/', asyncHandler(orderController.createOrder.bind(orderController))
  *       200:
  *         description: Order detail
  */
-router.get('/:id', asyncHandler(orderController.getOrderById.bind(orderController)));
-router.put('/:id', asyncHandler(orderController.updateOrder.bind(orderController)));
-router.put('/:id/status', asyncHandler(orderController.updateOrderStatus.bind(orderController)));
+router.get('/:id', validateParams(orderIdParamsSchema), asyncHandler(orderController.getOrderById.bind(orderController)));
+router.put('/:id', validateParams(orderIdParamsSchema), validateBody(orderUpdateSchema), asyncHandler(orderController.updateOrder.bind(orderController)));
+router.put('/:id/status', validateParams(orderIdParamsSchema), validateBody(orderStatusUpdateSchema), asyncHandler(orderController.updateOrderStatus.bind(orderController)));
 router.get('/:id/tracking', asyncHandler(orderController.getOrderTracking.bind(orderController)));
+router.post('/:id/tracking-events', validateParams(orderIdParamsSchema), validateBody(orderTrackingEventSchema), asyncHandler(orderController.addTrackingEvent.bind(orderController)));
 
 export { router as orderRoutes };

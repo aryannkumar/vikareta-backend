@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { ReviewController } from '@/controllers/review.controller';
-import { authMiddleware, optionalAuthMiddleware } from '@/middleware/auth-middleware';
-import { validatePagination, validateSort } from '@/middleware/validation-middleware';
+import { authMiddleware, optionalAuthMiddleware } from '@/middleware/auth.middleware';
+import { validateQuery } from '@/middleware/zod-validate';
+import { paginationQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -19,7 +20,7 @@ const reviewController = new ReviewController();
  *       200:
  *         description: Reviews list
  */
-router.get('/', optionalAuthMiddleware, validatePagination, validateSort(['createdAt', 'rating']), asyncHandler(reviewController.getReviews.bind(reviewController)));
+router.get('/', optionalAuthMiddleware, validateQuery(paginationQuerySchema), asyncHandler(reviewController.getReviews.bind(reviewController)));
 /**
  * @openapi
  * /api/v1/reviews/{id}:

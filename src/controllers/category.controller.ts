@@ -1,18 +1,12 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { CategoryService } from '../services/category.service';
-import { validationResult } from 'express-validator';
 
 const categoryService = new CategoryService();
 
 export class CategoryController {
   async createCategory(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const category = await categoryService.createCategory(req.body);
       res.status(201).json({
@@ -117,11 +111,6 @@ export class CategoryController {
 
   async updateCategory(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { id } = req.params;
       const category = await categoryService.updateCategory(id, req.body);
@@ -180,11 +169,6 @@ export class CategoryController {
   // Subcategory methods
   async createSubcategory(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { categoryId } = req.params;
       const subcategory = await categoryService.createSubcategory(categoryId, req.body);
@@ -244,11 +228,6 @@ export class CategoryController {
 
   async updateSubcategory(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { id } = req.params;
       const subcategory = await categoryService.updateSubcategory(id, req.body);

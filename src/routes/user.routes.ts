@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { body, query } from 'express-validator';
 import { UserController } from '@/controllers/user.controller';
-import { validate, validatePagination, validateSort, validateUUID } from '../middleware/validation.middleware';
-import { authMiddleware, requireAdmin } from '../middleware/auth-middleware';
+import { validateBody, validateParams, validateQuery } from '@/middleware/zod-validate';
+import { userProfileUpdateSchema, businessProfileUpdateSchema, paginationQuerySchema, followUserParamsSchema, userSearchQuerySchema, userIdParamsSchema, userAdminListQuerySchema, userVerifyBodySchema, userDeactivateBodySchema } from '@/validation/schemas';
+import { authMiddleware, requireAdmin } from '../middleware/auth.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -45,23 +45,7 @@ router.get('/profile', asyncHandler(userController.getProfile.bind(userControlle
  *       200:
  *         description: Updated profile
  */
-router.put('/profile', 
-  validate([
-    body('firstName').optional().trim().isLength({ min: 2, max: 50 }),
-    body('lastName').optional().trim().isLength({ min: 2, max: 50 }),
-    body('businessName').optional().trim().isLength({ min: 2, max: 100 }),
-    body('bio').optional().trim().isLength({ max: 500 }),
-    body('website').optional().isURL(),
-    body('location').optional().trim().isLength({ max: 255 }),
-    body('city').optional().trim().isLength({ max: 100 }),
-    body('state').optional().trim().isLength({ max: 100 }),
-    body('country').optional().trim().isLength({ max: 100 }),
-    body('postalCode').optional().trim().isLength({ max: 20 }),
-    body('latitude').optional().isFloat({ min: -90, max: 90 }),
-    body('longitude').optional().isFloat({ min: -180, max: 180 }),
-  ]),
-  asyncHandler(userController.updateProfile.bind(userController))
-);
+router.put('/profile', validateBody(userProfileUpdateSchema), asyncHandler(userController.updateProfile.bind(userController)));
 
 // User avatar
 router.post('/avatar', asyncHandler(userController.uploadAvatar.bind(userController)));
@@ -76,123 +60,36 @@ router.get('/preferences', asyncHandler(userController.getPreferences.bind(userC
 router.put('/preferences', asyncHandler(userController.updatePreferences.bind(userController)));
 
 // User addresses
-router.get('/addresses', asyncHandler(userController.getAddresses.bind(userController)));
-router.post('/addresses', 
-  validate([
-    body('name').trim().isLength({ min: 2, max: 100 }),
-    body('phone').isMobilePhone('any'),
-    body('addressLine1').trim().isLength({ min: 5, max: 255 }),
-    body('addressLine2').optional().trim().isLength({ max: 255 }),
-    body('city').trim().isLength({ min: 2, max: 100 }),
-    body('state').trim().isLength({ min: 2, max: 100 }),
-    body('postalCode').trim().isLength({ min: 5, max: 20 }),
-    body('country').optional().trim().isLength({ max: 100 }),
-    body('isDefault').optional().isBoolean(),
-  ]),
-  asyncHandler(userController.createAddress.bind(userController))
-);
-router.put('/addresses/:id', 
-  validateUUID('id'),
-  validate([
-    body('name').optional().trim().isLength({ min: 2, max: 100 }),
-    body('phone').optional().isMobilePhone('any'),
-    body('addressLine1').optional().trim().isLength({ min: 5, max: 255 }),
-    body('addressLine2').optional().trim().isLength({ max: 255 }),
-    body('city').optional().trim().isLength({ min: 2, max: 100 }),
-    body('state').optional().trim().isLength({ min: 2, max: 100 }),
-    body('postalCode').optional().trim().isLength({ min: 5, max: 20 }),
-    body('country').optional().trim().isLength({ max: 100 }),
-    body('isDefault').optional().isBoolean(),
-  ]),
-  asyncHandler(userController.updateAddress.bind(userController))
-);
-router.delete('/addresses/:id', validateUUID('id'), asyncHandler(userController.deleteAddress.bind(userController)));
+// Address endpoints removed; use /api/v1/shipping/addresses instead.
 
 // User business profile
 router.get('/business-profile', asyncHandler(userController.getBusinessProfile.bind(userController)));
-router.put('/business-profile', 
-  validate([
-    body('companyName').trim().isLength({ min: 2, max: 255 }),
-    body('businessType').optional().trim().isLength({ max: 100 }),
-    body('industry').optional().trim().isLength({ max: 100 }),
-    body('description').optional().trim().isLength({ max: 1000 }),
-    body('website').optional().isURL(),
-    body('email').isEmail().normalizeEmail(),
-    body('phone').isMobilePhone('any'),
-    body('address').isObject(),
-    body('taxInfo').optional().isObject(),
-    body('bankDetails').optional().isObject(),
-  ]),
-  asyncHandler(userController.updateBusinessProfile.bind(userController))
-);
+// Business profile could have its own schema; placeholder: reuse userProfileUpdateSchema for now or extend later
+router.put('/business-profile', validateBody(businessProfileUpdateSchema), asyncHandler(userController.updateBusinessProfile.bind(userController)));
 
 // User statistics
 router.get('/stats', asyncHandler(userController.getUserStats.bind(userController)));
-router.get('/activity', validatePagination, asyncHandler(userController.getUserActivity.bind(userController)));
+router.get('/activity', validateQuery(paginationQuerySchema), asyncHandler(userController.getUserActivity.bind(userController)));
 
 // User following/followers
-router.get('/following', validatePagination, asyncHandler(userController.getFollowing.bind(userController)));
-router.get('/followers', validatePagination, asyncHandler(userController.getFollowers.bind(userController)));
-router.post('/follow/:userId', validateUUID('userId'), asyncHandler(userController.followUser.bind(userController)));
-router.delete('/follow/:userId', validateUUID('userId'), asyncHandler(userController.unfollowUser.bind(userController)));
+router.get('/following', validateQuery(paginationQuerySchema), asyncHandler(userController.getFollowing.bind(userController)));
+router.get('/followers', validateQuery(paginationQuerySchema), asyncHandler(userController.getFollowers.bind(userController)));
+router.post('/follow/:userId', validateParams(followUserParamsSchema), asyncHandler(userController.followUser.bind(userController)));
+router.delete('/follow/:userId', validateParams(followUserParamsSchema), asyncHandler(userController.unfollowUser.bind(userController)));
 
 // User search and discovery
-router.get('/search', 
-  validatePagination,
-  validateSort(['businessName', 'location', 'verificationTier', 'createdAt']),
-  validate([
-    query('q').optional().trim().isLength({ min: 2, max: 100 }),
-    query('userType').optional().isIn(['buyer', 'seller', 'both']),
-    query('verificationTier').optional().isIn(['basic', 'verified', 'premium']),
-    query('city').optional().trim(),
-    query('state').optional().trim(),
-    query('country').optional().trim(),
-    query('isVerified').optional().isBoolean(),
-  ]),
-  asyncHandler(userController.searchUsers.bind(userController))
-);
+router.get('/search', validateQuery(userSearchQuerySchema), asyncHandler(userController.searchUsers.bind(userController)));
 
 // Get user by ID (public profile)
-router.get('/:id', validateUUID('id'), asyncHandler(userController.getUserById.bind(userController)));
+router.get('/:id', validateParams(userIdParamsSchema), asyncHandler(userController.getUserById.bind(userController)));
 
 // Admin routes
-router.get('/', 
-  requireAdmin,
-  validatePagination,
-  validateSort(['businessName', 'email', 'createdAt', 'verificationTier']),
-  validate([
-    query('userType').optional().isIn(['buyer', 'seller', 'both']),
-    query('verificationTier').optional().isIn(['basic', 'verified', 'premium']),
-    query('isVerified').optional().isBoolean(),
-    query('isActive').optional().isBoolean(),
-    query('search').optional().trim(),
-  ]),
-  asyncHandler(userController.getUsers.bind(userController))
-);
+router.get('/', requireAdmin, validateQuery(userAdminListQuerySchema), asyncHandler(userController.getUsers.bind(userController)));
 
-router.put('/:id/verify', 
-  requireAdmin,
-  validateUUID('id'),
-  validate([
-    body('verificationTier').isIn(['basic', 'verified', 'premium']),
-    body('notes').optional().trim(),
-  ]),
-  asyncHandler(userController.verifyUser.bind(userController))
-);
+router.put('/:id/verify', requireAdmin, validateParams(userIdParamsSchema), validateBody(userVerifyBodySchema), asyncHandler(userController.verifyUser.bind(userController)));
 
-router.put('/:id/deactivate', 
-  requireAdmin,
-  validateUUID('id'),
-  validate([
-    body('reason').trim().isLength({ min: 10, max: 500 }),
-  ]),
-  asyncHandler(userController.deactivateUser.bind(userController))
-);
+router.put('/:id/deactivate', requireAdmin, validateParams(userIdParamsSchema), validateBody(userDeactivateBodySchema), asyncHandler(userController.deactivateUser.bind(userController)));
 
-router.put('/:id/activate', 
-  requireAdmin,
-  validateUUID('id'),
-  asyncHandler(userController.activateUser.bind(userController))
-);
+router.put('/:id/activate', requireAdmin, validateParams(userIdParamsSchema), asyncHandler(userController.activateUser.bind(userController)));
 
 export { router as userRoutes };

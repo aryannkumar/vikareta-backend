@@ -73,4 +73,16 @@ export class UploadController {
       res.status(500).json({ success: false, message: 'Failed to delete file' });
     }
   }
+
+  async presign(req: Request, res: Response): Promise<void> {
+    const { fileName, folder, expiry } = req.query;
+    if (!fileName) {
+      res.status(400).json({ success: false, message: 'fileName query param required' });
+      return;
+    }
+  const rawFolder = (folder?.toString() || 'uploads');
+  const safeFolder = rawFolder.split('/').map(seg => seg.replace(/[^a-zA-Z0-9_-]/g, '')).filter(Boolean).join('/') || 'uploads';
+    const url = await minioService.generateUploadUrl(fileName.toString(), safeFolder, parseInt(expiry as string || '3600', 10));
+    res.json({ success: true, data: { url, method: 'PUT', expiresIn: parseInt(expiry as string || '3600', 10) } });
+  }
 }

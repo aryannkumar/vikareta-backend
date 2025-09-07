@@ -1,18 +1,12 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { RfqService } from '../services/rfq.service';
-import { validationResult } from 'express-validator';
 
 const rfqService = new RfqService();
 
 export class RfqController {
   async createRfq(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const buyerId = req.user?.id;
       if (!buyerId) {
@@ -98,11 +92,6 @@ export class RfqController {
 
   async updateRfq(req: Request, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
 
       const { id } = req.params;
       const buyerId = req.user?.id;

@@ -23,6 +23,26 @@ export const prisma = new PrismaClient({
   ],
 });
 
+// Lightweight query event tracing (span durations approximate query execution time)
+try {
+  // Dynamically require so absence of otel during some scripts doesn't break
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { trace } = require('@opentelemetry/api');
+  prisma.$on('query', (e) => {
+    const tracer = trace.getTracer('vikareta-prisma');
+    const span = tracer.startSpan('prisma.query', {
+      attributes: {
+        'db.statement': e.query,
+        'db.params': e.params,
+        'db.duration_ms': e.duration,
+      }
+    });
+    span.end();
+  });
+} catch {
+  // OpenTelemetry not available or dynamic import failed; skip tracing.
+}
+
 // Log database queries in development
 if (process.env.NODE_ENV === 'development') {
   prisma.$on('query', (e) => {

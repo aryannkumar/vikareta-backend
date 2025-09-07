@@ -448,12 +448,6 @@ export class UserService extends BaseService {
           create: { followerId, followingId },
           update: {},
         }).catch(() => null);
-
-        await tx.follow.upsert({
-          where: { followerId_followingId: { followerId, followingId } },
-          create: { followerId, followingId },
-          update: {},
-        }).catch(() => null);
       });
 
       await this.invalidateCache(`user:${followerId}:following*`);
@@ -475,7 +469,6 @@ export class UserService extends BaseService {
 
       await this.prisma.$transaction(async (tx) => {
         await tx.userFollow.deleteMany({ where: { followerId, followingId } });
-        await tx.follow.deleteMany({ where: { followerId, followingId } });
       });
 
       await this.invalidateCache(`user:${followerId}:following*`);
@@ -535,6 +528,7 @@ export class UserService extends BaseService {
       userId: user.id,
       email: user.email,
       userType: user.userType,
+      aud: 'web',
     };
 
     const accessToken = jwt.sign(payload, config.jwt.secret, {

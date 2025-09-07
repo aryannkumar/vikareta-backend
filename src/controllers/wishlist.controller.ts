@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import { prisma } from '@/config/database';
-import { logger } from '../utils/logger';
-import { redisClient } from '../config/redis';
+import { logger } from '@/utils/logger';
+import { wishlistService } from '@/services/wishlist.service';
 
 export class WishlistController {
     async getWishlist(req: Request, res: Response): Promise<void> {
@@ -16,146 +15,11 @@ export class WishlistController {
             }
 
             const { page = 1, limit = 20, type } = req.query;
-            const pageNum = parseInt(page as string);
-            const limitNum = parseInt(limit as string);
-            const skip = (pageNum - 1) * limitNum;
-
-            // Build where clause based on type filter
-            const where: any = { userId };
-            if (type === 'products') {
-                where.productId = { not: null };
-            } else if (type === 'services') {
-                where.serviceId = { not: null };
-            } else if (type === 'businesses') {
-                where.businessId = { not: null };
-            }
-
-            const [wishlistItems, total] = await Promise.all([
-                prisma.wishlist.findMany({
-                    where,
-                    include: {
-                        product: {
-                            include: {
-                                seller: {
-                                    select: {
-                                        id: true,
-                                        businessName: true,
-                                        firstName: true,
-                                        lastName: true,
-                                        avatar: true,
-                                        verificationTier: true,
-                                        isVerified: true,
-                                    },
-                                },
-                                media: {
-                                    take: 1,
-                                    orderBy: { sortOrder: 'asc' },
-                                },
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        slug: true,
-                                    },
-                                },
-                                subcategory: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        slug: true,
-                                    },
-                                },
-                            },
-                        },
-                        service: {
-                            include: {
-                                provider: {
-                                    select: {
-                                        id: true,
-                                        businessName: true,
-                                        firstName: true,
-                                        lastName: true,
-                                        avatar: true,
-                                        verificationTier: true,
-                                        isVerified: true,
-                                    },
-                                },
-                                media: {
-                                    take: 1,
-                                    orderBy: { sortOrder: 'asc' },
-                                },
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        slug: true,
-                                    },
-                                },
-                                subcategory: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        slug: true,
-                                    },
-                                },
-                            },
-                        },
-                        business: {
-                            select: {
-                                id: true,
-                                businessName: true,
-                                firstName: true,
-                                lastName: true,
-                                avatar: true,
-                                verificationTier: true,
-                                isVerified: true,
-                                location: true,
-                                city: true,
-                                state: true,
-                            },
-                        },
-                    },
-                    orderBy: { createdAt: 'desc' },
-                    skip,
-                    take: limitNum,
-                }),
-                prisma.wishlist.count({ where }),
-            ]);
-
-            // Group items by type for better organization
-            const groupedItems = {
-                products: wishlistItems.filter((item: any) => item.product).map((item: any) => ({
-                    id: item.id,
-                    type: 'product',
-                    addedAt: item.createdAt,
-                    item: item.product,
-                })),
-                services: wishlistItems.filter((item: any) => item.service).map((item: any) => ({
-                    id: item.id,
-                    type: 'service',
-                    addedAt: item.createdAt,
-                    item: item.service,
-                })),
-                businesses: wishlistItems.filter((item: any) => item.business).map((item: any) => ({
-                    id: item.id,
-                    type: 'business',
-                    addedAt: item.createdAt,
-                    item: item.business,
-                })),
-            };
-
+            const result = await wishlistService.getWishlist(userId, { page: Number(page), limit: Number(limit), type: type as string | undefined });
             res.status(200).json({
                 success: true,
                 message: 'Wishlist retrieved successfully',
-                data: {
-                    items: type ? wishlistItems : groupedItems,
-                    total,
-                    page: pageNum,
-                    limit: limitNum,
-                    totalPages: Math.ceil(total / limitNum),
-                    hasNext: pageNum < Math.ceil(total / limitNum),
-                    hasPrev: pageNum > 1,
-                },
+                data: result,
             });
         } catch (error) {
             logger.error('Error getting wishlist:', error);
@@ -177,55 +41,7 @@ export class WishlistController {
                 return;
             }
 
-            // Check if product exists
-            const product = await prisma.product.findUnique({
-                where: { id: productId },
-            });
-
-            if (!product) {
-                res.status(404).json({ error: 'Product not found' });
-                return;
-            }
-
-            // Check if already in wishlist
-            const existingItem = await prisma.wishlist.findUnique({
-                where: {
-                    userId_productId: {
-                        userId,
-                        productId,
-                    },
-                },
-            });
-
-            if (existingItem) {
-                res.status(400).json({ error: 'Product already in wishlist' });
-                return;
-            }
-
-            const wishlistItem = await prisma.wishlist.create({
-                data: {
-                    userId,
-                    productId,
-                },
-                include: {
-                    product: {
-                        include: {
-                            seller: {
-                                select: {
-                                    id: true,
-                                    businessName: true,
-                                    firstName: true,
-                                    lastName: true,
-                                },
-                            },
-                            media: {
-                                take: 1,
-                                orderBy: { sortOrder: 'asc' },
-                            },
-                        },
-                    },
-                },
-            });
+            const wishlistItem = await wishlistService.add(userId, { productId });
 
             res.status(201).json({
                 success: true,
@@ -248,17 +64,7 @@ export class WishlistController {
                 return;
             }
 
-            const deleted = await prisma.wishlist.deleteMany({
-                where: {
-                    userId,
-                    productId,
-                },
-            });
-
-            if (deleted.count === 0) {
-                res.status(404).json({ error: 'Product not found in wishlist' });
-                return;
-            }
+            await wishlistService.removeByReference(userId, { productId });
 
             res.status(200).json({
                 success: true,
@@ -280,55 +86,7 @@ export class WishlistController {
                 return;
             }
 
-            // Check if service exists
-            const service = await prisma.service.findUnique({
-                where: { id: serviceId },
-            });
-
-            if (!service) {
-                res.status(404).json({ error: 'Service not found' });
-                return;
-            }
-
-            // Check if already in wishlist
-            const existingItem = await prisma.wishlist.findUnique({
-                where: {
-                    userId_serviceId: {
-                        userId,
-                        serviceId,
-                    },
-                },
-            });
-
-            if (existingItem) {
-                res.status(400).json({ error: 'Service already in wishlist' });
-                return;
-            }
-
-            const wishlistItem = await prisma.wishlist.create({
-                data: {
-                    userId,
-                    serviceId,
-                },
-                include: {
-                    service: {
-                        include: {
-                            provider: {
-                                select: {
-                                    id: true,
-                                    businessName: true,
-                                    firstName: true,
-                                    lastName: true,
-                                },
-                            },
-                            media: {
-                                take: 1,
-                                orderBy: { sortOrder: 'asc' },
-                            },
-                        },
-                    },
-                },
-            });
+            const wishlistItem = await wishlistService.add(userId, { serviceId });
 
             res.status(201).json({
                 success: true,
@@ -351,17 +109,7 @@ export class WishlistController {
                 return;
             }
 
-            const deleted = await prisma.wishlist.deleteMany({
-                where: {
-                    userId,
-                    serviceId,
-                },
-            });
-
-            if (deleted.count === 0) {
-                res.status(404).json({ error: 'Service not found in wishlist' });
-                return;
-            }
+            await wishlistService.removeByReference(userId, { serviceId });
 
             res.status(200).json({
                 success: true,
@@ -383,50 +131,7 @@ export class WishlistController {
                 return;
             }
 
-            // Check if business exists
-            const business = await prisma.user.findUnique({
-                where: { id: businessId },
-            });
-
-            if (!business) {
-                res.status(404).json({ error: 'Business not found' });
-                return;
-            }
-
-            // Check if already in wishlist
-            const existingItem = await prisma.wishlist.findUnique({
-                where: {
-                    userId_businessId: {
-                        userId,
-                        businessId,
-                    },
-                },
-            });
-
-            if (existingItem) {
-                res.status(400).json({ error: 'Business already in wishlist' });
-                return;
-            }
-
-            const wishlistItem = await prisma.wishlist.create({
-                data: {
-                    userId,
-                    businessId,
-                },
-                include: {
-                    business: {
-                        select: {
-                            id: true,
-                            businessName: true,
-                            firstName: true,
-                            lastName: true,
-                            avatar: true,
-                            verificationTier: true,
-                            isVerified: true,
-                        },
-                    },
-                },
-            });
+            const wishlistItem = await wishlistService.add(userId, { businessId });
 
             res.status(201).json({
                 success: true,
@@ -449,17 +154,7 @@ export class WishlistController {
                 return;
             }
 
-            const deleted = await prisma.wishlist.deleteMany({
-                where: {
-                    userId,
-                    businessId,
-                },
-            });
-
-            if (deleted.count === 0) {
-                res.status(404).json({ error: 'Business not found in wishlist' });
-                return;
-            }
+            await wishlistService.removeByReference(userId, { businessId });
 
             res.status(200).json({
                 success: true,
@@ -492,151 +187,9 @@ export class WishlistController {
                 return;
             }
 
-            // Validate that the item exists
-            if (productId) {
-                const product = await prisma.product.findFirst({
-                    where: { id: productId, isActive: true },
-                });
-                if (!product) {
-                    res.status(404).json({
-                        success: false,
-                        error: 'Product not found'
-                    });
-                    return;
-                }
-            }
+            const wishlistItem = await wishlistService.add(userId, { productId, serviceId, businessId });
 
-            if (serviceId) {
-                const service = await prisma.service.findFirst({
-                    where: { id: serviceId, isActive: true },
-                });
-                if (!service) {
-                    res.status(404).json({
-                        success: false,
-                        error: 'Service not found'
-                    });
-                    return;
-                }
-            }
-
-            if (businessId) {
-                const business = await prisma.user.findFirst({
-                    where: {
-                        id: businessId,
-                        isActive: true,
-                        role: { in: ['SELLER', 'SERVICE_PROVIDER'] }
-                    },
-                });
-                if (!business) {
-                    res.status(404).json({
-                        success: false,
-                        error: 'Business not found'
-                    });
-                    return;
-                }
-            }
-
-            // Check if item already exists in wishlist
-            const existingItem = await prisma.wishlist.findFirst({
-                where: {
-                    userId,
-                    ...(productId && { productId }),
-                    ...(serviceId && { serviceId }),
-                    ...(businessId && { businessId }),
-                },
-            });
-
-            if (existingItem) {
-                res.status(409).json({
-                    success: false,
-                    error: 'Item already in wishlist'
-                });
-                return;
-            }
-
-            const wishlistItem = await prisma.wishlist.create({
-                data: {
-                    userId,
-                    ...(productId && { productId }),
-                    ...(serviceId && { serviceId }),
-                    ...(businessId && { businessId }),
-                },
-                include: {
-                    product: {
-                        include: {
-                            seller: {
-                                select: {
-                                    id: true,
-                                    businessName: true,
-                                    firstName: true,
-                                    lastName: true,
-                                    avatar: true,
-                                    verificationTier: true,
-                                    isVerified: true,
-                                },
-                            },
-                            category: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    slug: true,
-                                },
-                            },
-                            media: {
-                                take: 1,
-                                orderBy: { sortOrder: 'asc' },
-                            },
-                        },
-                    },
-                    service: {
-                        include: {
-                            provider: {
-                                select: {
-                                    id: true,
-                                    businessName: true,
-                                    firstName: true,
-                                    lastName: true,
-                                    avatar: true,
-                                    verificationTier: true,
-                                    isVerified: true,
-                                },
-                            },
-                            category: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    slug: true,
-                                },
-                            },
-                            media: {
-                                take: 1,
-                                orderBy: { sortOrder: 'asc' },
-                            },
-                        },
-                    },
-                    business: {
-                        select: {
-                            id: true,
-                            businessName: true,
-                            firstName: true,
-                            lastName: true,
-                            avatar: true,
-                            verificationTier: true,
-                            isVerified: true,
-                            city: true,
-                            state: true,
-                            role: true,
-                        },
-                    },
-                },
-            });
-
-            // Clear user's wishlist cache
-            try {
-                await redisClient.del(`wishlist:${userId}`);
-            } catch (cacheError) {
-                logger.warn('Failed to clear wishlist cache:', cacheError);
-            }
+            // Cache invalidation handled inside service
 
             res.status(201).json({
                 success: true,
@@ -666,27 +219,7 @@ export class WishlistController {
                 return;
             }
 
-            const deleted = await prisma.wishlist.deleteMany({
-                where: {
-                    id: itemId,
-                    userId,
-                },
-            });
-
-            if (deleted.count === 0) {
-                res.status(404).json({
-                    success: false,
-                    error: 'Item not found in wishlist'
-                });
-                return;
-            }
-
-            // Clear user's wishlist cache
-            try {
-                await redisClient.del(`wishlist:${userId}`);
-            } catch (cacheError) {
-                logger.warn('Failed to clear wishlist cache:', cacheError);
-            }
+            await wishlistService.remove(userId, itemId);
 
             res.status(200).json({
                 success: true,
@@ -714,23 +247,12 @@ export class WishlistController {
                 return;
             }
 
-            const deleted = await prisma.wishlist.deleteMany({
-                where: { userId },
-            });
-
-            // Clear user's wishlist cache
-            try {
-                await redisClient.del(`wishlist:${userId}`);
-            } catch (cacheError) {
-                logger.warn('Failed to clear wishlist cache:', cacheError);
-            }
+            const deletedCount = await wishlistService.clear(userId);
 
             res.status(200).json({
                 success: true,
-                message: `Cleared ${deleted.count} items from wishlist`,
-                data: {
-                    deletedCount: deleted.count,
-                },
+                message: `Cleared ${deletedCount} items from wishlist`,
+                data: { deletedCount },
             });
         } catch (error) {
             logger.error('Error clearing wishlist:', error);
@@ -754,29 +276,12 @@ export class WishlistController {
                 return;
             }
 
-            const [productCount, serviceCount, businessCount] = await Promise.all([
-                prisma.wishlist.count({
-                    where: { userId, productId: { not: null } },
-                }),
-                prisma.wishlist.count({
-                    where: { userId, serviceId: { not: null } },
-                }),
-                prisma.wishlist.count({
-                    where: { userId, businessId: { not: null } },
-                }),
-            ]);
-
-            const totalCount = productCount + serviceCount + businessCount;
+            const stats = await wishlistService.stats(userId);
 
             res.status(200).json({
                 success: true,
                 message: 'Wishlist statistics retrieved successfully',
-                data: {
-                    total: totalCount,
-                    products: productCount,
-                    services: serviceCount,
-                    businesses: businessCount,
-                },
+                data: stats,
             });
         } catch (error) {
             logger.error('Error getting wishlist stats:', error);
@@ -809,23 +314,11 @@ export class WishlistController {
                 return;
             }
 
-            const wishlistItem = await prisma.wishlist.findFirst({
-                where: {
-                    userId,
-                    ...(productId && { productId: productId as string }),
-                    ...(serviceId && { serviceId: serviceId as string }),
-                    ...(businessId && { businessId: businessId as string }),
-                },
-            });
-
+            const wishlistItem = await wishlistService.status(userId, { productId: productId as string | undefined, serviceId: serviceId as string | undefined, businessId: businessId as string | undefined });
             res.status(200).json({
                 success: true,
                 message: 'Wishlist status checked successfully',
-                data: {
-                    inWishlist: !!wishlistItem,
-                    wishlistItemId: wishlistItem?.id || null,
-                    addedAt: wishlistItem?.createdAt || null,
-                },
+                data: wishlistItem,
             });
         } catch (error) {
             logger.error('Error checking wishlist status:', error);

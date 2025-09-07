@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { ProductController } from '@/controllers/product.controller';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth-middleware';
-import { validatePagination, validateSort } from '../middleware/validation-middleware';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware';
+import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
+import { productCreateSchema, productUpdateSchema, productIdParamsSchema, productListQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -25,7 +26,7 @@ const productController = new ProductController();
  *       200:
  *         description: Product list
  */
-router.get('/', optionalAuthMiddleware, validatePagination, validateSort(['price', 'createdAt', 'title']), asyncHandler(productController.getProducts.bind(productController)));
+router.get('/', optionalAuthMiddleware, validateQuery(productListQuerySchema), asyncHandler(productController.getProducts.bind(productController)));
 
 /**
  * @openapi
@@ -83,7 +84,7 @@ router.get('/featured', asyncHandler(productController.getFeaturedProducts.bind(
  *                 data:
  *                   $ref: '#/components/schemas/Product'
  */
-router.get('/:id', optionalAuthMiddleware, asyncHandler(productController.getProductById.bind(productController)));
+router.get('/:id', optionalAuthMiddleware, validateParams(productIdParamsSchema), asyncHandler(productController.getProductById.bind(productController)));
 
 /**
  * @openapi
@@ -119,8 +120,8 @@ router.get('/:id', optionalAuthMiddleware, asyncHandler(productController.getPro
 // Protected routes
 router.use(authMiddleware);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-router.post('/', upload.array('images', 10), asyncHandler(productController.createProduct.bind(productController)));
-router.put('/:id', upload.array('images', 10), asyncHandler(productController.updateProduct.bind(productController)));
-router.delete('/:id', asyncHandler(productController.deleteProduct.bind(productController)));
+router.post('/', upload.array('images', 10), validateBody(productCreateSchema), asyncHandler(productController.createProduct.bind(productController)));
+router.put('/:id', upload.array('images', 10), validateParams(productIdParamsSchema), validateBody(productUpdateSchema), asyncHandler(productController.updateProduct.bind(productController)));
+router.delete('/:id', validateParams(productIdParamsSchema), asyncHandler(productController.deleteProduct.bind(productController)));
 
 export { router as productRoutes };
