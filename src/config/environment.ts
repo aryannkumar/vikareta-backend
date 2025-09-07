@@ -10,6 +10,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).default(5001),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  LOG_DIR: z.string().default('/tmp/logs'),
 
   // Database
   DATABASE_URL: z.string(),
@@ -94,6 +95,7 @@ export const config = {
   env: env.NODE_ENV,
   port: env.PORT,
   logLevel: env.LOG_LEVEL,
+  logDir: env.LOG_DIR,
 
   database: {
     url: env.DATABASE_URL,

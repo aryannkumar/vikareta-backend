@@ -45,7 +45,7 @@ transports.push(new winston.transports.Console({
 
 // If LOG_DIR is set, try to use it; otherwise attempt to create 'logs' but
 // gracefully handle permission errors and skip file transports.
-const logDir = process.env.LOG_DIR || 'logs';
+const logDir = config.logDir;
 try {
   // Attempt to require fs here to perform a quick writable check
   // eslint-disable-next-line @typescript-eslint/no-var-requires

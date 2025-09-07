@@ -516,6 +516,7 @@ export const ssoExchangeSchema = z.object({
 
 // Onboarding Schemas
 export const onboardingProfileSchema = z.object({
+  userType: z.enum(['buyer', 'seller', 'business', 'both']).optional(),
   firstName: z.string().min(2).max(50).optional(),
   lastName: z.string().min(2).max(50).optional(),
   businessName: z.string().min(2).max(100).optional(),
@@ -530,42 +531,14 @@ export const onboardingProfileSchema = z.object({
   longitude: z.number().min(-180).max(180).optional(),
   avatar: z.string().url().optional(),
 });
+
 export const onboardingBusinessSectionSchema = z.object({
-  companyName: z.string().min(2).max(150).optional(),
-  businessType: z.string().max(100).optional(),
-  industry: z.string().max(100).optional(),
-  description: z.string().max(1000).optional(),
-  logo: z.string().url().optional(),
-  website: z.string().url().optional(),
-  email: z.string().email().optional(),
-  phone: z.string().min(5).max(20).optional(),
-  address: z.object({
-    street: z.string().max(255).optional(),
-    city: z.string().max(100).optional(),
-    state: z.string().max(100).optional(),
-    country: z.string().max(100).optional(),
-    postalCode: z.string().max(20).optional(),
-  }).optional(),
-  taxInfo: z.object({
-    taxId: z.string().max(50).optional(),
-    gstNumber: z.string().max(20).optional(),
-    panNumber: z.string().max(20).optional(),
-  }).optional(),
-  bankDetails: z.object({
-    accountName: z.string().max(150).optional(),
-    accountNumber: z.string().max(50).optional(),
-    bankName: z.string().max(150).optional(),
-    ifscCode: z.string().max(20).optional(),
-    swiftCode: z.string().max(20).optional(),
-  }).optional(),
-  documents: z.array(z.object({
-    type: z.string().max(50),
-    url: z.string().url(),
-    verified: z.boolean().optional(),
-  })).optional(),
+  section: z.enum(['basic', 'tax', 'bank', 'documents', 'verification', 'settings']),
+  data: z.record(z.string(), z.any()),
 });
+
 export const onboardingSectionParamsSchema = z.object({
-  section: z.enum(['profile', 'verification', 'tax', 'bank', 'documents', 'subscription', 'security']),
+  section: z.enum(['basic', 'tax', 'bank', 'documents', 'verification', 'settings']),
 });
 export const digilockerDocumentCreateSchema = z.object({
   docId: z.string().min(2).max(255),
@@ -616,4 +589,13 @@ export const marketplaceQuerySchema = paginationQuerySchema.extend({
   q: z.string().min(1).max(255).optional(),
   minPrice: z.coerce.number().min(0).optional(),
   maxPrice: z.coerce.number().min(0).optional(),
+});
+
+// Business Document Upload Schema
+export const businessDocumentUploadSchema = z.object({
+  documentType: z.enum(['gst_certificate', 'pan_card', 'aadhar_card', 'business_license', 'address_proof', 'bank_statement', 'other']),
+  documentUrl: z.string().url(),
+  documentNumber: z.string().min(5).max(100).optional(),
+  expiryDate: z.string().datetime().optional(),
+  digilockerUri: z.string().optional(),
 });
