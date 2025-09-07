@@ -8,7 +8,10 @@ import { asyncHandler } from '@/middleware/error-handler';
 const router = Router();
 const rfqController = new RfqController();
 
-// All routes require authentication
+// Public routes (no authentication required)
+router.get('/public/recent', asyncHandler(rfqController.getPublicRecentRfqs.bind(rfqController)));
+
+// All other routes require authentication
 router.use(authMiddleware);
 
 /**

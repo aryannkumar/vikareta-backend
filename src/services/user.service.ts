@@ -531,11 +531,11 @@ export class UserService extends BaseService {
       aud: 'web',
     };
 
-    const accessToken = jwt.sign(payload, config.jwt.secret, {
+    const accessToken = jwt.sign(payload, config.jwt.secret || 'fallback-secret', {
       expiresIn: config.jwt.accessExpires,
     });
 
-    const refreshToken = jwt.sign(payload, config.jwt.refreshSecret, {
+    const refreshToken = jwt.sign(payload, config.jwt.refreshSecret || 'fallback-refresh-secret', {
       expiresIn: config.jwt.refreshExpires,
     });
 

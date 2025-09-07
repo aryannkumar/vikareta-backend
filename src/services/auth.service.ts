@@ -114,7 +114,7 @@ export class AuthService extends BaseService {
   async refreshToken(refreshToken: string): Promise<{ accessToken: string }> {
     try {
       // Verify refresh token
-      const decoded = jwt.verify(refreshToken, config.jwt.refreshSecret) as any;
+      const decoded = jwt.verify(refreshToken, config.jwt.refreshSecret || 'fallback-refresh-secret') as any;
 
       // Get user
       const user = await this.userService.getUserById(decoded.userId);
@@ -714,7 +714,7 @@ export class AuthService extends BaseService {
       aud: 'web',
     };
 
-    return jwt.sign(payload, config.jwt.secret, {
+    return jwt.sign(payload, config.jwt.secret || 'fallback-secret', {
       expiresIn: config.jwt.accessExpires,
     });
   }

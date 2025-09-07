@@ -206,4 +206,21 @@ export class RfqController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  async getPublicRecentRfqs(req: Request, res: Response): Promise<void> {
+    try {
+      const { limit = 5 } = req.query;
+
+      const result = await rfqService.getPublicRecentRfqs(parseInt(limit as string));
+
+      res.status(200).json({
+        success: true,
+        message: 'Public recent RFQs retrieved successfully',
+        data: result,
+      });
+    } catch (error) {
+      logger.error('Error getting public recent RFQs:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }

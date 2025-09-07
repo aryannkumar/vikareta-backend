@@ -24,7 +24,7 @@ export const setupWebSocket = (io: SocketIOServer | any): void => {
         return next(new Error('Authentication token required'));
       }
 
-      const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
+      const decoded = jwt.verify(token, config.jwt.secret || 'fallback-secret') as JWTPayload;
       
       // Verify user exists and is active
       const user = await prisma.user.findUnique({

@@ -362,6 +362,38 @@ export class RfqService extends BaseService {
       logger.error('Error notifying relevant sellers:', error);
     }
   }
+
+  async getPublicRecentRfqs(limit = 5): Promise<Array<{ id: string; title: string; quantity: number | null; budgetMin: number | null; budgetMax: number | null; createdAt: string }>> {
+    const rfqs = await this.prisma.rfq.findMany({
+      where: {
+        status: 'active',
+        expiresAt: {
+          gt: new Date(), // Only active RFQs that haven't expired
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+        quantity: true,
+        budgetMin: true,
+        budgetMax: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit,
+    });
+
+    return rfqs.map(rfq => ({
+      id: rfq.id,
+      title: rfq.title,
+      quantity: rfq.quantity,
+      budgetMin: rfq.budgetMin ? Number(rfq.budgetMin) : null,
+      budgetMax: rfq.budgetMax ? Number(rfq.budgetMax) : null,
+      createdAt: rfq.createdAt.toISOString(),
+    }));
+  }
 }
 
 export const rfqService = new RfqService();
