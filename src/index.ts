@@ -52,6 +52,9 @@ class Application {
   }
 
   private setupMiddleware(): void {
+    // Trust proxy (important for rate limiting behind reverse proxy like Coolify)
+    this.app.set('trust proxy', 1);
+
     // Security middleware
     this.app.use(helmet({
       contentSecurityPolicy: {
@@ -111,7 +114,7 @@ class Application {
     const speedLimiter = slowDown({
       windowMs: 15 * 60 * 1000, // 15 minutes
       delayAfter: 100, // allow 100 requests per 15 minutes, then...
-      delayMs: 500, // begin adding 500ms of delay per request above 100
+      delayMs: () => 500, // begin adding 500ms of delay per request above 100
     });
     this.app.use('/api/', speedLimiter);
 
@@ -406,7 +409,8 @@ class Application {
     // Subscribe to Redis notifications for real-time updates using a duplicated client
     try {
       const subscriber = (redisClient as any).duplicate();
-      if (typeof subscriber.connect === 'function') {
+      // Only connect if not already connected
+      if (subscriber.status !== 'ready' && subscriber.status !== 'connecting') {
         await subscriber.connect();
       }
 

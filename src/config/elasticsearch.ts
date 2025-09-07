@@ -12,6 +12,9 @@ export const elasticsearchClient = new Client({
   requestTimeout: 30000,
   pingTimeout: 3000,
   maxRetries: 3,
+  tls: {
+    rejectUnauthorized: false, // Allow self-signed certificates
+  },
 });
 
 // Elasticsearch indices configuration

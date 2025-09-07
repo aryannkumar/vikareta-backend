@@ -54,7 +54,7 @@ export class CacheService {
             if (raw === null) return null;
             try {
                 return JSON.parse(raw) as T;
-            } catch (e) {
+            } catch {
                 // If not JSON, return the raw string
                 return (raw as unknown) as T;
             }
@@ -305,6 +305,16 @@ export const cacheHelper = CacheService;
 // Initialize Redis connection
 export const initializeRedis = async (): Promise<boolean> => {
     try {
+        // Check if already connected
+        if (redisClient.status === 'ready') {
+            logger.info('Redis already connected');
+            return true;
+        }
+        // Only connect if not already connecting or ready
+        if (redisClient.status === 'connecting') {
+            logger.info('Redis is already connecting, waiting...');
+            return true;
+        }
         await redisClient.connect();
         logger.info('Redis connection initialized successfully');
         return true;
