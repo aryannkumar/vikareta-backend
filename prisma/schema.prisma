@@ -165,8 +165,8 @@ model User {
 // ================================
 
 model Category {
-  id          String    @id @default(cuid()) @db.VarChar(50)
-  parentId    String?   @map("parent_id") @db.VarChar(50)
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentId    String?   @map("parent_id") @db.Uuid
   name        String    @db.VarChar(255)
   slug        String    @unique @db.VarChar(255)
   description String?   @db.Text
@@ -189,8 +189,8 @@ model Category {
 }
 
 model Subcategory {
-  id          String    @id @default(cuid()) @db.VarChar(50)
-  categoryId  String    @map("category_id") @db.VarChar(50)
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  categoryId  String    @map("category_id") @db.Uuid
   name        String    @db.VarChar(255)
   slug        String    @unique @db.VarChar(255)
   description String?   @db.Text
@@ -214,8 +214,8 @@ model Product {
   sellerId         String    @map("seller_id") @db.Uuid
   title            String    @db.VarChar(255)
   description      String?   @db.Text
-  categoryId       String    @map("category_id") @db.VarChar(50)
-  subcategoryId    String?   @map("subcategory_id") @db.VarChar(50)
+  categoryId       String    @map("category_id") @db.Uuid
+  subcategoryId    String?   @map("subcategory_id") @db.Uuid
   price            Decimal   @db.Decimal(10, 2)
   currency         String    @default("INR") @db.VarChar(3)
   stockQuantity    Int       @default(0) @map("stock_quantity")
@@ -299,8 +299,8 @@ model Service {
   providerId    String    @map("provider_id") @db.Uuid
   title         String    @db.VarChar(255)
   description   String?   @db.Text
-  categoryId    String    @map("category_id") @db.VarChar(50)
-  subcategoryId String?   @map("subcategory_id") @db.VarChar(50)
+  categoryId    String    @map("category_id") @db.Uuid
+  subcategoryId String?   @map("subcategory_id") @db.Uuid
   price         Decimal   @db.Decimal(10, 2)
   currency      String    @default("INR") @db.VarChar(3)
   duration      String?   @db.VarChar(100)
@@ -364,8 +364,8 @@ model Rfq {
   buyerId          String    @map("buyer_id") @db.Uuid
   title            String    @db.VarChar(255)
   description      String?   @db.Text
-  categoryId       String    @map("category_id") @db.VarChar(50)
-  subcategoryId    String?   @map("subcategory_id") @db.VarChar(50)
+  categoryId       String    @map("category_id") @db.Uuid
+  subcategoryId    String?   @map("subcategory_id") @db.Uuid
   quantity         Int?
   budgetMin        Decimal?  @map("budget_min") @db.Decimal(10, 2)
   budgetMax        Decimal?  @map("budget_max") @db.Decimal(10, 2)
@@ -1455,7 +1455,7 @@ model Wishlist {
 // ================================
 
 model Announcement {
-  id              String   @id @default(cuid())
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title           String
   content         String
   type            String   // 'info', 'warning', 'success', 'urgent'
@@ -1466,7 +1466,7 @@ model Announcement {
   expiresAt       DateTime?
   viewCount       Int      @default(0)
   clickCount      Int      @default(0)
-  authorId        String   @db.Uuid
+  authorId        String   @map("author_id") @db.Uuid
   author          User     @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1475,8 +1475,8 @@ model Announcement {
 }
 
 model BusinessProfile {
-  id           String   @id @default(cuid())
-  userId       String   @unique @db.Uuid
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @unique @map("user_id") @db.Uuid
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   companyName  String
   businessType String?
@@ -1498,8 +1498,8 @@ model BusinessProfile {
 }
 
 model SecuritySettings {
-  id             String   @id @default(cuid())
-  userId         String   @unique @db.Uuid
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @unique @map("user_id") @db.Uuid
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   twoFactorAuth  Json     // { enabled, method, backupCodes, lastUsed }
   passwordPolicy Json     // { requireUppercase, requireLowercase, etc }
@@ -1512,8 +1512,8 @@ model SecuritySettings {
 }
 
 model NotificationSettings {
-  id          String   @id @default(cuid())
-  userId      String   @unique @db.Uuid
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @unique @map("user_id") @db.Uuid
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   email       Json     // { enabled, address, frequency, categories }
   sms         Json     // { enabled, phoneNumber, categories }
@@ -1528,8 +1528,8 @@ model NotificationSettings {
 }
 
 model Integration {
-  id          String    @id @default(cuid())
-  userId      String    @db.Uuid
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider    String    // 'stripe', 'paypal', 'fedex', etc
   status      String    @default("disconnected") // 'connected', 'disconnected', 'error', 'pending'
@@ -1546,8 +1546,8 @@ model Integration {
 }
 
 model Webhook {
-  id           String    @id @default(cuid())
-  userId       String    @db.Uuid
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String
   url          String
@@ -1566,8 +1566,8 @@ model Webhook {
 }
 
 model WebhookAttempt {
-  id          String   @id @default(cuid())
-  webhookId   String   @db.Uuid
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhookId   String   @map("webhook_id") @db.Uuid
   webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
   event       String
   status      String   // success | failure
@@ -1582,8 +1582,8 @@ model WebhookAttempt {
 }
 
 model ApiKey {
-  id          String    @id @default(cuid())
-  userId      String    @db.Uuid
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
   key         String    @unique
@@ -1598,8 +1598,8 @@ model ApiKey {
 }
 
 model Warehouse {
-  id        String      @id @default(cuid())
-  userId    String      @db.Uuid
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
   location  String
@@ -1613,10 +1613,10 @@ model Warehouse {
 }
 
 model Inventory {
-  id                    String              @id @default(cuid())
-  productId             String              @db.Uuid
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId             String              @map("product_id") @db.Uuid
   product               Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
-  warehouseId           String
+  warehouseId           String              @map("warehouse_id") @db.Uuid
   warehouse             Warehouse           @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   available             Int                 @default(0)
   reserved              Int                 @default(0)
@@ -1638,14 +1638,14 @@ model Inventory {
 }
 
 model InventoryMovement {
-  id          String    @id @default(cuid())
-  inventoryId String
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inventoryId String    @map("inventory_id") @db.Uuid
   inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
   type        String    // 'in', 'out', 'adjustment', 'transfer'
   quantity    Int
   reason      String
   reference   String?   // Order ID, Transfer ID, etc
-  userId      String    @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime  @default(now())
 
@@ -1653,8 +1653,8 @@ model InventoryMovement {
 }
 
 model SecurityEvent {
-  id          String   @id @default(cuid())
-  userId      String   @db.Uuid
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   type        String   // 'login', 'password_change', 'failed_login', etc
   description String
@@ -1668,8 +1668,8 @@ model SecurityEvent {
 }
 
 model LoginSession {
-  id           String   @id @default(cuid())
-  userId       String   @db.Uuid
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessionToken String   @unique
   deviceInfo   Json     // { browser, os, device }
