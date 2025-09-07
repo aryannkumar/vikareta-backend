@@ -132,7 +132,7 @@
     "@": "dist"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node --esm prisma/seed.ts"
   },
   "keywords": [
     "b2b",
