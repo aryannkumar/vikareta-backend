@@ -49,6 +49,7 @@ import ssoRoutes from './sso.routes';
 import onboardingRoutes from './onboarding.routes';
 import personalizationRoutes from './personalization.routes';
 import usageLimitsRoutes from './usage-limits.routes';
+import marketplaceRoutes from './marketplace.routes';
 
 // Import existing routes that are available
 // import authRoutes from './auth.routes';
@@ -116,6 +117,7 @@ export const setupRoutes = (app: Application): void => {
   app.use(`${API_PREFIX}/personalization`, personalizationRoutes);
   app.use(`${API_PREFIX}/onboarding`, onboardingRoutes);
   app.use(`${API_PREFIX}/usage-limits`, usageLimitsRoutes);
+  app.use(`${API_PREFIX}/marketplace`, marketplaceRoutes);
 
   // Root endpoint
   app.get('/', (req, res) => {

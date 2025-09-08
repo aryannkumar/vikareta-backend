@@ -589,6 +589,8 @@ export const marketplaceQuerySchema = paginationQuerySchema.extend({
   q: z.string().min(1).max(255).optional(),
   minPrice: z.coerce.number().min(0).optional(),
   maxPrice: z.coerce.number().min(0).optional(),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
 });
 
 // Business Document Upload Schema

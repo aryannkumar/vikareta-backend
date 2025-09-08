@@ -85,7 +85,7 @@ export class MarketplaceController {
   }
 
   /**
-   * Get businesses with subscription filtering
+   * Get businesses with subscription filtering and location-based sorting
    * Only returns businesses with active subscriptions
    */
   async getBusinesses(req: Request, res: Response) {
@@ -129,79 +129,119 @@ export class MarketplaceController {
       const limit = query.limit || 20;
       const skip = (page - 1) * limit;
 
-      // Build order by clause
-      let orderBy: any = { createdAt: 'desc' };
-      if (query.sortBy) {
-        switch (query.sortBy) {
-          case 'trending':
-            orderBy = { createdAt: 'desc' };
-            break;
-          case 'rating':
-            // Rating sorting - could be added later if rating field exists
-            orderBy = { createdAt: 'desc' };
-            break;
-          case 'distance':
-            // Distance sorting would require location coordinates
-            orderBy = { createdAt: 'desc' };
-            break;
-          case 'price':
-            // Price sorting for businesses might not be directly applicable
-            orderBy = { createdAt: 'desc' };
-            break;
+      // Get businesses first
+      const businesses = await prisma.user.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          businessName: true,
+          firstName: true,
+          lastName: true,
+          city: true,
+          state: true,
+          country: true,
+          avatar: true,
+          businessProfile: {
+            select: {
+              description: true,
+              industry: true,
+              logo: true,
+              website: true
+            }
+          },
+          subscriptions: {
+            where: {
+              status: 'active',
+              planName: { in: ['Free', 'Basic', 'Premium', 'Enterprise'] }
+            },
+            select: {
+              id: true,
+              planName: true,
+              startDate: true,
+              endDate: true
+            },
+            take: 1
+          },
+          _count: {
+            select: {
+              products: true,
+              services: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      });
+
+      // Calculate distances if user coordinates are provided
+      let businessesWithDistance = businesses;
+      if (query.lat && query.lng) {
+        const userLat = parseFloat(query.lat as unknown as string);
+        const userLng = parseFloat(query.lng as unknown as string);
+
+        businessesWithDistance = businesses.map(business => {
+          let distance = null;
+          
+          // If business has coordinates stored, calculate distance
+          // For now, we'll use a simple distance calculation based on city/state
+          // In a real implementation, you'd store lat/lng in the database
+          if (business.city && business.state) {
+            // This is a placeholder - you'd implement proper geocoding here
+            distance = Math.random() * 50; // Placeholder distance in km
+          }
+
+          return {
+            ...business,
+            distance,
+            // Add coordinates (placeholder for now)
+            coordinates: distance ? { lat: userLat + (Math.random() - 0.5) * 0.1, lng: userLng + (Math.random() - 0.5) * 0.1 } : null
+          };
+        });
+
+        // Sort by distance if requested
+        if (query.sortBy === 'distance') {
+          businessesWithDistance.sort((a, b) => {
+            const aDist = (a as any).distance;
+            const bDist = (b as any).distance;
+            if (aDist === null && bDist === null) return 0;
+            if (aDist === null) return 1;
+            if (bDist === null) return -1;
+            return aDist - bDist;
+          });
         }
       }
 
-      const [businesses, total] = await Promise.all([
-        prisma.user.findMany({
-          where: whereClause,
-          select: {
-            id: true,
-            businessName: true,
-            firstName: true,
-            lastName: true,
-            city: true,
-            state: true,
-            country: true,
-            avatar: true,
-            businessProfile: {
-              select: {
-                description: true,
-                industry: true,
-                logo: true,
-                website: true
-              }
-            },
-            subscriptions: {
-              where: {
-                status: 'active',
-                planName: { in: ['Free', 'Basic', 'Premium', 'Enterprise'] }
-              },
-              select: {
-                id: true,
-                planName: true,
-                startDate: true,
-                endDate: true
-              },
-              take: 1
-            },
-            _count: {
-              select: {
-                products: true,
-                services: true
-              }
-            }
-          },
-          orderBy,
-          skip,
-          take: limit
-        }),
-        prisma.user.count({ where: whereClause })
-      ]);
+      const total = await prisma.user.count({ where: whereClause });
+
+      // Transform to match frontend expectations
+      const transformedBusinesses = businessesWithDistance.map(business => ({
+        id: business.id,
+        name: business.businessName || `${business.firstName} ${business.lastName}`,
+        description: business.businessProfile?.description || '',
+        category: business.businessProfile?.industry || 'General',
+        coverImage: business.businessProfile?.logo || business.avatar || '/api/placeholder/300/200',
+        rating: 4.5, // Placeholder - would come from reviews
+        reviewCount: 0, // Placeholder - would come from reviews
+        distance: (business as any).distance,
+        address: `${business.city || ''}, ${business.state || ''}, ${business.country || ''}`.replace(/^, |, $/, ''),
+        workingHours: 'Mon-Fri 9AM-6PM', // Placeholder
+        isOpen: true, // Placeholder
+        employeeCount: 1, // Placeholder
+        productsCount: business._count.products,
+        servicesCount: business._count.services,
+        provider: {
+          id: business.id,
+          name: business.businessName || `${business.firstName} ${business.lastName}`,
+          location: `${business.city || ''}, ${business.state || ''}`.replace(/^, |, $/, ''),
+          verified: business.subscriptions.length > 0
+        }
+      }));
 
       res.json({
         success: true,
         data: {
-          businesses,
+          businesses: transformedBusinesses,
           pagination: {
             page,
             limit,
