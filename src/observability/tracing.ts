@@ -8,23 +8,57 @@ let sdk: NodeSDK | null = null;
 
 export const startTracing = async () => {
   if (started) return;
+  
   try {
-  const jaegerUrl = process.env.JAEGER_ENDPOINT || 'http://localhost:14268/api/traces';
-    // If needed, resource attributes can be supplied via OTEL_RESOURCE_ATTRIBUTES env var.
-    // e.g. OTEL_RESOURCE_ATTRIBUTES="service.name=vikareta-backend,service.version=1.0.0,deployment.environment=${process.env.NODE_ENV}".
+    // Check if Jaeger is enabled
+    const jaegerEnabled = process.env.JAEGER_ENABLED !== 'false';
+    if (!jaegerEnabled) {
+      logger.info('Jaeger tracing disabled via JAEGER_ENABLED=false');
+      return;
+    }
+
+    const jaegerUrl = process.env.JAEGER_ENDPOINT || 'http://localhost:14268/api/traces';
+    const serviceName = process.env.SERVICE_NAME || 'vikareta-backend';
+    
+    logger.info(`Initializing Jaeger tracing to ${jaegerUrl}`);
+    logger.info(`Service name: ${serviceName}`);
+    logger.info(`Service version: ${process.env.npm_package_version || '1.0.0'}`);
+
+    // Create Jaeger exporter
+    const jaegerExporter = new JaegerExporter({ 
+      endpoint: jaegerUrl,
+    });
+
+    // Initialize SDK with service name via environment variable
+    process.env.OTEL_SERVICE_NAME = serviceName;
+    process.env.OTEL_SERVICE_VERSION = process.env.npm_package_version || '1.0.0';
+
     sdk = new NodeSDK({
-      traceExporter: new JaegerExporter({ endpoint: jaegerUrl }),
+      traceExporter: jaegerExporter,
       instrumentations: [getNodeAutoInstrumentations({
-        '@opentelemetry/instrumentation-http': { enabled: true },
-        '@opentelemetry/instrumentation-express': { enabled: true },
-        '@opentelemetry/instrumentation-fs': { enabled: false }
+        '@opentelemetry/instrumentation-http': { 
+          enabled: true,
+        },
+        '@opentelemetry/instrumentation-express': { 
+          enabled: true,
+        },
+        '@opentelemetry/instrumentation-fs': { enabled: false },
+        '@opentelemetry/instrumentation-dns': { enabled: false },
       })]
     });
+    
     await sdk.start();
     started = true;
-    logger.info('OpenTelemetry tracing started');
+    logger.info(`OpenTelemetry tracing started successfully for ${serviceName}`);
+    
   } catch (err: any) {
-    logger.warn('Tracing init failed (non-fatal):', err.message);
+    logger.error('Tracing initialization failed:', {
+      error: err.message,
+      stack: err.stack,
+      jaegerEndpoint: process.env.JAEGER_ENDPOINT,
+      serviceName: process.env.SERVICE_NAME
+    });
+    // Don't throw - tracing should be non-fatal
   }
 };
 

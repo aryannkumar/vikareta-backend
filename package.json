@@ -38,7 +38,6 @@
     "docker:run": "docker run -p 5001:5001 vikareta-backend",
     "security:audit": "npm audit --audit-level=high",
     "docs:generate": "typedoc --out docs/ src/",
-    "docs:swagger": "node -e \"console.log('Run the server and open http://localhost:5001/api-docs to view Swagger UI')\"",
     "clean": "rm -rf dist/ node_modules/ coverage/ docs/",
     "setup": "npm install && prisma generate && prisma migrate dev",
     "verify": "npm run type-check && npm run lint && npm run test"
