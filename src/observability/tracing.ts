@@ -17,7 +17,7 @@ export const startTracing = async () => {
       return;
     }
 
-    const jaegerUrl = process.env.JAEGER_ENDPOINT || 'http://localhost:14268/api/traces';
+    const jaegerUrl = process.env.JAEGER_ENDPOINT || 'http://jaeger.vikareta.com:14268/api/traces';
     const serviceName = process.env.SERVICE_NAME || 'vikareta-backend';
     
     logger.info(`Initializing Jaeger tracing to ${jaegerUrl}`);
@@ -49,7 +49,7 @@ export const startTracing = async () => {
     
     await sdk.start();
     started = true;
-    logger.info(`OpenTelemetry tracing started successfully for ${serviceName}`);
+    logger.info(`OpenTelemetry tracing started successfully for ${serviceName} using Jaeger exporter`);
     
   } catch (err: any) {
     logger.error('Tracing initialization failed:', {

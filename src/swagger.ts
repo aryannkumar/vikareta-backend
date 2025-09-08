@@ -467,71 +467,56 @@ try {
 }
 
 export function setupSwagger(app: Express) {
-  // Setup Swagger UI with better error handling
-  try {
-    // Mount Swagger UI
-    app.use('/api-docs', swaggerUi.serve);
-
-    // Serve Swagger UI HTML
-    app.get('/api-docs', (req: any, res: any) => {
-      const html = `<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Vikareta API Docs</title>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@4.5.0/swagger-ui.css" />
-  </head>
-  <body>
-    <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@4.5.0/swagger-ui-bundle.js"></script>
-    <script>
-      window.onload = function() {
-        const ui = SwaggerUIBundle({
-          url: '/api-docs/openapi.json',
-          dom_id: '#swagger-ui',
-          presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
-          layout: 'BaseLayout',
-          deepLinking: true,
-          showExtensions: true,
-          showCommonExtensions: true
-        });
-        window.ui = ui;
-      };
-    </script>
-  </body>
-</html>`;
-      res.type('text/html').send(html);
-    });
-
-    // Serve OpenAPI JSON
-    app.get('/api-docs/openapi.json', (req, res) => {
-      try {
-        const spec = JSON.parse(JSON.stringify(swaggerSpec || defaultDefinition));
-        const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
-        const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
-        const reqOrigin = host ? `${proto}://${host}` : undefined;
-        spec.servers = [
-          { url: reqOrigin || '/', description: 'Current server' },
-          { url: 'https://api.vikareta.com', description: 'Production API' }
-        ];
-        res.json(spec);
-      } catch (err) {
-        console.error('Error serving OpenAPI spec:', err);
-        res.status(500).json({ error: 'Failed to generate API documentation' });
+  // Use standard swagger-ui-express with local files (CSP compliant)
+  const swaggerOptions = {
+    explorer: true,
+    swaggerOptions: {
+      url: '/api-docs/openapi.json',
+      displayRequestDuration: true,
+      docExpansion: 'list',
+      filter: true,
+      showExtensions: true,
+      showCommonExtensions: true,
+      syntaxHighlight: {
+        activate: true,
+        theme: 'arta'
       }
-    });
+    },
+    customCss: `
+      .swagger-ui .topbar { display: none }
+      .swagger-ui .info .title { color: #3b4151 }
+    `,
+    customSiteTitle: 'Vikareta API Documentation',
+    customfavIcon: '/favicon.ico'
+  };
 
-    console.log(`✅ Swagger UI available at: /api-docs`);
-    console.log(`✅ OpenAPI JSON available at: /api-docs/openapi.json`);
-    console.log(`📊 Generated ${Object.keys(swaggerSpec?.paths || {}).length} API paths`);
+  app.use('/api-docs', swaggerUi.serve);
+  app.get('/api-docs', swaggerUi.setup(swaggerSpec || defaultDefinition, swaggerOptions));
 
-    if (usedFallback) {
-      console.log(`⚠️  Using enhanced fallback documentation (automatic generation failed)`);
+  // Serve OpenAPI JSON
+  app.get('/api-docs/openapi.json', (req, res) => {
+    try {
+      const spec = JSON.parse(JSON.stringify(swaggerSpec || defaultDefinition));
+      const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+      const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+      const reqOrigin = host ? `${proto}://${host}` : undefined;
+      spec.servers = [
+        { url: reqOrigin || '/', description: 'Current server' },
+        { url: 'https://api.vikareta.com', description: 'Production API' }
+      ];
+      res.json(spec);
+    } catch (err) {
+      console.error('Error serving OpenAPI spec:', err);
+      res.status(500).json({ error: 'Failed to generate API documentation' });
     }
+  });
 
-  } catch (err) {
-    console.error('Failed to setup Swagger:', err);
+  console.log(`✅ Swagger UI available at: /api-docs`);
+  console.log(`✅ OpenAPI JSON available at: /api-docs/openapi.json`);
+  console.log(`📊 Generated ${Object.keys(swaggerSpec?.paths || {}).length} API paths`);
+
+  if (usedFallback) {
+    console.log(`⚠️  Using enhanced fallback documentation (automatic generation failed)`);
   }
 }
 
