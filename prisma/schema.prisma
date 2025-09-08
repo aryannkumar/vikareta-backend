@@ -312,6 +312,27 @@ model TrendingCategory {
 }
 
 // ================================
+// MONTHLY USAGE LIMITS
+// ================================
+
+model MonthlyUsage {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String   @map("user_id") @db.Uuid
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month                 String   @db.VarChar(7) // Format: YYYY-MM
+  rfqPostsCount         Int      @default(0) @map("rfq_posts_count")
+  quoteResponsesCount   Int      @default(0) @map("quote_responses_count")
+  archived              Boolean  @default(false) // For historical data management
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, month], map: "userId_month")
+  @@index([userId, month])
+  @@index([month, archived])
+  @@map("monthly_usage")
+}
+
+// ================================
 // USER MODEL
 // ================================
 
@@ -407,6 +428,7 @@ model User {
   personalizedRecommendations PersonalizedRecommendation[]
   userInterests             UserInterest[]
   userSearchHistory         UserSearchHistory[]
+  monthlyUsage              MonthlyUsage[]
 
   @@map("users")
 }

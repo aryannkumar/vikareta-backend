@@ -19,4 +19,19 @@ export class StatsController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  async getHomepageStats(req: Request, res: Response): Promise<void> {
+    try {
+      const stats = await statsService.getHomepageStats();
+
+      res.status(200).json({
+        success: true,
+        message: 'Homepage statistics retrieved successfully',
+        data: stats,
+      });
+    } catch (error) {
+      logger.error('Error getting homepage stats:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }

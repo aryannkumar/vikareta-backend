@@ -1,6 +1,7 @@
 import { BaseService } from './base.service';
 import { logger } from '../utils/logger';
 import { NotificationService } from './notification.service';
+import { usageLimitsService } from './usage-limits.service';
 import { Rfq, Quote } from '@prisma/client';
 
 export interface CreateRfqData {
@@ -79,6 +80,12 @@ export class RfqService extends BaseService {
 
   // RFQ Methods
   async createRfq(buyerId: string, data: CreateRfqData): Promise<Rfq> {
+    // Check usage limits before creating RFQ
+    const { canPost } = await usageLimitsService.canPostRfq(buyerId);
+    if (!canPost) {
+      throw new Error('Monthly RFQ posting limit exceeded. You can post 3 RFQs per month.');
+    }
+
     const rfq = await this.prisma.rfq.create({
       data: {
         ...data,
@@ -100,6 +107,9 @@ export class RfqService extends BaseService {
         subcategory: true,
       },
     });
+
+    // Increment usage count after successful creation
+    await usageLimitsService.incrementRfqPost(buyerId);
 
     // Notify relevant sellers (best-effort)
     this.notifyRelevantSellers(rfq).catch((err) => logger.error('notifyRelevantSellers failed', err));
@@ -250,6 +260,12 @@ export class RfqService extends BaseService {
 
   // Quote Methods
   async createQuote(data: CreateQuoteData): Promise<Quote> {
+    // Check usage limits before creating quote
+    const { canRespond } = await usageLimitsService.canRespondToRfq(data.sellerId);
+    if (!canRespond) {
+      throw new Error('Monthly quote response limit exceeded. You can respond to 5 RFQs per month.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const existingQuote = await tx.quote.findFirst({ where: { rfqId: data.rfqId, sellerId: data.sellerId } });
       if (existingQuote) throw new Error('You have already submitted a quote for this RFQ');
@@ -271,6 +287,9 @@ export class RfqService extends BaseService {
         },
         include: { rfq: { include: { buyer: true } }, seller: true, items: { include: { product: true } } },
       });
+
+      // Increment usage count after successful creation
+      await usageLimitsService.incrementQuoteResponse(data.sellerId);
 
       // Notify buyer (best-effort)
       const notification = await this.notificationService.createNotification({
