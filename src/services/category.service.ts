@@ -357,6 +357,192 @@ export class CategoryService extends BaseService {
     }
   }
 
+  async getProductsBySubcategory(
+    subcategoryId: string,
+    userId?: string,
+    options: {
+      page?: number;
+      limit?: number;
+      sortBy?: string;
+      search?: string;
+    } = {}
+  ): Promise<{ products: any[]; total: number; page: number; limit: number }> {
+    try {
+      const { page = 1, limit = 20, sortBy = 'relevance', search } = options;
+      const skip = (page - 1) * limit;
+
+      const where: any = {
+        subcategoryId,
+        isActive: true,
+      };
+
+      if (search) {
+        where.OR = [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      let orderBy: any = { createdAt: 'desc' };
+      if (sortBy === 'price-low') orderBy = { price: 'asc' };
+      else if (sortBy === 'price-high') orderBy = { price: 'desc' };
+      else if (sortBy === 'name') orderBy = { title: 'asc' };
+
+      const [products, total] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          include: {
+            seller: {
+              select: {
+                id: true,
+                businessName: true,
+                city: true,
+                state: true,
+                isVerified: true,
+              },
+            },
+            category: true,
+            subcategory: true,
+            reviews: {
+              select: {
+                rating: true,
+              },
+            },
+            _count: {
+              select: {
+                reviews: true,
+              },
+            },
+          },
+          orderBy,
+          skip,
+          take: limit,
+        }),
+        this.prisma.product.count({ where }),
+      ]);
+
+      // Calculate average rating for each product
+      const enrichedProducts = products.map(product => ({
+        ...product,
+        reviews: {
+          average: product.reviews.length > 0 
+            ? product.reviews.reduce((sum, r) => sum + r.rating, 0) / product.reviews.length 
+            : 0,
+          total: product._count.reviews,
+        },
+        supplier: {
+          id: product.seller.id,
+          name: product.seller.businessName || 'Unknown Supplier',
+          location: `${product.seller.city || ''}, ${product.seller.state || ''}`.trim().replace(/^,|,$/, '') || 'Unknown Location',
+          verified: product.seller.isVerified,
+        },
+      }));
+
+      return {
+        products: enrichedProducts,
+        total,
+        page,
+        limit,
+      };
+    } catch (error) {
+      logger.error('Error fetching products by subcategory:', error);
+      throw error;
+    }
+  }
+
+  async getServicesBySubcategory(
+    subcategoryId: string,
+    userId?: string,
+    options: {
+      page?: number;
+      limit?: number;
+      sortBy?: string;
+      search?: string;
+    } = {}
+  ): Promise<{ services: any[]; total: number; page: number; limit: number }> {
+    try {
+      const { page = 1, limit = 20, sortBy = 'relevance', search } = options;
+      const skip = (page - 1) * limit;
+
+      const where: any = {
+        subcategoryId,
+        isActive: true,
+      };
+
+      if (search) {
+        where.OR = [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      let orderBy: any = { createdAt: 'desc' };
+      if (sortBy === 'price-low') orderBy = { price: 'asc' };
+      else if (sortBy === 'price-high') orderBy = { price: 'desc' };
+      else if (sortBy === 'name') orderBy = { title: 'asc' };
+
+      const [services, total] = await Promise.all([
+        this.prisma.service.findMany({
+          where,
+          include: {
+            provider: {
+              select: {
+                id: true,
+                businessName: true,
+                city: true,
+                state: true,
+                isVerified: true,
+              },
+            },
+            category: true,
+            subcategory: true,
+            reviews: {
+              select: {
+                rating: true,
+              },
+            },
+            _count: {
+              select: {
+                reviews: true,
+              },
+            },
+          },
+          orderBy,
+          skip,
+          take: limit,
+        }),
+        this.prisma.service.count({ where }),
+      ]);
+
+      // Calculate average rating for each service
+      const enrichedServices = services.map(service => ({
+        ...service,
+        reviews: {
+          average: service.reviews.length > 0 
+            ? service.reviews.reduce((sum, r) => sum + r.rating, 0) / service.reviews.length 
+            : 0,
+          total: service._count.reviews,
+        },
+        provider: {
+          id: service.provider.id,
+          name: service.provider.businessName || 'Unknown Provider',
+          location: `${service.provider.city || ''}, ${service.provider.state || ''}`.trim().replace(/^,|,$/, '') || 'Unknown Location',
+          verified: service.provider.isVerified,
+        },
+      }));
+
+      return {
+        services: enrichedServices,
+        total,
+        page,
+        limit,
+      };
+    } catch (error) {
+      logger.error('Error fetching services by subcategory:', error);
+      throw error;
+    }
+  }
+
   async deleteSubcategory(subcategoryId: string): Promise<void> {
     try {
       // Check if subcategory has products or services

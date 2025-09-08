@@ -51,51 +51,51 @@ async function main() {
     // Essential Daily Business Categories
     { name: 'Kirana & General Store', slug: 'kirana-general-store', icon: '🏪', featured: true, sortOrder: 1 },
     { name: 'Stationery & Books', slug: 'stationery-books', icon: '📚', featured: true, sortOrder: 2 },
-    { name: 'Mobile & Accessories', slug: 'mobile-accessories', icon: '�', featured: true, sortOrder: 3 },
+    { name: 'Mobile & Accessories', slug: 'mobile-accessories', icon: '📱', featured: true, sortOrder: 3 },
     { name: 'Beauty & Personal Care', slug: 'beauty-personal-care', icon: '💄', featured: true, sortOrder: 4 },
-    { name: 'Home & Kitchen', slug: 'home-kitchen', icon: '🏠', featured: true, sortOrder: 5 },
+    { name: 'Home & Kitchen', slug: 'home-kitchen', icon: '�', featured: true, sortOrder: 5 },
 
     // Healthcare & Medical
-    { name: 'Pharmacy & Medical', slug: 'pharmacy-medical', icon: '💊', featured: true, sortOrder: 6 },
-    { name: 'Ayurvedic & Herbal', slug: 'ayurvedic-herbal', icon: '🌿', featured: false, sortOrder: 7 },
+  { name: 'Pharmacy & Medical', slug: 'pharmacy-medical', icon: '💊', featured: true, sortOrder: 6 },
+  { name: 'Ayurvedic & Herbal', slug: 'ayurvedic-herbal', icon: '🌿', featured: false, sortOrder: 7 },
 
     // Fashion & Lifestyle
-    { name: 'Fashion & Clothing', slug: 'fashion-clothing', icon: '👗', featured: true, sortOrder: 8 },
-    { name: 'Jewelry & Accessories', slug: 'jewelry-accessories', icon: '�', featured: false, sortOrder: 9 },
-    { name: 'Footwear & Bags', slug: 'footwear-bags', icon: '👟', featured: false, sortOrder: 10 },
+  { name: 'Fashion & Clothing', slug: 'fashion-clothing', icon: '👗', featured: true, sortOrder: 8 },
+  { name: 'Jewelry & Accessories', slug: 'jewelry-accessories', icon: '💍', featured: false, sortOrder: 9 },
+  { name: 'Footwear & Bags', slug: 'footwear-bags', icon: '�', featured: false, sortOrder: 10 },
 
     // Food & Beverages
-    { name: 'Food & Groceries', slug: 'food-groceries', icon: '🍎', featured: true, sortOrder: 11 },
-    { name: 'Snacks & Sweets', slug: 'snacks-sweets', icon: '🍬', featured: false, sortOrder: 12 },
-    { name: 'Beverages & Drinks', slug: 'beverages-drinks', icon: '�', featured: false, sortOrder: 13 },
+  { name: 'Food & Groceries', slug: 'food-groceries', icon: '🛒', featured: true, sortOrder: 11 },
+  { name: 'Snacks & Sweets', slug: 'snacks-sweets', icon: '🍬', featured: false, sortOrder: 12 },
+  { name: 'Beverages & Drinks', slug: 'beverages-drinks', icon: '🥤', featured: false, sortOrder: 13 },
 
     // Electronics & Appliances
-    { name: 'Electronics & Gadgets', slug: 'electronics-gadgets', icon: '📺', featured: true, sortOrder: 14 },
-    { name: 'Home Appliances', slug: 'home-appliances', icon: '🔌', featured: false, sortOrder: 15 },
+  { name: 'Electronics & Gadgets', slug: 'electronics-gadgets', icon: '�', featured: true, sortOrder: 14 },
+  { name: 'Home Appliances', slug: 'home-appliances', icon: '🧺', featured: false, sortOrder: 15 },
 
     // Hardware & Construction
-    { name: 'Hardware & Tools', slug: 'hardware-tools', icon: '🔧', featured: true, sortOrder: 16 },
-    { name: 'Building Materials', slug: 'building-materials', icon: '�️', featured: false, sortOrder: 17 },
-    { name: 'Paints & Hardware', slug: 'paints-hardware', icon: '🎨', featured: false, sortOrder: 18 },
+  { name: 'Hardware & Tools', slug: 'hardware-tools', icon: '�️', featured: true, sortOrder: 16 },
+  { name: 'Building Materials', slug: 'building-materials', icon: '🏗️', featured: false, sortOrder: 17 },
+  { name: 'Paints & Hardware', slug: 'paints-hardware', icon: '🎨', featured: false, sortOrder: 18 },
 
     // Automotive & Transportation
-    { name: 'Automotive Parts', slug: 'automotive-parts', icon: '�', featured: false, sortOrder: 19 },
-    { name: 'Two Wheeler Accessories', slug: 'two-wheeler-accessories', icon: '🏍️', featured: false, sortOrder: 20 },
+  { name: 'Automotive Parts', slug: 'automotive-parts', icon: '🚗', featured: false, sortOrder: 19 },
+  { name: 'Two Wheeler Accessories', slug: 'two-wheeler-accessories', icon: '🏍️', featured: false, sortOrder: 20 },
 
     // Agriculture & Farming
-    { name: 'Agriculture & Seeds', slug: 'agriculture-seeds', icon: '🌾', featured: false, sortOrder: 21 },
-    { name: 'Fertilizers & Pesticides', slug: 'fertilizers-pesticides', icon: '🌱', featured: false, sortOrder: 22 },
+  { name: 'Agriculture & Seeds', slug: 'agriculture-seeds', icon: '🌾', featured: false, sortOrder: 21 },
+  { name: 'Fertilizers & Pesticides', slug: 'fertilizers-pesticides', icon: '🧪', featured: false, sortOrder: 22 },
 
     // Business & Services
-    { name: 'Office Supplies', slug: 'office-supplies', icon: '💼', featured: false, sortOrder: 23 },
-    { name: 'Packaging Materials', slug: 'packaging-materials', icon: '📦', featured: false, sortOrder: 24 },
-    { name: 'Business Services', slug: 'business-services', icon: '🏢', featured: false, sortOrder: 25 },
+  { name: 'Office Supplies', slug: 'office-supplies', icon: '�️', featured: false, sortOrder: 23 },
+  { name: 'Packaging Materials', slug: 'packaging-materials', icon: '📦', featured: false, sortOrder: 24 },
+  { name: 'Business Services', slug: 'business-services', icon: '🏢', featured: false, sortOrder: 25 },
 
     // Specialty Categories
-    { name: 'Sports & Fitness', slug: 'sports-fitness', icon: '⚽', featured: false, sortOrder: 26 },
+    { name: 'Sports & Fitness', slug: 'sports-fitness', icon: '🏅', featured: false, sortOrder: 26 },
     { name: 'Toys & Games', slug: 'toys-games', icon: '🧸', featured: false, sortOrder: 27 },
-    { name: 'Pet Supplies', slug: 'pet-supplies', icon: '�', featured: false, sortOrder: 28 },
-    { name: 'Religious & Pooja Items', slug: 'religious-pooja-items', icon: '�️', featured: false, sortOrder: 29 },
+    { name: 'Pet Supplies', slug: 'pet-supplies', icon: '🐾', featured: false, sortOrder: 28 },
+    { name: 'Religious & Pooja Items', slug: 'religious-pooja-items', icon: '🛕', featured: false, sortOrder: 29 },
     { name: 'Party & Event Supplies', slug: 'party-event-supplies', icon: '🎉', featured: false, sortOrder: 30 },
   ];
 
@@ -103,7 +103,7 @@ async function main() {
   for (const category of categories) {
     const created = await prisma.category.upsert({
       where: { slug: category.slug },
-      update: {},
+      update: { icon: category.icon, featured: category.featured },
       create: category,
     });
     createdCategories.push(created);
