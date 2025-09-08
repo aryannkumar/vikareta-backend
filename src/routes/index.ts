@@ -47,6 +47,7 @@ import { serviceAppointmentRoutes } from './service-appointment.routes';
 import subscriptionRoutes from './subscription.routes';
 import ssoRoutes from './sso.routes';
 import onboardingRoutes from './onboarding.routes';
+import personalizationRoutes from './personalization.routes';
 
 // Import existing routes that are available
 // import authRoutes from './auth.routes';
@@ -111,9 +112,8 @@ export const setupRoutes = (app: Application): void => {
   app.use(`${API_PREFIX}/service-appointments`, serviceAppointmentRoutes);
   app.use(`${API_PREFIX}/subscriptions`, subscriptionRoutes);
   app.use(`${API_PREFIX}/sso`, ssoRoutes);
+  app.use(`${API_PREFIX}/personalization`, personalizationRoutes);
   app.use(`${API_PREFIX}/onboarding`, onboardingRoutes);
-
-  // Explicitly registered above for clarity and single source of truth.
 
   // Root endpoint
   app.get('/', (req, res) => {
