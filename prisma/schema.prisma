@@ -69,7 +69,250 @@ enum ServiceType {
 }
 
 // ================================
-// CORE USER MANAGEMENT
+// USER PERSONALIZATION SYSTEM
+// ================================
+
+model UserPreference {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Category preferences
+  preferredCategories String[] @map("preferred_categories") @default([]) // Array of category IDs
+  preferredSubcategories String[] @map("preferred_subcategories") @default([]) // Array of subcategory IDs
+
+  // Price preferences
+  minPriceRange      Decimal? @map("min_price_range") @db.Decimal(10, 2)
+  maxPriceRange      Decimal? @map("max_price_range") @db.Decimal(10, 2)
+  preferredPriceRange String? @map("preferred_price_range") @db.VarChar(50) // "budget", "mid-range", "premium"
+
+  // Location preferences
+  preferredLocations String[] @map("preferred_locations") @default([]) // Cities/states user prefers
+  deliveryRadius     Int?     @map("delivery_radius") // In kilometers
+
+  // Business type preferences
+  preferredBusinessTypes String[] @map("preferred_business_types") @default([]) // "manufacturer", "wholesaler", "retailer"
+  preferredIndustries String[] @map("preferred_industries") @default([]) // Industry preferences
+
+  // UI/UX preferences
+  theme             String   @default("light") @db.VarChar(20) // "light", "dark", "auto"
+  language          String   @default("en") @db.VarChar(10)
+  currency          String   @default("INR") @db.VarChar(3)
+  itemsPerPage      Int      @default(20) @map("items_per_page")
+
+  // Notification preferences (enhanced)
+  emailFrequency    String   @default("daily") @map("email_frequency") @db.VarChar(20) // "immediate", "daily", "weekly", "never"
+  smsFrequency      String   @default("important") @map("sms_frequency") @db.VarChar(20) // "all", "important", "none"
+
+  // Search & Discovery preferences
+  showRecommended   Boolean  @default(true) @map("show_recommended")
+  showTrending      Boolean  @default(true) @map("show_trending")
+  showNearby        Boolean  @default(true) @map("show_nearby")
+  showNewArrivals   Boolean  @default(true) @map("show_new_arrivals")
+
+  // Privacy preferences
+  profileVisibility String   @default("public") @map("profile_visibility") @db.VarChar(20) // "public", "business", "private"
+  showOnlineStatus  Boolean  @default(true) @map("show_online_status")
+  allowMessaging    Boolean  @default(true) @map("allow_messaging")
+
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId])
+  @@map("user_preferences")
+}
+
+model CategoryPreference {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId    String   @map("category_id") @db.Uuid
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  // Interaction metrics
+  viewCount     Int      @default(0) @map("view_count")
+  clickCount    Int      @default(0) @map("click_count")
+  purchaseCount Int      @default(0) @map("purchase_count")
+  searchCount   Int      @default(0) @map("search_count")
+
+  // Preference score (calculated)
+  preferenceScore Float   @default(0) @map("preference_score")
+
+  // Timestamps
+  firstViewed   DateTime? @map("first_viewed")
+  lastViewed    DateTime? @map("last_viewed")
+  lastPurchased DateTime? @map("last_purchased")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, categoryId])
+  @@index([userId, preferenceScore])
+  @@index([categoryId, preferenceScore])
+  @@map("category_preferences")
+}
+
+model UserBehavior {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Behavior type
+  behaviorType  String   @map("behavior_type") @db.VarChar(50) // "view", "click", "search", "purchase", "wishlist", "cart_add"
+
+  // Target information
+  targetType    String   @map("target_type") @db.VarChar(50) // "product", "service", "category", "business", "search"
+  targetId      String   @map("target_id") @db.Uuid
+
+  // Context information
+  sessionId     String?  @map("session_id") @db.VarChar(255)
+  pageUrl       String?  @map("page_url") @db.VarChar(500)
+  referrer      String?  @db.VarChar(500)
+  userAgent     String?  @map("user_agent") @db.Text
+
+  // Location & device info
+  ipAddress     String?  @map("ip_address") @db.VarChar(45)
+  location      Json?    // { city, state, country, coordinates }
+  deviceInfo    Json?    @map("device_info") // { type, os, browser }
+
+  // Additional metadata
+  metadata      Json?    // Additional behavior-specific data
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId, behaviorType, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([sessionId])
+  @@map("user_behaviors")
+}
+
+model PersonalizedRecommendation {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Recommendation details
+  recommendationType String  @map("recommendation_type") @db.VarChar(50) // "product", "service", "business", "category"
+  recommendedId      String  @map("recommended_id") @db.Uuid
+  recommendedType    String  @map("recommended_type") @db.VarChar(50) // Product, Service, User, Category
+
+  // Recommendation score & reason
+  score              Float    @default(0)
+  reason             String?  @db.VarChar(255) // "similar_purchase", "viewed_together", "trending", "personalized"
+
+  // Algorithm information
+  algorithm          String?  @db.VarChar(100) // "collaborative_filtering", "content_based", "trending", "location_based"
+  algorithmVersion   String?  @map("algorithm_version") @db.VarChar(20)
+
+  // Performance tracking
+  impressions        Int      @default(0)
+  clicks             Int      @default(0)
+  conversions        Int      @default(0)
+
+  // Validity
+  isActive           Boolean  @default(true) @map("is_active")
+  expiresAt          DateTime? @map("expires_at")
+
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, recommendationType, isActive])
+  @@index([recommendedType, recommendedId, isActive])
+  @@index([algorithm, createdAt])
+  @@map("personalized_recommendations")
+}
+
+model UserInterest {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Interest details
+  interestType  String   @map("interest_type") @db.VarChar(50) // "category", "industry", "location", "price_range", "business_type"
+  interestValue String   @map("interest_value") @db.VarChar(255)
+
+  // Interest strength
+  strength      Float    @default(1) // 0-1 scale
+  confidence    Float    @default(0.5) // Algorithm confidence
+
+  // Source of interest
+  source        String   @db.VarChar(50) // "explicit", "behavior", "demographic", "social"
+
+  // Temporal information
+  firstObserved DateTime @map("first_observed")
+  lastObserved  DateTime @map("last_observed")
+  observationCount Int   @default(1) @map("observation_count")
+
+  // Validity
+  isActive      Boolean  @default(true) @map("is_active")
+  expiresAt     DateTime? @map("expires_at")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, interestType, interestValue])
+  @@index([userId, interestType, strength])
+  @@index([interestType, interestValue])
+  @@map("user_interests")
+}
+
+model UserSearchHistory {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Search details
+  query         String   @db.VarChar(500)
+  filters       Json?    // Applied filters
+  resultsCount  Int?     @map("results_count")
+
+  // Search context
+  page          String?  @db.VarChar(100) // "products", "services", "businesses"
+  categoryId    String?  @map("category_id") @db.Uuid
+  location      String?  @db.VarChar(255)
+
+  // Performance
+  searchTime    Int?     @map("search_time") // In milliseconds
+  clickedResult String?  @map("clicked_result") @db.Uuid // ID of clicked result
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([query])
+  @@index([categoryId])
+  @@map("user_search_history")
+}
+
+model TrendingCategory {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  categoryId    String   @map("category_id") @db.Uuid
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  // Trending metrics
+  viewCount     Int      @default(0) @map("view_count")
+  searchCount   Int      @default(0) @map("search_count")
+  orderCount    Int      @default(0) @map("order_count")
+
+  // Calculated scores
+  trendingScore Float    @default(0) @map("trending_score")
+  growthRate    Float    @default(0) @map("growth_rate") // Percentage growth
+
+  // Time period
+  period        String   @db.VarChar(20) // "daily", "weekly", "monthly"
+  periodStart   DateTime @map("period_start")
+  periodEnd     DateTime @map("period_end")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([categoryId, period, periodStart])
+  @@index([trendingScore, period])
+  @@index([period, periodStart])
+  @@map("trending_categories")
+}
+
+// ================================
+// USER MODEL
 // ================================
 
 model User {
@@ -157,11 +400,19 @@ model User {
   deliveryPreferences       SellerDeliveryPreference[] @relation("SellerDeliveryPreferences")
   adminActions              AdminAction[]             @relation("AdminActions")
 
+  // NEW: Personalization relations
+  userPreference            UserPreference?
+  categoryPreferences       CategoryPreference[]
+  userBehaviors             UserBehavior[]
+  personalizedRecommendations PersonalizedRecommendation[]
+  userInterests             UserInterest[]
+  userSearchHistory         UserSearchHistory[]
+
   @@map("users")
 }
 
 // ================================
-// PRODUCT CATALOG
+// UPDATE EXISTING CATEGORY MODEL
 // ================================
 
 model Category {
@@ -183,6 +434,10 @@ model Category {
   products         Product[]
   rfqs             Rfq[]
   services         Service[]
+
+  // NEW: Personalization relations
+  categoryPreferences CategoryPreference[]
+  trendingCategories  TrendingCategory[]
 
   @@index([parentId])
   @@map("categories")
