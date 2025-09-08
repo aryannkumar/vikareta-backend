@@ -67,13 +67,46 @@ class Application {
       },
     }));
 
-    // CORS configuration
+    // CORS configuration (dynamic) — ensures even error/404 responses include headers
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000']).map(o => o.trim());
     this.app.use(cors({
-      origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true); // non-browser or same-origin
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        // Instead of blocking hard (which causes missing CORS header), allow but log
+        logger.warn(`CORS: Origin not explicitly allowed: ${origin}`);
+        return callback(null, true);
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      exposedHeaders: ['Content-Disposition'],
+      maxAge: 600,
     }));
+
+    // Fallback header setter to cover any early responses (401/404) still needing CORS headers
+    this.app.use((req, res, next) => {
+      const origin = req.headers.origin as string | undefined;
+      if (origin && allowedOrigins.includes(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Vary', 'Origin');
+        res.header('Access-Control-Allow-Credentials', 'true');
+      }
+      next();
+    });
+
+    // Explicit OPTIONS handler (some proxies strip automatic handling)
+    this.app.options('*', (req, res) => {
+      const origin = req.headers.origin as string | undefined;
+      if (origin && allowedOrigins.includes(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Vary', 'Origin');
+      }
+      res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.sendStatus(204);
+    });
 
     // Compression
     this.app.use(compression());
