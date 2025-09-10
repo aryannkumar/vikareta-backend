@@ -25,6 +25,7 @@ import { jobScheduler } from './jobs/scheduler';
 import { setupRoutes } from './routes';
 import { setupSwagger } from './swagger';
 import { metricsExporter, registry } from '@/observability/metrics';
+import { errorHandler } from '@/middleware/error-handler';
 
 // use shared prisma from config/database
 
@@ -393,15 +394,8 @@ class Application {
         });
       });
 
-      this.app.use((error: any, req: any, res: any, _next: any) => {
-        void _next;
-        logger.error('Unhandled error:', error);
-        res.status(500).json({
-          success: false,
-          error: 'Internal server error',
-          message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
-        });
-      });
+      // Error handling middleware (must be last)
+      this.app.use(errorHandler);
 
       // Start cron jobs
       jobScheduler.startAllJobs();

@@ -44,7 +44,7 @@ const envSchema = z.object({
   SESSION_SECRET: z.string(),
 
   // CORS
-  ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
+  ALLOWED_ORIGINS: z.string().default('http://localhost:3000,https://vikareta.com'),
 
   // Payment
   CASHFREE_CLIENT_ID: z.string(),
