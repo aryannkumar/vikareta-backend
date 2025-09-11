@@ -9,7 +9,7 @@ export const validateBody = (schema: ZodSchema) => (req: Request, res: Response,
     // Format the error to match what the frontend expects
     const validationErrors = err.errors || [];
     const errorMessage = validationErrors.length > 0 
-      ? validationErrors.map((e: any) => e.message).join(', ')
+      ? validationErrors.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ')
       : 'Validation failed';
     
     res.status(400).json({ 

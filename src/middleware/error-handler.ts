@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Prisma } from '@prisma/client';
+import { PrismaClientKnownRequestError, PrismaClientValidationError } from '@prisma/client/runtime/library';
 import { logger } from '@/utils/logger';
 
 export interface ApiError extends Error {
@@ -88,13 +88,14 @@ export const errorHandler = (
     details = error.details;
   }
   // Handle Prisma errors
-  else if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    switch (error.code) {
+  else if (error instanceof PrismaClientKnownRequestError) {
+    const prismaError = error as PrismaClientKnownRequestError;
+    switch (prismaError.code) {
       case 'P2002':
         statusCode = 409;
         code = 'UNIQUE_CONSTRAINT_ERROR';
         message = 'A record with this information already exists';
-        details = { field: error.meta?.target };
+        details = { field: prismaError.meta?.target };
         break;
       case 'P2025':
         statusCode = 404;
@@ -115,11 +116,11 @@ export const errorHandler = (
         statusCode = 400;
         code = 'DATABASE_ERROR';
         message = 'Database operation failed';
-        details = { prismaCode: error.code };
+        details = { prismaCode: prismaError.code };
     }
   }
   // Handle Prisma validation errors
-  else if (error instanceof Prisma.PrismaClientValidationError) {
+  else if (error instanceof PrismaClientValidationError) {
     statusCode = 400;
     code = 'VALIDATION_ERROR';
     message = 'Invalid data provided';
