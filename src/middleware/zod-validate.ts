@@ -6,7 +6,20 @@ export const validateBody = (schema: ZodSchema) => (req: Request, res: Response,
     req.body = schema.parse(req.body);
     next();
   } catch (err: any) {
-    res.status(400).json({ success: false, error: 'Validation failed', issues: err.errors });
+    // Format the error to match what the frontend expects
+    const validationErrors = err.errors || [];
+    const errorMessage = validationErrors.length > 0 
+      ? validationErrors.map((e: any) => e.message).join(', ')
+      : 'Validation failed';
+    
+    res.status(400).json({ 
+      success: false, 
+      error: { 
+        code: 'VALIDATION_ERROR', 
+        message: errorMessage 
+      },
+      details: validationErrors
+    });
   }
 };
 
@@ -16,7 +29,19 @@ export const validateQuery = (schema: ZodSchema) => (req: Request, res: Response
     req.query = parsed as any;
     next();
   } catch (err: any) {
-    res.status(400).json({ success: false, error: 'Validation failed', issues: err.errors });
+    const validationErrors = err.errors || [];
+    const errorMessage = validationErrors.length > 0 
+      ? validationErrors.map((e: any) => e.message).join(', ')
+      : 'Validation failed';
+    
+    res.status(400).json({ 
+      success: false, 
+      error: { 
+        code: 'VALIDATION_ERROR', 
+        message: errorMessage 
+      },
+      details: validationErrors
+    });
   }
 };
 
@@ -26,6 +51,18 @@ export const validateParams = (schema: ZodSchema) => (req: Request, res: Respons
     req.params = parsed as any;
     next();
   } catch (err: any) {
-    res.status(400).json({ success: false, error: 'Validation failed', issues: err.errors });
+    const validationErrors = err.errors || [];
+    const errorMessage = validationErrors.length > 0 
+      ? validationErrors.map((e: any) => e.message).join(', ')
+      : 'Validation failed';
+    
+    res.status(400).json({ 
+      success: false, 
+      error: { 
+        code: 'VALIDATION_ERROR', 
+        message: errorMessage 
+      },
+      details: validationErrors
+    });
   }
 };

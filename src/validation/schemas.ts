@@ -56,7 +56,7 @@ export const inventoryAdjustSchema = z.object({
 export const authRegisterSchema = z.object({
   email: z.string().email().optional(),
   phone: z.string().regex(/^[0-9+\-() ]{7,20}$/).optional(),
-  password: z.string().min(8).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Weak password'),
+  password: z.string().min(8).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/, 'Password must be at least 8 characters with uppercase, lowercase, and number'),
   firstName: z.string().min(2).max(50).optional(),
   lastName: z.string().min(2).max(50).optional(),
   businessName: z.string().min(2).max(100).optional(),
