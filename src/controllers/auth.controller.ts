@@ -30,10 +30,29 @@ export class AuthController {
 
       const result = await this.authService.register(userData);
 
+      // Set refresh token as HTTP-only cookie
+      res.cookie('refreshToken', result.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
+      // Set access token as HTTP-only cookie
+      res.cookie('accessToken', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 15 * 60 * 1000, // 15 minutes
+      });
+
       res.status(201).json({
         success: true,
         message: 'User registered successfully',
-        data: result,
+        data: {
+          accessToken: result.accessToken,
+          user: result.user,
+        },
       });
     } catch (error) {
       logger.error('Registration error:', error);
