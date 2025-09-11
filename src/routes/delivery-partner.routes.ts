@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { deliveryPartnerController } from '@/controllers/delivery-partner.controller';
-import { authMiddleware, requireAdmin } from '@/middleware/auth.middleware';
+import { authMiddleware, requireAdmin } from '@/middleware/authentication.middleware';
 import { deliveryPartnerCreateSchema, deliveryPartnerUpdateSchema, toggleDeliveryPartnerParamsSchema, toggleDeliveryPartnerBodySchema, deliveryPartnerPreferenceParamsSchema } from '@/validation/schemas';
 import { validateParams, validateBody } from '../middleware/zod-validate';
 import { asyncHandler } from '@/middleware/error-handler';

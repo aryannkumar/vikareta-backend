@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 import { validateBody, validateParams } from '@/middleware/zod-validate';
 import { notificationPreferenceCreateSchema, notificationPreferenceUpdateSchema, notificationPreferenceIdParamsSchema } from '@/validation/schemas';

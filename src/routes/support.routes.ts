@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { SupportController } from '../controllers/support.controller';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken } from '../middleware/authentication.middleware';
 import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
 import { supportTicketCreateSchema, supportTicketUpdateSchema, supportTicketMessageSchema, supportTicketCloseSchema, supportTicketIdParamsSchema, supportTicketListQuerySchema } from '@/validation/schemas';
 

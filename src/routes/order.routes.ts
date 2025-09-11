@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { OrderController } from '@/controllers/order.controller';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
 import { orderCreateSchema, orderUpdateSchema, orderStatusUpdateSchema, orderIdParamsSchema, orderListQuerySchema, orderTrackingEventSchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';

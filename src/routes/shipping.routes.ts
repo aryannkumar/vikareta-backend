@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { ShippingController } from '@/controllers/shipping.controller';
 import { validateBody } from '@/middleware/zod-validate';
 import { shippingAddressCreateSchema, shippingAddressUpdateSchema, deliveryTrackingCreateSchema } from '@/validation/schemas';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();

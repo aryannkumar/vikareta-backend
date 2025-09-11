@@ -9,7 +9,7 @@ import { SMSService } from '@/services/sms.service';
 import { SubscriptionService } from '@/services/subscription.service';
 import { config } from '@/config/environment';
 import { ValidationError, AuthenticationError, NotFoundError } from '@/middleware/error-handler';
-import { blacklistToken } from '../middleware/auth.middleware';
+import { blacklistToken } from '../middleware/authentication.middleware';
 import { GoogleTokens, GoogleUser, LinkedInTokens, LinkedInProfile, LinkedInEmailData, JWTPayload } from '../types/auth.types';
 
 export interface OTPData {

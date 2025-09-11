@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { DealController } from '../controllers/deal.controller';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken } from '../middleware/authentication.middleware';
 import { validateBody, validateParams, validateQuery } from '@/middleware/zod-validate';
 import { dealCreateSchema, dealUpdateSchema, dealIdParamsSchema, dealListQuerySchema, dealMessageSchema } from '@/validation/schemas';
 

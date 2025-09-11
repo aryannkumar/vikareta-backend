@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { ProductController } from '@/controllers/product.controller';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/authentication.middleware';
 import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
 import { productCreateSchema, productUpdateSchema, productIdParamsSchema, productListQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';

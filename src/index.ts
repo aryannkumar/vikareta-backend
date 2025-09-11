@@ -12,6 +12,7 @@ import { ensureKafkaTopics } from './config/kafka';
 import { kafkaConsumer } from './services/kafka-consumer.service';
 import { Server as SocketIOServer } from 'socket.io';
 import { prisma } from '@/config/database';
+import { config } from '@/config/environment';
 
 import { logger } from './utils/logger';
 import { startTracing, shutdownTracing } from '@/observability/tracing';
@@ -40,13 +41,15 @@ class Application {
       minio: false,
       elasticsearch: false,
     };
+  private allowedOrigins: string[];
 
   constructor() {
+    this.allowedOrigins = config.cors.allowedOrigins;
     this.app = express();
     this.server = createServer(this.app);
     this.io = new (SocketIOServer as any)(this.server, {
       cors: {
-        origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+        origin: this.allowedOrigins,
         credentials: true,
       },
     });
@@ -69,11 +72,10 @@ class Application {
     }));
 
     // CORS configuration (dynamic) — ensures even error/404 responses include headers
-    const allowedOrigins = (process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000']).map(o => o.trim());
     this.app.use(cors({
       origin: (origin, callback) => {
         if (!origin) return callback(null, true); // non-browser or same-origin
-        if (allowedOrigins.includes(origin)) return callback(null, true);
+        if (this.allowedOrigins.includes(origin)) return callback(null, true);
         // Instead of blocking hard (which causes missing CORS header), allow but log
         logger.warn(`CORS: Origin not explicitly allowed: ${origin}`);
         return callback(null, true);
@@ -88,7 +90,7 @@ class Application {
     // Fallback header setter to cover any early responses (401/404) still needing CORS headers
     this.app.use((req, res, next) => {
       const origin = req.headers.origin as string | undefined;
-      if (origin && allowedOrigins.includes(origin)) {
+      if (origin && this.allowedOrigins.includes(origin)) {
         res.header('Access-Control-Allow-Origin', origin);
         res.header('Vary', 'Origin');
         res.header('Access-Control-Allow-Credentials', 'true');
@@ -99,7 +101,7 @@ class Application {
     // Explicit OPTIONS handler (some proxies strip automatic handling)
     this.app.options('*', (req, res) => {
       const origin = req.headers.origin as string | undefined;
-      if (origin && allowedOrigins.includes(origin)) {
+      if (origin && this.allowedOrigins.includes(origin)) {
         res.header('Access-Control-Allow-Origin', origin);
         res.header('Vary', 'Origin');
       }
@@ -121,18 +123,6 @@ class Application {
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
     this.app.use(cookieParser());
-
-    // Session configuration (optional - remove if not needed)
-    // this.app.use(session({
-    //   secret: process.env.SESSION_SECRET || 'fallback-secret',
-    //   resave: false,
-    //   saveUninitialized: false,
-    //   cookie: {
-    //     secure: process.env.NODE_ENV === 'production',
-    //     httpOnly: true,
-    //     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    //   },
-    // }));
 
     // Rate limiting
     const limiter = rateLimit({

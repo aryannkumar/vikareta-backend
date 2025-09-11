@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PersonalizationController } from '../controllers/personalization.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware } from '../middleware/authentication.middleware';
 
 const router = Router();
 const personalizationController = new PersonalizationController();

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { validateBody, validateParams } from '@/middleware/zod-validate';
 import { digilockerDocumentCreateSchema, digilockerDocumentUpdateSchema, digilockerDocumentIdParamsSchema } from '@/validation/schemas';
 import { digiLockerDocumentController } from '@/controllers/digilocker-document.controller';

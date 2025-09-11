@@ -128,6 +128,8 @@ export const config = {
     refreshSecret: env.JWT_REFRESH_SECRET,
     accessExpires: env.JWT_ACCESS_EXPIRES,
     refreshExpires: env.JWT_REFRESH_EXPIRES,
+    issuer: 'vikareta-backend',
+    audience: ['web', 'dashboard', 'admin'],
   },
 
   session: {

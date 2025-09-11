@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { ReviewController } from '@/controllers/review.controller';
-import { authMiddleware, optionalAuthMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware, optionalAuthMiddleware } from '@/middleware/authentication.middleware';
 import { validateQuery } from '@/middleware/zod-validate';
 import { paginationQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';

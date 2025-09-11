@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { securitySettingsController } from '@/controllers/security-settings.controller';
 import { validateBody } from '@/middleware/zod-validate';
 import { securitySettingsSchema } from '@/validation/schemas';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();

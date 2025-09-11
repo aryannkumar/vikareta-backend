@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { UsageLimitsController } from '../controllers/usage-limits.controller';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken } from '../middleware/authentication.middleware';
 
 const router = Router();
 const usageLimitsController = new UsageLimitsController();

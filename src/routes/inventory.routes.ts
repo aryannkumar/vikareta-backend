@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { InventoryController } from '../controllers/inventory.controller';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken } from '../middleware/authentication.middleware';
 import { validateBody, validateQuery } from '@/middleware/zod-validate';
 import { inventoryAdjustSchema, inventoryListQuerySchema, inventoryWarehouseCreateSchema, inventoryMovementsQuerySchema } from '@/validation/schemas';
 
