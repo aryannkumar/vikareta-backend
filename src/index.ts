@@ -82,7 +82,7 @@ class Application {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-XSRF-TOKEN', 'X-CSRF-TOKEN'],
       exposedHeaders: ['Content-Disposition'],
       maxAge: 600,
     }));
@@ -106,7 +106,7 @@ class Application {
         res.header('Vary', 'Origin');
       }
       res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-XSRF-TOKEN, X-CSRF-TOKEN');
       res.header('Access-Control-Allow-Credentials', 'true');
       res.sendStatus(204);
     });

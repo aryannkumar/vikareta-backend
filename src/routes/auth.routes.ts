@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { AuthController } from '@/controllers/auth.controller';
 import { validateBody } from '@/middleware/zod-validate';
 import { authRegisterSchema, authLoginSchema, authForgotPasswordSchema, authResetPasswordSchema, authChangePasswordSchema, authSendOTPSchema, authVerifyOTPSchema, authVerify2FASchema } from '@/validation/schemas';
-import { authenticateToken, csrfProtection, generateCSRFToken, rateLimit, securityHeaders, requireRole, requireUserType } from '@/middleware/authentication.middleware';
+import { authenticateToken, csrfProtection, rateLimit, securityHeaders, requireRole, requireUserType } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
@@ -18,8 +18,7 @@ router.use(rateLimit({
   keyGenerator: (req) => `${req.ip}:auth`,
 }));
 
-// CSRF protection for state-changing operations
-router.use(['/register', '/login', '/forgot-password', '/reset-password', '/change-password', '/logout'], generateCSRFToken);
+// CSRF protection for state-changing operations (token should be obtained via public /csrf-token)
 router.use(['/register', '/login', '/forgot-password', '/reset-password', '/change-password', '/logout'], csrfProtection);
 
 // Routes
