@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { RfqController } from '@/controllers/rfq.controller';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
 import { rfqCreateSchema, rfqUpdateSchema, rfqIdParamsSchema, rfqListQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';

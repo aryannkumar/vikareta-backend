@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { UserController } from '@/controllers/user.controller';
 import { validateBody, validateParams, validateQuery } from '@/middleware/zod-validate';
 import { userProfileUpdateSchema, businessProfileUpdateSchema, paginationQuerySchema, followUserParamsSchema, userSearchQuerySchema, userIdParamsSchema, userAdminListQuerySchema, userVerifyBodySchema, userDeactivateBodySchema } from '@/validation/schemas';
-import { authMiddleware, requireAdmin } from '../middleware/auth.middleware';
+import { authMiddleware, requireAdmin } from '../middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();

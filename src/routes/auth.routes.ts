@@ -2,12 +2,26 @@ import { Router } from 'express';
 import { AuthController } from '@/controllers/auth.controller';
 import { validateBody } from '@/middleware/zod-validate';
 import { authRegisterSchema, authLoginSchema, authForgotPasswordSchema, authResetPasswordSchema, authChangePasswordSchema, authSendOTPSchema, authVerifyOTPSchema, authVerify2FASchema } from '@/validation/schemas';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authenticateToken, csrfProtection, generateCSRFToken, rateLimit, securityHeaders, requireRole, requireUserType } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
 const authController = new AuthController();
 
+// Apply security headers to all routes
+router.use(securityHeaders);
+
+// Apply rate limiting to auth endpoints
+router.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per window
+  keyGenerator: (req) => `${req.ip}:auth`,
+}));
+
+// CSRF token endpoint
+router.get('/csrf-token', generateCSRFToken, (req, res) => {
+  res.json({ success: true, message: 'CSRF token set' });
+});
 
 // Routes
 
@@ -66,7 +80,12 @@ router.post('/forgot-password', validateBody(authForgotPasswordSchema), asyncHan
 router.post('/reset-password', validateBody(authResetPasswordSchema), asyncHandler(authController.resetPassword.bind(authController)));
 router.post('/refresh-token', asyncHandler(authController.refreshToken.bind(authController)));
 
-// OTP routes
+// OTP routes with enhanced rate limiting
+router.use('/send-otp', rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 3, // 3 OTP requests per 5 minutes
+  keyGenerator: (req) => `${req.ip}:otp`,
+}));
 router.post('/send-otp', validateBody(authSendOTPSchema), asyncHandler(authController.sendOTP.bind(authController)));
 router.post('/verify-otp', validateBody(authVerifyOTPSchema), asyncHandler(authController.verifyOTP.bind(authController)));
 
@@ -77,24 +96,24 @@ router.get('/linkedin', asyncHandler(authController.linkedinAuth.bind(authContro
 router.get('/linkedin/callback', asyncHandler(authController.linkedinCallback.bind(authController)));
 router.post('/oauth/token', asyncHandler(authController.oauthTokenExchange.bind(authController)));
 
-// Protected routes
-router.post('/logout', authMiddleware, asyncHandler(authController.logout.bind(authController)));
-router.post('/change-password', authMiddleware, validateBody(authChangePasswordSchema), asyncHandler(authController.changePassword.bind(authController)));
-router.get('/me', authMiddleware, asyncHandler(authController.getProfile.bind(authController)));
-router.put('/profile', authMiddleware, asyncHandler(authController.updateProfile.bind(authController)));
+// Protected routes with enhanced authentication
+router.post('/logout', authenticateToken, asyncHandler(authController.logout.bind(authController)));
+router.post('/change-password', authenticateToken, validateBody(authChangePasswordSchema), asyncHandler(authController.changePassword.bind(authController)));
+router.get('/me', authenticateToken, asyncHandler(authController.getProfile.bind(authController)));
+router.put('/profile', authenticateToken, asyncHandler(authController.updateProfile.bind(authController)));
 
 // Email verification
-router.post('/send-verification-email', authMiddleware, asyncHandler(authController.sendVerificationEmail.bind(authController)));
+router.post('/send-verification-email', authenticateToken, asyncHandler(authController.sendVerificationEmail.bind(authController)));
 router.get('/verify-email/:token', asyncHandler(authController.verifyEmail.bind(authController)));
 
-// Two-factor authentication
-router.post('/2fa/enable', authMiddleware, asyncHandler(authController.enableTwoFactor.bind(authController)));
-router.post('/2fa/disable', authMiddleware, asyncHandler(authController.disableTwoFactor.bind(authController)));
-router.post('/2fa/verify', authMiddleware, validateBody(authVerify2FASchema), asyncHandler(authController.verifyTwoFactor.bind(authController)));
+// Two-factor authentication (admin and business users only)
+router.post('/2fa/enable', authenticateToken, requireUserType('admin', 'business'), asyncHandler(authController.enableTwoFactor.bind(authController)));
+router.post('/2fa/disable', authenticateToken, requireUserType('admin', 'business'), asyncHandler(authController.disableTwoFactor.bind(authController)));
+router.post('/2fa/verify', authenticateToken, validateBody(authVerify2FASchema), asyncHandler(authController.verifyTwoFactor.bind(authController)));
 
-// Session management
-router.get('/sessions', authMiddleware, asyncHandler(authController.getSessions.bind(authController)));
-router.delete('/sessions/:sessionId', authMiddleware, asyncHandler(authController.revokeSession.bind(authController)));
-router.delete('/sessions', authMiddleware, asyncHandler(authController.revokeAllSessions.bind(authController)));
+// Session management (admin only)
+router.get('/sessions', authenticateToken, requireRole('admin'), asyncHandler(authController.getSessions.bind(authController)));
+router.delete('/sessions/:sessionId', authenticateToken, requireRole('admin'), asyncHandler(authController.revokeSession.bind(authController)));
+router.delete('/sessions', authenticateToken, requireRole('admin'), asyncHandler(authController.revokeAllSessions.bind(authController)));
 
 export { router as authRoutes };

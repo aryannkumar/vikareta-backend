@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { validateBody, validateParams } from '@/middleware/zod-validate';
 import { serviceOrderStatusUpdateSchema, serviceOrderIdParamsSchema } from '@/validation/schemas';
 import { serviceOrderController } from '@/controllers/service-order.controller';

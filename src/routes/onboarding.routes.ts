@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken } from '@/middleware/auth.middleware';
+import { authenticateToken } from '@/middleware/authentication.middleware';
 import { validateBody, validateParams } from '@/middleware/zod-validate';
 import { onboardingProfileSchema, onboardingBusinessSectionSchema, onboardingSectionParamsSchema, businessDocumentUploadSchema } from '@/validation/schemas';
 import { onboardingController } from '@/controllers/onboarding.controller';

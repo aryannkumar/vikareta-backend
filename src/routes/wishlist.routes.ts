@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { WishlistController } from '../controllers/wishlist.controller';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken } from '../middleware/authentication.middleware';
 import { validateBody, validateQuery, validateParams } from '@/middleware/zod-validate';
 import { wishlistAddSchema, wishlistQuerySchema, wishlistCheckQuerySchema, wishlistItemIdParamsSchema, wishlistLegacyProductParams, wishlistLegacyServiceParams, wishlistLegacyBusinessParams } from '@/validation/schemas';
 

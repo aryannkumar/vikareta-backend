@@ -1,12 +1,24 @@
 import { Router } from 'express';
 import { DashboardController } from '@/controllers/dashboard.controller';
-import { requireDashboardAccess } from '@/middleware/auth.middleware';
+import { authenticateToken, securityHeaders, rateLimit, requireUserType } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
 const dashboardController = new DashboardController();
 
-router.use(requireDashboardAccess);
+// Apply security headers to all dashboard routes
+router.use(securityHeaders);
+
+// Apply rate limiting to dashboard endpoints
+router.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // 50 requests per window for dashboard operations
+  keyGenerator: (req) => `${req.user?.id || req.ip}:dashboard`,
+}));
+
+// Enhanced authentication and authorization for dashboard routes
+router.use(authenticateToken);
+router.use(requireUserType('business', 'seller'));
 
 /**
  * @openapi

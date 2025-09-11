@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { negotiationController } from '../controllers/negotiation.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware } from '../middleware/authentication.middleware';
 import { asyncHandler } from '../middleware/error-handler';
 
 const router = Router();

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { UploadController } from '@/controllers/upload.controller';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();

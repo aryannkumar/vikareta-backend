@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AdvertisementController } from '@/controllers/advertisement.controller';
-import { authMiddleware, requireVerifiedUser } from '@/middleware/auth.middleware';
+import { authMiddleware, requireVerifiedUser } from '@/middleware/authentication.middleware';
 import { rateLimit } from 'express-rate-limit';
 import { validateQuery } from '@/middleware/zod-validate';
 import { paginationQuerySchema } from '@/validation/schemas';

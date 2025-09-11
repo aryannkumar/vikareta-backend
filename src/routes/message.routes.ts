@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { MessageController } from '../controllers/message.controller';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken } from '../middleware/authentication.middleware';
 import { validateQuery, validateBody, validateParams } from '@/middleware/zod-validate';
 import { messageSendSchema, messageListQuerySchema, messageConversationParamsSchema, messageIdParamsSchema } from '@/validation/schemas';
 

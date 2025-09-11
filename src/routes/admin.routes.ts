@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AdminController } from '@/controllers/admin.controller';
-import { authMiddleware, requireAdmin } from '@/middleware/auth.middleware';
+import { authenticateToken, securityHeaders, rateLimit, requireRole, requireUserType } from '@/middleware/authentication.middleware';
 import { validateQuery } from '@/middleware/zod-validate';
 import { paginationQuerySchema } from '@/validation/schemas';
 import { asyncHandler } from '@/middleware/error-handler';
@@ -8,8 +8,21 @@ import { asyncHandler } from '@/middleware/error-handler';
 const router = Router();
 const adminController = new AdminController();
 
-router.use(authMiddleware);
-router.use(requireAdmin);
+// Apply security headers to all admin routes
+router.use(securityHeaders);
+
+// Apply rate limiting to admin endpoints
+router.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per window for admin operations
+  keyGenerator: (req) => `${req.user?.id || req.ip}:admin`,
+}));
+
+// Enhanced authentication and authorization for admin routes
+router.use(authenticateToken);
+router.use(requireUserType('admin'));
+router.use(requireRole('admin'));
+
 /**
  * @openapi
  * /api/v1/admin/dashboard:

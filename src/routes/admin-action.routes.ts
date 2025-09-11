@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { adminActionController } from '@/controllers/admin-action.controller';
-import { authMiddleware } from '@/middleware/auth.middleware';
+import { authMiddleware } from '@/middleware/authentication.middleware';
 import { asyncHandler } from '@/middleware/error-handler';
 
 const router = Router();
