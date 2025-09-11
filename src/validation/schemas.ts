@@ -62,6 +62,12 @@ export const authRegisterSchema = z.object({
   businessName: z.string().min(2).max(100).optional(),
   userType: z.enum(['buyer', 'seller', 'business', 'both']),
   gstin: z.string().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).optional(),
+  country: z.string().min(2).max(100).optional(),
+  city: z.string().min(2).max(100).optional(),
+  state: z.string().min(2).max(100).optional(),
+  postalCode: z.string().min(3).max(20).optional(),
+  location: z.string().min(2).max(255).optional(),
+  address: z.string().min(5).max(500).optional(),
 });
 export const authLoginSchema = z.object({
   email: z.string().email().optional(),
