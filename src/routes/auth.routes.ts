@@ -18,10 +18,9 @@ router.use(rateLimit({
   keyGenerator: (req) => `${req.ip}:auth`,
 }));
 
-// CSRF token endpoint
-router.get('/csrf-token', generateCSRFToken, (req, res) => {
-  res.json({ success: true, message: 'CSRF token set' });
-});
+// CSRF protection for state-changing operations
+router.use(['/register', '/login', '/forgot-password', '/reset-password', '/change-password', '/logout'], generateCSRFToken);
+router.use(['/register', '/login', '/forgot-password', '/reset-password', '/change-password', '/logout'], csrfProtection);
 
 // Routes
 
