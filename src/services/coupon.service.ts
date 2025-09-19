@@ -2,6 +2,7 @@ import { prisma } from '@/config/database';
 import { logger } from '@/utils/logger';
 
 export interface CouponCreateInput {
+  userId: string;
   code: string;
   discountType: string; // percentage | flat | bogo etc.
   discountValue: number;
@@ -26,6 +27,7 @@ export class CouponService {
 
       const coupon = await prisma.coupon.create({
         data: {
+          userId: data.userId,
           code: data.code.trim().toUpperCase(),
           discountType: data.discountType,
           discountValue: data.discountValue,
