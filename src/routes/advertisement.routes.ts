@@ -106,6 +106,48 @@ router.put('/campaigns/:id', asyncHandler(advertisementController.updateCampaign
  */
 router.delete('/campaigns/:id', asyncHandler(advertisementController.deleteCampaign.bind(advertisementController)));
 
+/**
+ * @openapi
+ * /api/v1/advertisements/campaigns/{id}/pause:
+ *   put:
+ *     summary: Pause a campaign
+ *     tags:
+ *       - Advertisements
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Campaign paused
+ */
+router.put('/campaigns/:id/pause', asyncHandler(advertisementController.pauseCampaign.bind(advertisementController)));
+
+/**
+ * @openapi
+ * /api/v1/advertisements/campaigns/{id}/resume:
+ *   put:
+ *     summary: Resume a campaign
+ *     tags:
+ *       - Advertisements
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Campaign resumed
+ */
+router.put('/campaigns/:id/resume', asyncHandler(advertisementController.resumeCampaign.bind(advertisementController)));
+
 // Ads under campaign
 router.get('/campaigns/:campaignId/ads', asyncHandler(advertisementController.listAds.bind(advertisementController)));
 router.post('/campaigns/:campaignId/ads', asyncHandler(advertisementController.createAd.bind(advertisementController)));

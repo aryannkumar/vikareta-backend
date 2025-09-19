@@ -646,6 +646,269 @@ export class OrderService extends BaseService {
     }
   }
 
+  async getPendingOrderStats(sellerId?: string): Promise<{
+    totalPending: number;
+    totalValue: number;
+    averageValue: number;
+    pendingByType: Record<string, number>;
+    oldestPendingOrder?: Order;
+    recentPendingOrders: Order[];
+  }> {
+    try {
+      const where: any = { status: 'pending' };
+      if (sellerId) where.sellerId = sellerId;
+
+      const [
+        totalPending,
+        totalValue,
+        pendingByType,
+        oldestPendingOrder,
+        recentPendingOrders,
+      ] = await Promise.all([
+        this.prisma.order.count({ where }),
+        this.prisma.order.aggregate({
+          where,
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.order.groupBy({
+          by: ['orderType'],
+          where,
+          _count: true,
+        }),
+        this.prisma.order.findFirst({
+          where,
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                businessName: true,
+              },
+            },
+            items: {
+              take: 1,
+              include: {
+                product: {
+                  select: { title: true },
+                },
+                service: {
+                  select: { title: true },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        }),
+        this.prisma.order.findMany({
+          where,
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                businessName: true,
+              },
+            },
+            items: {
+              take: 1,
+              include: {
+                product: {
+                  select: { title: true },
+                },
+                service: {
+                  select: { title: true },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        }),
+      ]);
+
+      const value = Number(totalValue._sum.totalAmount || 0);
+      const averageValue = totalPending > 0 ? value / totalPending : 0;
+
+      const typeCounts = pendingByType.reduce((acc, item) => {
+        acc[item.orderType] = item._count;
+        return acc;
+      }, {} as Record<string, number>);
+
+      return {
+        totalPending,
+        totalValue: value,
+        averageValue,
+        pendingByType: typeCounts,
+        oldestPendingOrder: oldestPendingOrder || undefined,
+        recentPendingOrders,
+      };
+    } catch (error) {
+      logger.error('Error fetching pending order stats:', error);
+      throw error;
+    }
+  }
+
+  async getCompletedOrderStats(sellerId?: string, dateFrom?: Date, dateTo?: Date): Promise<{
+    totalCompleted: number;
+    totalValue: number;
+    averageValue: number;
+    completedByType: Record<string, number>;
+    recentCompletedOrders: Order[];
+    completionRate: number;
+  }> {
+    try {
+      const where: any = { status: 'delivered' };
+      if (sellerId) where.sellerId = sellerId;
+      if (dateFrom || dateTo) {
+        where.updatedAt = {};
+        if (dateFrom) where.updatedAt.gte = dateFrom;
+        if (dateTo) where.updatedAt.lte = dateTo;
+      }
+
+      const [
+        totalCompleted,
+        totalValue,
+        completedByType,
+        recentCompletedOrders,
+        totalOrders,
+      ] = await Promise.all([
+        this.prisma.order.count({ where }),
+        this.prisma.order.aggregate({
+          where,
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.order.groupBy({
+          by: ['orderType'],
+          where,
+          _count: true,
+        }),
+        this.prisma.order.findMany({
+          where,
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                businessName: true,
+              },
+            },
+            items: {
+              take: 1,
+              include: {
+                product: {
+                  select: { title: true },
+                },
+                service: {
+                  select: { title: true },
+                },
+              },
+            },
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 5,
+        }),
+        this.prisma.order.count({
+          where: sellerId ? { sellerId } : {},
+        }),
+      ]);
+
+      const value = Number(totalValue._sum.totalAmount || 0);
+      const averageValue = totalCompleted > 0 ? value / totalCompleted : 0;
+      const completionRate = totalOrders > 0 ? (totalCompleted / totalOrders) * 100 : 0;
+
+      const typeCounts = completedByType.reduce((acc, item) => {
+        acc[item.orderType] = item._count;
+        return acc;
+      }, {} as Record<string, number>);
+
+      return {
+        totalCompleted,
+        totalValue: value,
+        averageValue,
+        completedByType: typeCounts,
+        recentCompletedOrders,
+        completionRate,
+      };
+    } catch (error) {
+      logger.error('Error fetching completed order stats:', error);
+      throw error;
+    }
+  }
+
+  async getReadyToShipOrders(sellerId?: string, limit: number = 20): Promise<{
+    orders: Order[];
+    total: number;
+  }> {
+    try {
+      const where: any = {
+        status: { in: ['confirmed', 'processing'] },
+        paymentStatus: 'paid',
+      };
+      if (sellerId) where.sellerId = sellerId;
+
+      const [orders, total] = await Promise.all([
+        this.prisma.order.findMany({
+          where,
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                businessName: true,
+                email: true,
+                phone: true,
+              },
+            },
+            seller: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                businessName: true,
+              },
+            },
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    title: true,
+                    media: { take: 1 },
+                  },
+                },
+                service: {
+                  select: {
+                    id: true,
+                    title: true,
+                  },
+                },
+              },
+            },
+            deliveryTracking: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+          take: limit,
+        }),
+        this.prisma.order.count({ where }),
+      ]);
+
+      return {
+        orders,
+        total,
+      };
+    } catch (error) {
+      logger.error('Error fetching ready-to-ship orders:', error);
+      throw error;
+    }
+  }
+
   private async generateOrderNumber(): Promise<string> {
     const date = new Date();
     const year = date.getFullYear().toString().slice(-2);

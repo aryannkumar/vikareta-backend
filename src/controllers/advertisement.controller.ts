@@ -196,4 +196,38 @@ export class AdvertisementController {
       res.status(500).json({ success: false, error: 'Failed to fetch top ads' });
     }
   }
+
+  async pauseCampaign(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      const campaign = await advertisementService.pauseCampaign(userId, id);
+      res.json({ success: true, message: 'Campaign paused successfully', data: campaign });
+    } catch (error: any) {
+      logger.error('AdvertisementController.pauseCampaign error', error);
+      res.status(400).json({ success: false, error: error.message || 'Failed to pause campaign' });
+    }
+  }
+
+  async resumeCampaign(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      const campaign = await advertisementService.resumeCampaign(userId, id);
+      res.json({ success: true, message: 'Campaign resumed successfully', data: campaign });
+    } catch (error: any) {
+      logger.error('AdvertisementController.resumeCampaign error', error);
+      res.status(400).json({ success: false, error: error.message || 'Failed to resume campaign' });
+    }
+  }
 }

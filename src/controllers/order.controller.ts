@@ -291,4 +291,73 @@ export class OrderController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  async getPendingOrderStats(req: Request, res: Response): Promise<void> {
+    try {
+      const sellerId = req.user?.id;
+      if (!sellerId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const stats = await orderService.getPendingOrderStats(sellerId);
+      res.status(200).json({
+        success: true,
+        message: 'Pending order stats retrieved successfully',
+        data: stats,
+      });
+    } catch (error) {
+      logger.error('Error getting pending order stats:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  async getCompletedOrderStats(req: Request, res: Response): Promise<void> {
+    try {
+      const sellerId = req.user?.id;
+      if (!sellerId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { dateFrom, dateTo } = req.query;
+      const stats = await orderService.getCompletedOrderStats(
+        sellerId,
+        dateFrom ? new Date(dateFrom as string) : undefined,
+        dateTo ? new Date(dateTo as string) : undefined
+      );
+      res.status(200).json({
+        success: true,
+        message: 'Completed order stats retrieved successfully',
+        data: stats,
+      });
+    } catch (error) {
+      logger.error('Error getting completed order stats:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  async getReadyToShipOrders(req: Request, res: Response): Promise<void> {
+    try {
+      const sellerId = req.user?.id;
+      if (!sellerId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { limit = 20 } = req.query;
+      const result = await orderService.getReadyToShipOrders(
+        sellerId,
+        parseInt(limit as string)
+      );
+      res.status(200).json({
+        success: true,
+        message: 'Ready-to-ship orders retrieved successfully',
+        data: result,
+      });
+    } catch (error) {
+      logger.error('Error getting ready-to-ship orders:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }

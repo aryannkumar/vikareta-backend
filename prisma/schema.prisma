@@ -402,6 +402,8 @@ model User {
   wishlist                  Wishlist[]
   notificationBatchRecipients NotificationBatchRecipient[]
   businessWishlist          Wishlist[] @relation("BusinessWishlist")
+  coupons                   Coupon[]
+  orderHistory              OrderHistory[]
   
   // New relations for dashboard models
   announcements             Announcement[] @relation("AnnouncementAuthor")
@@ -429,6 +431,7 @@ model User {
   userInterests             UserInterest[]
   userSearchHistory         UserSearchHistory[]
   monthlyUsage              MonthlyUsage[]
+  digiLockerDocuments       DigiLockerDocument[]
 
   @@map("users")
 }
@@ -739,6 +742,7 @@ model Order {
   buyerId          String    @map("buyer_id") @db.Uuid
   sellerId         String    @map("seller_id") @db.Uuid
   quoteId          String?   @map("quote_id") @db.Uuid
+  couponId         String?   @map("coupon_id") @db.Uuid
   orderNumber      String    @unique @map("order_number") @db.VarChar(50)
   orderType        String    @default("product") @map("order_type") @db.VarChar(20) // "product" or "service"
   deliveryDate     DateTime? @map("delivery_date")
@@ -764,6 +768,7 @@ model Order {
   buyer                 User                     @relation("BuyerOrders", fields: [buyerId], references: [id])
   seller                User                     @relation("SellerOrders", fields: [sellerId], references: [id])
   quote                 Quote?                   @relation(fields: [quoteId], references: [id])
+  coupon                Coupon?                  @relation(fields: [couponId], references: [id])
   items                 OrderItem[]
   serviceOrders         ServiceOrder[]
   statusHistory         OrderStatusHistory[]
@@ -774,6 +779,7 @@ model Order {
   shipment              Shipment?
   serviceAppointments   ServiceAppointment[]
   deals                 Deal[]
+  orderHistory          OrderHistory[]
 
   @@index([buyerId, createdAt])
   @@index([sellerId, createdAt])
@@ -858,6 +864,9 @@ model OrderHistory {
   details   String?  @db.Text
   userId    String?  @map("user_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id])
 
   @@index([orderId, createdAt])
   @@map("order_history")
@@ -1052,6 +1061,7 @@ model Review {
 
 model Coupon {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
   code           String    @unique @db.VarChar(50)
   discountType   String    @map("discount_type") @db.VarChar(20)
   discountValue  Decimal   @map("discount_value") @db.Decimal(10, 2)
@@ -1062,6 +1072,9 @@ model Coupon {
   expiresAt      DateTime? @map("expires_at")
   isActive       Boolean   @default(true) @map("is_active")
   createdAt      DateTime  @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
 
   @@index([code, isActive])
   @@index([expiresAt, isActive])
@@ -1367,6 +1380,8 @@ model DigiLockerDocument {
   verificationStatus String @default("pending") @map("verification_status") @db.VarChar(20)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([docId])

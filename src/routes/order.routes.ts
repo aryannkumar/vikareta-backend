@@ -69,4 +69,13 @@ router.put('/:id/status', validateParams(orderIdParamsSchema), validateBody(orde
 router.get('/:id/tracking', asyncHandler(orderController.getOrderTracking.bind(orderController)));
 router.post('/:id/tracking-events', validateParams(orderIdParamsSchema), validateBody(orderTrackingEventSchema), asyncHandler(orderController.addTrackingEvent.bind(orderController)));
 
+// Order statistics routes
+router.get('/pending/stats', asyncHandler(orderController.getPendingOrderStats.bind(orderController)));
+router.get('/completed/stats', asyncHandler(orderController.getCompletedOrderStats.bind(orderController)));
+router.get('/ready-to-ship', asyncHandler(orderController.getReadyToShipOrders.bind(orderController)));
+
+// Buyer and seller specific routes
+router.get('/buyer', asyncHandler(orderController.getBuyerOrders.bind(orderController)));
+router.get('/seller', asyncHandler(orderController.getSellerOrders.bind(orderController)));
+
 export { router as orderRoutes };

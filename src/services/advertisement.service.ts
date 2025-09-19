@@ -247,6 +247,28 @@ export class AdvertisementService {
       take,
     });
   }
+
+  async pauseCampaign(userId: string, campaignId: string) {
+    const campaign = await this.getCampaign(userId, campaignId);
+    if (!campaign) throw new Error('Campaign not found');
+    if (campaign.status !== 'active') throw new Error('Campaign is not active');
+
+    return prisma.adCampaign.update({
+      where: { id: campaignId },
+      data: { status: 'paused', isActive: false }
+    });
+  }
+
+  async resumeCampaign(userId: string, campaignId: string) {
+    const campaign = await this.getCampaign(userId, campaignId);
+    if (!campaign) throw new Error('Campaign not found');
+    if (campaign.status !== 'paused') throw new Error('Campaign is not paused');
+
+    return prisma.adCampaign.update({
+      where: { id: campaignId },
+      data: { status: 'active', isActive: true }
+    });
+  }
 }
 
 export const advertisementService = new AdvertisementService();

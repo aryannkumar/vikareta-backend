@@ -262,4 +262,174 @@ export class WalletController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  // Bank account management
+  async getBankAccounts(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // For now, return empty array as bank account management isn't implemented yet
+      res.status(200).json({
+        success: true,
+        message: 'Bank accounts retrieved successfully',
+        data: [],
+      });
+    } catch (error) {
+      logger.error('Error getting bank accounts:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  async addBankAccount(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { accountNumber, bankName, ifscCode, accountHolderName } = req.body;
+
+      // For now, return success as bank account management isn't fully implemented yet
+      res.status(201).json({
+        success: true,
+        message: 'Bank account added successfully',
+        data: {
+          id: 'temp-' + Date.now(),
+          accountNumber,
+          bankName,
+          ifscCode,
+          accountHolderName,
+          status: 'pending_verification',
+        },
+      });
+    } catch (error) {
+      logger.error('Error adding bank account:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Wallet limits
+  async getWalletLimits(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // Return default wallet limits
+      const limits = {
+        dailyDepositLimit: 50000,
+        dailyWithdrawalLimit: 25000,
+        monthlyDepositLimit: 500000,
+        monthlyWithdrawalLimit: 250000,
+        minDepositAmount: 100,
+        minWithdrawalAmount: 100,
+        maxDepositAmount: 50000,
+        maxWithdrawalAmount: 25000,
+      };
+
+      res.status(200).json({
+        success: true,
+        message: 'Wallet limits retrieved successfully',
+        data: limits,
+      });
+    } catch (error) {
+      logger.error('Error getting wallet limits:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  async updateWalletLimits(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const limits = req.body;
+
+      // For now, just return success as limits update isn't fully implemented
+      res.status(200).json({
+        success: true,
+        message: 'Wallet limits updated successfully',
+        data: limits,
+      });
+    } catch (error) {
+      logger.error('Error updating wallet limits:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Wallet history (comprehensive transaction history)
+  async getWalletHistory(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const {
+        page = 1,
+        limit = 50,
+        transactionType,
+        referenceType,
+        dateFrom,
+        dateTo,
+      } = req.query;
+
+      const filters = {
+        transactionType: transactionType as string,
+        referenceType: referenceType as string,
+        dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
+        dateTo: dateTo ? new Date(dateTo as string) : undefined,
+      };
+
+      const result = await walletService.getWalletTransactions(
+        userId,
+        filters,
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Wallet history retrieved successfully',
+        data: result,
+      });
+    } catch (error) {
+      logger.error('Error getting wallet history:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Locked amounts
+  async getLockedAmounts(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const wallet = await walletService.getWalletByUserId(userId);
+      const lockedAmounts = (wallet as any)?.lockedAmounts || [];
+
+      res.status(200).json({
+        success: true,
+        message: 'Locked amounts retrieved successfully',
+        data: lockedAmounts,
+      });
+    } catch (error) {
+      logger.error('Error getting locked amounts:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }

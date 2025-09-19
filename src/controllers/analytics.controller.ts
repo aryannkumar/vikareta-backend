@@ -86,4 +86,26 @@ export class AnalyticsController {
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
+
+  async getCustomerAnalytics(req: Request, res: Response): Promise<void> {
+    try {
+      const timeframe = (req.query.timeframe as any) || 'month';
+
+      const platformAnalytics = await analyticsService.getPlatformAnalytics(timeframe);
+
+      res.status(200).json({
+        success: true,
+        message: 'Customer analytics retrieved',
+        data: {
+          summary: platformAnalytics.summary,
+          customerMetrics: platformAnalytics.customerMetrics,
+          customerRetention: platformAnalytics.customerRetention,
+          topCustomers: platformAnalytics.topCustomers
+        }
+      });
+    } catch (error) {
+      logger.error('Error getting customer analytics:', error);
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
 }

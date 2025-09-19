@@ -65,5 +65,19 @@ router.get('/orders', asyncHandler(analyticsController.getOrderAnalytics.bind(an
  *         description: Revenue analytics
  */
 router.get('/revenue', asyncHandler(analyticsController.getRevenueAnalytics.bind(analyticsController)));
+/**
+ * @openapi
+ * /api/v1/analytics/customers:
+ *   get:
+ *     summary: Get customer analytics
+ *     tags:
+ *       - Analytics
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Customer analytics
+ */
+router.get('/customers', asyncHandler(analyticsController.getCustomerAnalytics.bind(analyticsController)));
 
 export { router as analyticsRoutes };

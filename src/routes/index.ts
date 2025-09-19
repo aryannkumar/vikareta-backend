@@ -13,6 +13,7 @@ import { categoryRoutes } from './category.routes';
 import { rfqRoutes } from './rfq.routes';
 import { quoteRoutes } from './quote.routes';
 import { orderRoutes } from './order.routes';
+import { customerRoutes } from './customer.routes';
 import { cartRoutes } from './cart.routes';
 import { serviceOrderRoutes } from './service-order.routes';
 import { digiLockerDocumentRoutes } from './digilocker-document.routes';
@@ -82,6 +83,7 @@ export const setupRoutes = (app: Application): void => {
   app.use(`${API_PREFIX}/rfqs`, rfqRoutes);
   app.use(`${API_PREFIX}/quotes`, quoteRoutes);
   app.use(`${API_PREFIX}/orders`, orderRoutes);
+  app.use(`${API_PREFIX}/customers`, customerRoutes);
   app.use(`${API_PREFIX}/cart`, cartRoutes);
   app.use(`${API_PREFIX}/service-orders`, serviceOrderRoutes);
   app.use(`${API_PREFIX}/digilocker-documents`, digiLockerDocumentRoutes);
