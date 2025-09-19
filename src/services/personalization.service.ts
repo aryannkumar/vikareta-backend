@@ -14,7 +14,70 @@ export interface TrendingCategoryData {
   periodEnd: Date;
 }
 
+export interface GuestPersonalizationData {
+  guestId: string;
+  preferences: {
+    language: string;
+    currency: string;
+    theme: 'light' | 'dark' | 'auto';
+    location?: {
+      country: string;
+      city: string;
+      timezone: string;
+    };
+    notifications: {
+      email: boolean;
+      push: boolean;
+      sms: boolean;
+    };
+  };
+  browsingHistory: {
+    recentlyViewed: string[]; // Product IDs
+    searchHistory: string[];
+    categoryViews: Record<string, number>; // Category ID -> view count
+  };
+  cart: {
+    items: Array<{
+      productId: string;
+      quantity: number;
+      addedAt: string;
+      variant?: Record<string, any>;
+    }>;
+    lastUpdated: string;
+  };
+  wishlist: string[]; // Product IDs
+  recommendations: {
+    viewedProducts: string[];
+    purchasedCategories: string[];
+    searchTerms: string[];
+  };
+  sessionData: {
+    createdAt: string;
+    lastActivity: string;
+    pageViews: number;
+    timeSpent: number; // in seconds
+    deviceInfo: {
+      userAgent: string;
+      screenSize: string;
+      platform: string;
+    };
+  };
+}
+
+export interface PersonalizationUpdate {
+  preferences?: Partial<GuestPersonalizationData['preferences']>;
+  browsingHistory?: Partial<GuestPersonalizationData['browsingHistory']>;
+  cart?: Partial<GuestPersonalizationData['cart']>;
+  wishlist?: string[];
+  recommendations?: Partial<GuestPersonalizationData['recommendations']>;
+  sessionData?: Partial<GuestPersonalizationData['sessionData']>;
+}
+
 export class PersonalizationService extends BaseService {
+  private readonly GUEST_DATA_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
+  private readonly MAX_RECENTLY_VIEWED = 20;
+  private readonly MAX_SEARCH_HISTORY = 10;
+
   constructor() {
     super();
   }
@@ -391,6 +454,458 @@ export class PersonalizationService extends BaseService {
       });
     } catch (error) {
       logger.error('Error recalculating preference score:', error);
+    }
+  }
+
+  // ===== GUEST USER PERSONALIZATION METHODS =====
+
+  /**
+   * Create initial personalization data for a guest user
+   */
+  async createGuestPersonalization(
+    guestId: string,
+    initialData?: Partial<GuestPersonalizationData>
+  ): Promise<GuestPersonalizationData> {
+    try {
+      const personalizationData: GuestPersonalizationData = {
+        guestId,
+        preferences: {
+          language: initialData?.preferences?.language || 'en',
+          currency: initialData?.preferences?.currency || 'USD',
+          theme: initialData?.preferences?.theme || 'auto',
+          location: initialData?.preferences?.location,
+          notifications: {
+            email: false,
+            push: false,
+            sms: false,
+            ...initialData?.preferences?.notifications,
+          },
+        },
+        browsingHistory: {
+          recentlyViewed: [],
+          searchHistory: [],
+          categoryViews: {},
+          ...initialData?.browsingHistory,
+        },
+        cart: {
+          items: [],
+          lastUpdated: new Date().toISOString(),
+          ...initialData?.cart,
+        },
+        wishlist: initialData?.wishlist || [],
+        recommendations: {
+          viewedProducts: [],
+          purchasedCategories: [],
+          searchTerms: [],
+          ...initialData?.recommendations,
+        },
+        sessionData: {
+          createdAt: new Date().toISOString(),
+          lastActivity: new Date().toISOString(),
+          pageViews: 0,
+          timeSpent: 0,
+          deviceInfo: {
+            userAgent: '',
+            screenSize: '',
+            platform: '',
+          },
+          ...initialData?.sessionData,
+        },
+      };
+
+      // Store in Redis with TTL
+      await this.cache.setex(
+        `guest_personalization:${guestId}`,
+        this.GUEST_DATA_TTL,
+        JSON.stringify(personalizationData)
+      );
+
+      logger.info(`Created personalization data for guest: ${guestId}`);
+      return personalizationData;
+    } catch (error) {
+      logger.error('Failed to create guest personalization:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get personalization data for a guest user
+   */
+  async getGuestPersonalization(guestId: string): Promise<GuestPersonalizationData | null> {
+    try {
+      const data = await this.cache.get(`guest_personalization:${guestId}`);
+      if (!data) {
+        return null;
+      }
+
+      const personalizationData = JSON.parse(data) as GuestPersonalizationData;
+
+      // Update last activity
+      personalizationData.sessionData.lastActivity = new Date().toISOString();
+      await this.updateGuestPersonalization(guestId, {
+        sessionData: { lastActivity: personalizationData.sessionData.lastActivity }
+      });
+
+      return personalizationData;
+    } catch (error) {
+      logger.error('Failed to get guest personalization:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update personalization data for a guest user
+   */
+  async updateGuestPersonalization(
+    guestId: string,
+    updates: PersonalizationUpdate
+  ): Promise<GuestPersonalizationData | null> {
+    try {
+      const existingData = await this.getGuestPersonalization(guestId);
+      if (!existingData) {
+        return null;
+      }
+
+      // Merge updates
+      const updatedData: GuestPersonalizationData = {
+        ...existingData,
+        ...updates,
+        preferences: { ...existingData.preferences, ...updates.preferences },
+        browsingHistory: { ...existingData.browsingHistory, ...updates.browsingHistory },
+        cart: {
+          ...existingData.cart,
+          ...updates.cart,
+          lastUpdated: new Date().toISOString(),
+        },
+        recommendations: { ...existingData.recommendations, ...updates.recommendations },
+        sessionData: {
+          ...existingData.sessionData,
+          lastActivity: new Date().toISOString(),
+          ...updates.sessionData,
+        },
+      };
+
+      // Store updated data
+      await this.cache.setex(
+        `guest_personalization:${guestId}`,
+        this.GUEST_DATA_TTL,
+        JSON.stringify(updatedData)
+      );
+
+      return updatedData;
+    } catch (error) {
+      logger.error('Failed to update guest personalization:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add product to recently viewed
+   */
+  async addToRecentlyViewed(guestId: string, productId: string): Promise<void> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return;
+
+      // Remove if already exists, then add to front
+      const recentlyViewed = data.browsingHistory.recentlyViewed.filter(id => id !== productId);
+      recentlyViewed.unshift(productId);
+
+      // Keep only the most recent items
+      if (recentlyViewed.length > this.MAX_RECENTLY_VIEWED) {
+        recentlyViewed.splice(this.MAX_RECENTLY_VIEWED);
+      }
+
+      await this.updateGuestPersonalization(guestId, {
+        browsingHistory: { recentlyViewed },
+        recommendations: {
+          viewedProducts: recentlyViewed.slice(0, 10), // Keep top 10 for recommendations
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to add to recently viewed:', error);
+    }
+  }
+
+  /**
+   * Add search term to history
+   */
+  async addToSearchHistory(guestId: string, searchTerm: string): Promise<void> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return;
+
+      // Remove if already exists, then add to front
+      const searchHistory = data.browsingHistory.searchHistory.filter(term => term !== searchTerm);
+      searchHistory.unshift(searchTerm);
+
+      // Keep only the most recent searches
+      if (searchHistory.length > this.MAX_SEARCH_HISTORY) {
+        searchHistory.splice(this.MAX_SEARCH_HISTORY);
+      }
+
+      await this.updateGuestPersonalization(guestId, {
+        browsingHistory: { searchHistory },
+        recommendations: { searchTerms: searchHistory.slice(0, 5) },
+      });
+    } catch (error) {
+      logger.error('Failed to add to search history:', error);
+    }
+  }
+
+  /**
+   * Update category view count
+   */
+  async updateCategoryView(guestId: string, categoryId: string): Promise<void> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return;
+
+      const categoryViews = { ...data.browsingHistory.categoryViews };
+      categoryViews[categoryId] = (categoryViews[categoryId] || 0) + 1;
+
+      await this.updateGuestPersonalization(guestId, {
+        browsingHistory: { categoryViews },
+      });
+    } catch (error) {
+      logger.error('Failed to update category view:', error);
+    }
+  }
+
+  /**
+   * Add item to cart
+   */
+  async addToCart(
+    guestId: string,
+    productId: string,
+    quantity: number = 1,
+    variant?: Record<string, any>
+  ): Promise<void> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return;
+
+      const existingItemIndex = data.cart.items.findIndex(item => item.productId === productId);
+
+      if (existingItemIndex >= 0) {
+        // Update existing item
+        data.cart.items[existingItemIndex].quantity += quantity;
+      } else {
+        // Add new item
+        data.cart.items.push({
+          productId,
+          quantity,
+          addedAt: new Date().toISOString(),
+          variant,
+        });
+      }
+
+      await this.updateGuestPersonalization(guestId, {
+        cart: { items: data.cart.items },
+      });
+    } catch (error) {
+      logger.error('Failed to add to cart:', error);
+    }
+  }
+
+  /**
+   * Remove item from cart
+   */
+  async removeFromCart(guestId: string, productId: string): Promise<void> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return;
+
+      data.cart.items = data.cart.items.filter(item => item.productId !== productId);
+
+      await this.updateGuestPersonalization(guestId, {
+        cart: { items: data.cart.items },
+      });
+    } catch (error) {
+      logger.error('Failed to remove from cart:', error);
+    }
+  }
+
+  /**
+   * Update cart item quantity
+   */
+  async updateCartItemQuantity(guestId: string, productId: string, quantity: number): Promise<void> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return;
+
+      const itemIndex = data.cart.items.findIndex(item => item.productId === productId);
+      if (itemIndex >= 0) {
+        if (quantity <= 0) {
+          data.cart.items.splice(itemIndex, 1);
+        } else {
+          data.cart.items[itemIndex].quantity = quantity;
+        }
+
+        await this.updateGuestPersonalization(guestId, {
+          cart: { items: data.cart.items },
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to update cart item quantity:', error);
+    }
+  }
+
+  /**
+   * Add/remove product from wishlist
+   */
+  async toggleWishlist(guestId: string, productId: string): Promise<boolean> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return false;
+
+      const isInWishlist = data.wishlist.includes(productId);
+      if (isInWishlist) {
+        data.wishlist = data.wishlist.filter(id => id !== productId);
+      } else {
+        data.wishlist.push(productId);
+      }
+
+      await this.updateGuestPersonalization(guestId, {
+        wishlist: data.wishlist,
+      });
+
+      return !isInWishlist; // Return true if added, false if removed
+    } catch (error) {
+      logger.error('Failed to toggle wishlist:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Update session activity
+   */
+  async updateSessionActivity(
+    guestId: string,
+    activity: {
+      pageViews?: number;
+      timeSpent?: number;
+      deviceInfo?: Partial<GuestPersonalizationData['sessionData']['deviceInfo']>;
+    }
+  ): Promise<void> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) return;
+
+      const sessionData = { ...data.sessionData };
+
+      if (activity.pageViews !== undefined) {
+        sessionData.pageViews += activity.pageViews;
+      }
+
+      if (activity.timeSpent !== undefined) {
+        sessionData.timeSpent += activity.timeSpent;
+      }
+
+      if (activity.deviceInfo) {
+        sessionData.deviceInfo = { ...sessionData.deviceInfo, ...activity.deviceInfo };
+      }
+
+      await this.updateGuestPersonalization(guestId, { sessionData });
+    } catch (error) {
+      logger.error('Failed to update session activity:', error);
+    }
+  }
+
+  /**
+   * Get personalized recommendations for a guest user
+   */
+  async getPersonalizedRecommendations(guestId: string): Promise<{
+    recentlyViewed: string[];
+    recommendedProducts: string[];
+    trendingCategories: string[];
+    suggestedSearches: string[];
+  }> {
+    try {
+      const data = await this.getGuestPersonalization(guestId);
+      if (!data) {
+        return {
+          recentlyViewed: [],
+          recommendedProducts: [],
+          trendingCategories: [],
+          suggestedSearches: [],
+        };
+      }
+
+      // Get trending categories based on view counts
+      const trendingCategories = Object.entries(data.browsingHistory.categoryViews)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([categoryId]) => categoryId);
+
+      return {
+        recentlyViewed: data.browsingHistory.recentlyViewed.slice(0, 5),
+        recommendedProducts: this.generateProductRecommendations(data),
+        trendingCategories,
+        suggestedSearches: data.browsingHistory.searchHistory.slice(0, 5),
+      };
+    } catch (error) {
+      logger.error('Failed to get personalized recommendations:', error);
+      return {
+        recentlyViewed: [],
+        recommendedProducts: [],
+        trendingCategories: [],
+        suggestedSearches: [],
+      };
+    }
+  }
+
+  /**
+   * Generate product recommendations based on user behavior
+   */
+  private generateProductRecommendations(data: GuestPersonalizationData): string[] {
+    const recommendations = new Set<string>();
+
+    // Add products from recently viewed (similar products could be added here)
+    data.browsingHistory.recentlyViewed.slice(0, 3).forEach(productId => {
+      recommendations.add(productId);
+    });
+
+    // Add products from wishlist
+    data.wishlist.slice(0, 3).forEach(productId => {
+      recommendations.add(productId);
+    });
+
+    // Add products from cart (frequently bought together could be added here)
+    data.cart.items.slice(0, 3).forEach(item => {
+      recommendations.add(item.productId);
+    });
+
+    return Array.from(recommendations).slice(0, 10);
+  }
+
+  /**
+   * Clear all personalization data for a guest user
+   */
+  async clearGuestPersonalization(guestId: string): Promise<void> {
+    try {
+      await this.cache.del(`guest_personalization:${guestId}`);
+      logger.info(`Cleared personalization data for guest: ${guestId}`);
+    } catch (error) {
+      logger.error('Failed to clear guest personalization:', error);
+    }
+  }
+
+  /**
+   * Migrate guest personalization data to registered user
+   */
+  async migrateGuestToUser(guestId: string, userId: string): Promise<void> {
+    try {
+      const guestData = await this.getGuestPersonalization(guestId);
+      if (!guestData) return;
+
+      // Here you would typically migrate the data to the user's permanent profile
+      // For now, we'll just clear the guest data
+      await this.clearGuestPersonalization(guestId);
+
+      logger.info(`Migrated guest personalization from ${guestId} to user ${userId}`);
+    } catch (error) {
+      logger.error('Failed to migrate guest to user:', error);
     }
   }
 }

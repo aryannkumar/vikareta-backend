@@ -19,7 +19,7 @@ router.use(rateLimit({
 }));
 
 // CSRF protection for state-changing operations (token should be obtained via public /csrf-token)
-router.use(['/register', '/login', '/forgot-password', '/reset-password', '/change-password', '/logout'], csrfProtection);
+router.use(['/login', '/forgot-password', '/reset-password', '/change-password', '/logout'], csrfProtection);
 
 // Routes
 
@@ -92,7 +92,7 @@ router.get('/google', asyncHandler(authController.googleAuth.bind(authController
 router.get('/google/callback', asyncHandler(authController.googleCallback.bind(authController)));
 router.get('/linkedin', asyncHandler(authController.linkedinAuth.bind(authController)));
 router.get('/linkedin/callback', asyncHandler(authController.linkedinCallback.bind(authController)));
-router.post('/oauth/token', asyncHandler(authController.oauthTokenExchange.bind(authController)));
+router.post('/guest-session', asyncHandler(authController.createGuestSession.bind(authController)));
 
 // Protected routes with enhanced authentication
 router.post('/logout', authenticateToken, asyncHandler(authController.logout.bind(authController)));

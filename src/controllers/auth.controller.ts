@@ -1,19 +1,26 @@
 import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { AuthService } from '@/services/auth.service';
 import { UserService } from '@/services/user.service';
 import { SubscriptionService } from '@/services/subscription.service';
+import { PersonalizationService } from '@/services/personalization.service';
+import { BaseService } from '@/services/base.service';
+import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 import { ValidationError, AuthenticationError } from '@/middleware/error-handler';
 
-export class AuthController {
+export class AuthController extends BaseService {
   private authService: AuthService;
   private userService: UserService;
   private subscriptionService: SubscriptionService;
+  private personalizationService: PersonalizationService;
 
   constructor() {
+    super();
     this.authService = new AuthService();
     this.userService = new UserService();
     this.subscriptionService = new SubscriptionService();
+    this.personalizationService = new PersonalizationService();
   }
 
   /**
@@ -30,19 +37,24 @@ export class AuthController {
 
       const result = await this.authService.register(userData);
 
-      // Set refresh token as HTTP-only cookie
+      // Set refresh token as HTTP-only cookie with cross-domain support
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieDomain = isProduction ? '.vikareta.com' : undefined;
+      
       res.cookie('refreshToken', result.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 
-      // Set access token as HTTP-only cookie
+      // Set access token as HTTP-only cookie with cross-domain support
       res.cookie('accessToken', result.accessToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
         maxAge: 15 * 60 * 1000, // 15 minutes
       });
 
@@ -73,11 +85,15 @@ export class AuthController {
 
       const result = await this.authService.login({ email, phone, password });
 
-      // Set refresh token as HTTP-only cookie
+      // Set refresh token as HTTP-only cookie with cross-domain support
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieDomain = isProduction ? '.vikareta.com' : undefined;
+      
       res.cookie('refreshToken', result.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 
@@ -317,11 +333,15 @@ export class AuthController {
 
       const result = await this.authService.handleGoogleCallback(code);
 
-      // Set refresh token as HTTP-only cookie
+      // Set refresh token as HTTP-only cookie with cross-domain support
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieDomain = isProduction ? '.vikareta.com' : undefined;
+      
       res.cookie('refreshToken', result.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 
@@ -361,11 +381,15 @@ export class AuthController {
 
       const result = await this.authService.handleLinkedInCallback(code);
 
-      // Set refresh token as HTTP-only cookie
+      // Set refresh token as HTTP-only cookie with cross-domain support
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieDomain = isProduction ? '.vikareta.com' : undefined;
+      
       res.cookie('refreshToken', result.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 
@@ -536,34 +560,98 @@ export class AuthController {
   }
 
   /**
-   * OAuth token exchange
+   * Create guest session
    */
-  async oauthTokenExchange(req: Request, res: Response): Promise<void> {
+  async createGuestSession(req: Request, res: Response): Promise<void> {
     try {
-      const { grant_type, code, redirect_uri, client_id } = req.body;
+      const guestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Create guest tokens (short-lived)
+      const payload = {
+        userId: guestId,
+        userType: 'guest',
+        aud: 'web',
+      };
 
-      if (grant_type !== 'authorization_code') {
-        throw new ValidationError('Unsupported grant type');
-      }
+      const accessToken = jwt.sign(payload, config.jwt.secret, {
+        expiresIn: '1h', // Guest sessions expire in 1 hour
+      });
 
-      if (!code || !redirect_uri || !client_id) {
-        throw new ValidationError('Missing required parameters');
-      }
+      const refreshToken = jwt.sign(payload, config.jwt.refreshSecret, {
+        expiresIn: '24h', // Guest refresh tokens last 24 hours
+      });
 
-      // For now, we'll handle Google OAuth callback
-      // In a real implementation, you'd validate the code with the OAuth provider
-      const result = await this.authService.handleGoogleCallback(code);
+      // Set guest session cookies with cross-domain support
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieDomain = isProduction ? '.vikareta.com' : undefined;
+      
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      });
+
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
+        maxAge: 60 * 60 * 1000, // 1 hour
+      });
+
+      // Store guest session in cache
+      await this.cache.setex(`guest_session:${guestId}`, 86400, JSON.stringify({
+        guestId,
+        createdAt: new Date().toISOString(),
+        userAgent: req.get('User-Agent'),
+        ip: req.ip,
+      }));
+
+      // Initialize personalization data for the guest user
+      const personalizationData = await this.personalizationService.createGuestPersonalization(guestId, {
+        sessionData: {
+          createdAt: new Date().toISOString(),
+          lastActivity: new Date().toISOString(),
+          pageViews: 0,
+          timeSpent: 0,
+          deviceInfo: {
+            userAgent: req.get('User-Agent') || '',
+            screenSize: req.body.screenSize || '',
+            platform: req.get('User-Agent')?.includes('Mobile') ? 'mobile' : 'desktop',
+          },
+        },
+        preferences: {
+          language: req.body.language || 'en',
+          currency: req.body.currency || 'USD',
+          theme: req.body.theme || 'auto',
+          notifications: {
+            email: false,
+            push: false,
+            sms: false,
+          },
+        },
+      });
 
       res.json({
         success: true,
-        access_token: result.accessToken,
-        refresh_token: result.refreshToken,
-        token_type: 'Bearer',
-        expires_in: 3600, // 1 hour
-        user: result.user,
+        message: 'Guest session created successfully',
+        data: {
+          accessToken,
+          user: {
+            id: guestId,
+            userType: 'guest',
+            isGuest: true,
+          },
+          personalization: {
+            preferences: personalizationData.preferences,
+            hasPersonalization: true,
+          },
+        },
       });
     } catch (error) {
-      logger.error('OAuth token exchange error:', error);
+      logger.error('Create guest session error:', error);
       throw error;
     }
   }
