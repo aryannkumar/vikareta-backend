@@ -92,7 +92,6 @@ router.get('/google', asyncHandler(authController.googleAuth.bind(authController
 router.get('/google/callback', asyncHandler(authController.googleCallback.bind(authController)));
 router.get('/linkedin', asyncHandler(authController.linkedinAuth.bind(authController)));
 router.get('/linkedin/callback', asyncHandler(authController.linkedinCallback.bind(authController)));
-router.post('/guest-session', asyncHandler(authController.createGuestSession.bind(authController)));
 
 // Protected routes with enhanced authentication
 router.post('/logout', authenticateToken, asyncHandler(authController.logout.bind(authController)));

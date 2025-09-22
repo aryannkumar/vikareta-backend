@@ -89,33 +89,6 @@ export class AuthenticationMiddleware {
         return;
       }
 
-      // Handle guest users differently
-      if (decoded.userType === 'guest') {
-        // For guest users, validate session exists in cache
-        const guestSession = await redisClient.get(`guest_session:${decoded.userId}`);
-        if (!guestSession) {
-          res.status(401).json({ success: false, error: 'Guest session expired' });
-          return;
-        }
-        
-        // Attach guest user info
-        req.user = {
-          id: decoded.userId,
-          userType: 'guest',
-          isVerified: false,
-          verificationTier: 'guest',
-          ssoSessionId: decoded.ssoSessionId,
-        };
-        
-        req.securityContext = {
-          domain,
-          ssoToken: decoded.ssoSessionId,
-        };
-        
-        next();
-        return;
-      }
-
       // Check if token is blacklisted
       const isBlacklisted = await redisClient.exists(`blacklist:${token}`);
       if (isBlacklisted) {
