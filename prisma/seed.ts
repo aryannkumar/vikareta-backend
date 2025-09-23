@@ -275,6 +275,7 @@ async function main() {
 
   const coupons = [
     {
+      userId: adminUser.id,
       code: 'WELCOME10',
       discountType: 'percentage',
       discountValue: 10,
@@ -286,6 +287,7 @@ async function main() {
       isActive: true,
     },
     {
+      userId: adminUser.id,
       code: 'BULK20',
       discountType: 'percentage',
       discountValue: 20,
@@ -297,6 +299,7 @@ async function main() {
       isActive: true,
     },
     {
+      userId: adminUser.id,
       code: 'SAVE1000',
       discountType: 'fixed',
       discountValue: 1000,
