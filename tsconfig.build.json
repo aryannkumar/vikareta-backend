@@ -2,7 +2,7 @@
     "extends": "./tsconfig.json",
     "compilerOptions": {
         "outDir": "./dist",
-        "rootDir": ".",
+        "rootDir": "./src",
         "declaration": false,
         "declarationMap": false,
         "sourceMap": false,
@@ -15,8 +15,7 @@
         "noUnusedParameters": false
     },
     "include": [
-        "src/**/*",
-        "prisma/**/*"
+        "src/**/*"
     ],
     "exclude": [
         "node_modules",

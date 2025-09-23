@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 # Copy package files and prisma schema
-COPY package*.json ./
+COPY package*.json ./ 
 COPY tsconfig*.json ./
 COPY prisma ./prisma/
 
@@ -20,6 +20,9 @@ COPY src ./src/
 # Generate Prisma client and build
 RUN npx prisma generate
 RUN npm run build
+
+# Compile prisma seed file
+RUN npx tsc prisma/seed.ts --outDir dist --module commonjs --target es2020 --esModuleInterop --strict false --skipLibCheck --noImplicitAny false --noImplicitReturns false --noImplicitThis false --noUnusedLocals false --noUnusedParameters false
 
 # Install production dependencies only
 RUN rm -rf node_modules && npm ci --only=production && npm cache clean --force
