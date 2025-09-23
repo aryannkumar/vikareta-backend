@@ -448,8 +448,8 @@ export class AuthenticationMiddleware {
       // Set access token as HTTP-only cookie
       res.cookie('accessToken', accessToken, {
         httpOnly: true,
-        secure: config.env === 'production',
-        sameSite: 'strict',
+        secure: true, // cross-site cookie must be secure
+        sameSite: 'none', // allow across vikareta subdomains
         maxAge: 15 * 60 * 1000, // 15 minutes
         domain: securityConfig.session.domain,
       });

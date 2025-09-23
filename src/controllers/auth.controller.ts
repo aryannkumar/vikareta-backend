@@ -97,6 +97,15 @@ export class AuthController extends BaseService {
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 
+      // Also set access token as HTTP-only cookie for cross-domain session
+      res.cookie('accessToken', result.accessToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
+        maxAge: 15 * 60 * 1000, // 15 minutes
+      });
+
       res.json({
         success: true,
         message: 'Login successful',
@@ -122,8 +131,18 @@ export class AuthController extends BaseService {
         await this.authService.logout(token);
       }
 
-      // Clear refresh token cookie
-      res.clearCookie('refreshToken');
+      // Clear cookies across domain
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieDomain = isProduction ? '.vikareta.com' : undefined;
+      const opts: any = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: cookieDomain,
+        path: '/',
+      };
+      res.clearCookie('refreshToken', opts);
+      res.clearCookie('accessToken', opts);
 
       res.json({
         success: true,
