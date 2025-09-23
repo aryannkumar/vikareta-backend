@@ -268,8 +268,8 @@ export class AuthenticationMiddleware {
 
     res.cookie('XSRF-TOKEN', token, {
       httpOnly: false, // Allow JavaScript access
-      secure: config.env === 'production',
-      sameSite: 'strict',
+      secure: true, // Always secure for cross-domain
+      sameSite: 'none', // Allow cross-domain requests
       maxAge: securityConfig.csrf.maxAge,
       domain: securityConfig.session.domain,
     });
