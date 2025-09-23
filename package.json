@@ -26,7 +26,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:reset": "prisma migrate reset",
-    "db:seed": "ts-node prisma/seed.ts",
+    "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:backup": "pg_dump $DATABASE_URL > backup.sql",
     "cache:clear": "redis-cli FLUSHALL",
@@ -133,7 +133,7 @@
     "@": "dist"
   },
   "prisma": {
-    "seed": "ts-node --esm prisma/seed.ts"
+    "seed": "node dist/prisma/seed.js"
   },
   "keywords": [
     "b2b",
