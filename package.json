@@ -133,7 +133,7 @@
     "@": "dist"
   },
   "prisma": {
-    "seed": "node dist/prisma/seed.js"
+    "seed": "node dist/seed.js"
   },
   "keywords": [
     "b2b",
