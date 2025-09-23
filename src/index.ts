@@ -192,10 +192,10 @@ class Application {
       
       res.cookie('XSRF-TOKEN', token, {
         httpOnly: false, // Allow JavaScript access
-        secure: true, // Always secure for cross-domain
-        sameSite: 'none', // Allow cross-domain requests
-        domain: '.vikareta.com', // Allow subdomains
-        maxAge: 60 * 60 * 1000, // 1 hour
+          secure: process.env.NODE_ENV === 'production', // cross-site cookie must be secure
+          sameSite: 'none', // allow across vikareta subdomains
+          domain: '.vikareta.com',
+          maxAge: 60 * 60 * 1000, // 1 hour
       });
 
       res.json({

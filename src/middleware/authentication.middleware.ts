@@ -220,10 +220,12 @@ export class AuthenticationMiddleware {
       return next();
     }
 
-    const sessionToken = req.cookies?.['XSRF-TOKEN'];
-    const requestToken = req.headers['x-xsrf-token'] as string ||
-                        req.headers['x-csrf-token'] as string ||
-                        req.body?._csrf;
+  const sessionToken = req.cookies?.['XSRF-TOKEN'];
+  const headersLower = Object.fromEntries(Object.entries(req.headers).map(([k,v]) => [k.toLowerCase(), v as any]));
+  const requestToken = (headersLower['x-xsrf-token'] as string) ||
+             (headersLower['x-csrf-token'] as string) ||
+             (headersLower[(securityConfig.csrf.headerName || 'X-XSRF-TOKEN').toLowerCase()] as string) ||
+             req.body?._csrf;
 
     if (!sessionToken || !requestToken) {
       SecurityAudit.logSecurityEvent('CSRF_MISSING_TOKEN', {
